@@ -1,0 +1,61 @@
+name: hermes-helmet
+
+services:
+  hermes:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294}
+        HERMES_HELMET_SOURCE_COMMIT: ${HERMES_HELMET_SOURCE_COMMIT:-unknown}
+        HERMES_HELMET_VERSION: ${HERMES_HELMET_VERSION:-0.0.0-dev}
+    image: ${HERMES_HELMET_IMAGE:-ghcr.io/machinewisdomai/hermes-helmet-oss:dev-local}
+    container_name: hermes-helmet
+    command: ["gateway", "run"]
+    restart: unless-stopped
+    # Image USER is 10000:10000; keep the long-running process non-root.
+    user: "${HERMES_UID:-10000}:${HERMES_GID:-10000}"
+    volumes:
+      - hermes_state:/opt/data
+      # Paths are relative to this compose file (deploy/). Match docs/quickstart.md.
+      - ${HERMES_HELMET_POLICY_HOST_PATH:-../config/policy.json}:/opt/hermes-helmet/config/policy.mounted.json:ro
+      # Optional: mount adopter repository checkouts for allowlisted worktrees.
+      # - ${HOST_REPOS_DIR}:/opt/data/repos
+    tmpfs:
+      - /run/hermes-helmet:uid=10000,gid=10000,mode=0700
+    environment:
+      HERMES_UID: "10000"
+      HERMES_GID: "10000"
+      HERMES_HOME: /opt/data
+      HOME: /opt/data
+      HERMES_GATEWAY_NO_SUPERVISE: "0"
+      HERMES_DASHBOARD: ${HERMES_DASHBOARD:-0}
+      HERMES_HELMET_POLICY_SOURCE: /opt/hermes-helmet/config/policy.mounted.json
+      # Injected only for entrypoint bootstrap; runtime-entrypoint.sh unsets both
+      # before starting upstream s6/Hermes. The file-backed gh wrapper remains.
+      GH_TOKEN: ${HERMES_GITHUB_TOKEN:?set HERMES_GITHUB_TOKEN in .env}
+      GITHUB_TOKEN: ${HERMES_GITHUB_TOKEN:?set HERMES_GITHUB_TOKEN in .env}
+    ports:
+      - "127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
+    networks:
+      - hermes_helmet_private
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/hermes/.venv/bin/python -c
+          'import os,pathlib,sys; sys.exit(0 if pathlib.Path("/opt/hermes-helmet/SOURCE_COMMIT").is_file() and os.getuid()!=0 else 1)'
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    stop_grace_period: 30s
+
+volumes:
+  hermes_state:
+    name: hermes_helmet_state
+
+networks:
+  hermes_helmet_private:
+    name: hermes_helmet_private
+    driver: bridge

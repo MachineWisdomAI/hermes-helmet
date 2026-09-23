@@ -1,0 +1,17 @@
+{
+  "account": "exampleco",
+  "actor_peer_id": "hermes",
+  "api_key": "__OPENVIKING_USER_API_KEY__",
+  "client": "hermes",
+  "hermes": {
+    "OPENVIKING_AGENT": "hermes",
+    "OPENVIKING_API_KEY": "__OPENVIKING_USER_API_KEY__",
+    "OPENVIKING_ENDPOINT": "http://127.0.0.1:1933",
+    "memory_provider": "openviking",
+    "note": "Hermes derives peer provenance from OPENVIKING_AGENT / actor_peer_id and sends X-OpenViking-Actor-Peer. Peer-scoped memory URIs live under viking://~/peers/<agent>/memories/."
+  },
+  "license": "AGPL-3.0",
+  "required_role": "user",
+  "url": "http://127.0.0.1:1933",
+  "user": "company-context"
+}

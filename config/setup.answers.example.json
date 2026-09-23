@@ -1,0 +1,42 @@
+{
+  "company": {
+    "display_name": "ExampleCo",
+    "slug": "exampleco"
+  },
+  "captain_github_login": "example-captain",
+  "worker_github_login": "example-agent",
+  "schedule": "every 15m",
+  "board": "default",
+  "assignee": "builder",
+  "inference_provider": "openai",
+  "inference_model": "gpt-4.1",
+  "worker_max_turns": 100,
+  "ready_label": "ready-for-agent",
+  "dispatch_label": "hermes-kanban-go",
+  "github_owners": [
+    "example-org"
+  ],
+  "repositories": [
+    {
+      "slug": "example-org/demo-repo",
+      "worktree": "/opt/data/repos/demo-repo"
+    }
+  ],
+  "openviking": {
+    "selected": true,
+    "confirmed": false
+  },
+  "fava_trails": {
+    "selected": true,
+    "confirmed": false
+  },
+  "matt_pocock_skills": {
+    "accepted": false
+  },
+  "gstack": {
+    "accepted": false
+  },
+  "company_skill_pack": {
+    "declined": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "company_slug": "exampleco",
+  "company_scope": "exampleco/engineering",
+  "data_repo_placeholder": "/path/to/company-fava-trails-data",
+  "remote_url_placeholder": "https://github.com/YOUR-ORG/fava-trails-data.git",
+  "principals": {
+    "captain": "exampleco-captain-fava",
+    "executor": "exampleco-agent-fava"
+  },
+  "trust_gate": "llm-oneshot",
+  "openrouter_api_key_env": "OPENROUTER_API_KEY",
+  "license": "Apache-2.0",
+  "fava_pin": "10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7",
+  "fava_version_hint": "0.7.0",
+  "canonical": {
+    "install": "https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/README.md",
+    "agent_setup": "https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/AGENTS_SETUP_INSTRUCTIONS.md",
+    "governed_recall": "https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/docs/governed-recall.md"
+  },
+  "note": "FAVA Trails is the governed company brain. OpenViking is optional working context. Promotion is explicit, never automatic."
+}

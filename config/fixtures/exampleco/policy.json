@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "company": {
+    "display_name": "ExampleCo",
+    "slug": "exampleco"
+  },
+  "captain_github_login": "example-captain",
+  "worker_github_login": "example-agent",
+  "schedule": "every 15m",
+  "board": "default",
+  "assignee": "builder",
+  "inference_provider": "openai",
+  "inference_model": "gpt-4.1",
+  "worker_max_turns": 100,
+  "ready_label": "ready-for-agent",
+  "dispatch_label": "hermes-kanban-go",
+  "cron_deliver": "local",
+  "github_owners": [
+    "example-org"
+  ],
+  "trusted_review_bots": [
+    "github-code-quality[bot]"
+  ],
+  "trusted_human_associations": [
+    "OWNER",
+    "MEMBER",
+    "COLLABORATOR"
+  ],
+  "merge": {
+    "default_mode": "explicit_captain_approval",
+    "unattended_marker": "Merge when clean: yes",
+    "narrow_marker": "Merge when clean: no"
+  },
+  "integrations": {
+    "openviking": false,
+    "fava_trails": false,
+    "signal": false
+  },
+  "budgets": {
+    "max_issue_runtime_minutes": 240,
+    "max_repair_rounds": 10
+  },
+  "max_epic_parallelism": 2,
+  "openviking_peers": [
+    {"id": "codex"},
+    {"id": "chatgpt"},
+    {"id": "hermes"}
+  ],
+  "repositories": [
+    {
+      "slug": "example-org/demo-repo",
+      "worktree": "/opt/data/repos/demo-repo"
+    },
+    {
+      "slug": "example-org/docs-repo",
+      "worktree": "/opt/data/repos/docs-repo"
+    }
+  ]
+}

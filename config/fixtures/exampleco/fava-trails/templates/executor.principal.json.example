@@ -1,0 +1,12 @@
+{
+  "principal": "executor",
+  "agent_id": "exampleco-agent-fava",
+  "role": "ordinary",
+  "operator": false,
+  "company_scope": "exampleco/engineering",
+  "data_repo": "/path/to/company-fava-trails-data",
+  "openrouter_api_key_env": "OPENROUTER_API_KEY",
+  "trust_gate_key_file": null,
+  "note": "Ordinary principal only. Scope is a hint, not an authorization boundary. Dedicated FAVA_TRAILS_AGENT_ID process identity governs authoring. Never set FAVA_TRAILS_OPERATOR=1 on captain/executor endpoints.",
+  "canonical_agent_setup": "https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/AGENTS_SETUP_INSTRUCTIONS.md"
+}
