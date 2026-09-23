@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "fava-trails-captain": {
+      "command": "fava-trails-server",
+      "env": {
+        "FAVA_TRAILS_DATA_REPO": "/path/to/company-fava-trails-data",
+        "FAVA_TRAILS_AGENT_ID": "exampleco-captain-fava",
+        "FAVA_TRAILS_SCOPE": "exampleco/engineering",
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
+      }
+    }
+  },
+  "notes": [
+    "One dedicated process per ordinary principal.",
+    "Do not set FAVA_TRAILS_OPERATOR on captain/executor.",
+    "Substitute env values from owner-only secret stores; never commit them.",
+    "Canonical setup: https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/AGENTS_SETUP_INSTRUCTIONS.md"
+  ]
+}

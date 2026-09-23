@@ -1,0 +1,29 @@
+Hermes Helmet
+Copyright 2026 Machine Wisdom AI
+
+This product is licensed under the Apache License, Version 2.0.
+See LICENSE.
+
+This product includes or optionally interoperates with third-party software.
+The following notices are for informational purposes and do not modify the
+Apache-2.0 license of Hermes Helmet itself.
+
+Hermes Agent
+  Copyright Nous Research
+  Upstream runtime used as the executor base image. License and notices are
+  those of the official nousresearch/hermes-agent distribution.
+
+OpenViking (optional)
+  License: AGPL-3.0
+  OpenViking is optional operational working context. Hermes Helmet does not
+  bundle the OpenViking service. Enabling the integration is an adopter choice
+  that applies AGPL-3.0 to that service boundary. See docs/openviking.md.
+
+FAVA Trails (optional)
+  Optional governed company-brain integration. Canonical public pin links are
+  cited from docs/fava-trails.md. Enabling it is an adopter choice and is not
+  required for the minimum runtime.
+
+GitHub, Docker, and model providers
+  Marks and services are the property of their respective owners. Hermes Helmet
+  does not claim them as product requirements beyond documented integrations.

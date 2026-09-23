@@ -1,0 +1,16 @@
+{
+  "account": "exampleco",
+  "actor_peer_id": "codex",
+  "api_key": "__OPENVIKING_USER_API_KEY__",
+  "client": "codex",
+  "license": "AGPL-3.0",
+  "official_plugin": {
+    "harness": "codex",
+    "name": "openviking-memory",
+    "note": "Install the official OpenViking Codex memory plugin against this ovcli.conf. Helmet does not ship a duplicate Codex MCP adapter. Shared company markers use Helmet CLI write-marker or shared-proof, not plugin auto-capture.",
+    "peer_header": "X-OpenViking-Actor-Peer"
+  },
+  "required_role": "user",
+  "url": "http://127.0.0.1:1933",
+  "user": "company-context"
+}

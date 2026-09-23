@@ -1,0 +1,20 @@
+# Local MachineWisdom agent/review artifacts
+.wise-agents/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.venv-fava/
+.venv-verify/
+.venv-rc/
+
+dist/
+build/
+*.egg-info/
+
+# Local runtime config (keep examples)
+deploy/.env
+config/policy.json

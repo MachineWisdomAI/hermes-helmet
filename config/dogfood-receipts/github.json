@@ -1,0 +1,42 @@
+{
+  "pull": {
+    "html_url": "https://github.com/example-org/demo-repo/pull/48",
+    "number": 48,
+    "head": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "ref": "automation/demo-issue-9"
+    }
+  },
+  "reviews": [
+    {
+      "id": 1001,
+      "user": {
+        "login": "example-captain"
+      },
+      "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "CHANGES_REQUESTED",
+      "submitted_at": "2026-09-21T16:00:00+00:00",
+      "html_url": "https://github.com/example-org/demo-repo/pull/48#pullrequestreview-1001"
+    },
+    {
+      "id": 1002,
+      "user": {
+        "login": "example-captain"
+      },
+      "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "state": "APPROVED",
+      "submitted_at": "2026-09-21T16:20:00+00:00",
+      "html_url": "https://github.com/example-org/demo-repo/pull/48#pullrequestreview-1002"
+    }
+  ],
+  "commits": [
+    {
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "committed_at": "2026-09-21T15:50:00+00:00"
+    },
+    {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "committed_at": "2026-09-21T16:10:00+00:00"
+    }
+  ]
+}

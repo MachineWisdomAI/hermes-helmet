@@ -1,0 +1,54 @@
+{
+  "version": "0.1.0rc1",
+  "channel": "private-rc",
+  "minted_version": "0.1.0",
+  "source_revision": "0123456789abcdef0123456789abcdef01234567",
+  "image": {
+    "repository": "ghcr.io/example-org/hermes-helmet",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "version": "0.1.0rc1",
+    "tags": [
+      "dev-0123456789abcdef0123456789abcdef01234567",
+      "0.1.0rc1"
+    ]
+  },
+  "task_id": "t_0123456789abcdef",
+  "published_pr": "https://github.com/example-org/demo-repo/pull/48",
+  "current_head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "merge": {
+    "policy": "captain_approval",
+    "when_clean": false,
+    "directive": null
+  },
+  "reviews": [
+    {
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outcome": "changes_requested",
+      "reviewed_at": "2026-09-21T16:00:00+00:00",
+      "review_id": 1001,
+      "reviewer": "example-captain"
+    },
+    {
+      "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "outcome": "clean",
+      "prior_repair": "https://github.com/example-org/demo-repo/pull/48",
+      "reviewed_at": "2026-09-21T16:20:00+00:00",
+      "review_id": 1002,
+      "reviewer": "example-captain"
+    }
+  ],
+  "repairs": [
+    {
+      "published_pr": "https://github.com/example-org/demo-repo/pull/48",
+      "head_before": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head_after": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "force_push": false,
+      "repaired_at": "2026-09-21T16:10:00+00:00"
+    }
+  ],
+  "runtime": {
+    "dogfood_host": "codex",
+    "claude_required": false,
+    "hermes_host_required": false
+  }
+}

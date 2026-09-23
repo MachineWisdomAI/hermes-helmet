@@ -1,0 +1,13 @@
+{
+  "account": "exampleco",
+  "license": "AGPL-3.0",
+  "note": "OpenViking is optional operational working context (AGPL-3.0), not governed company truth. Promote deliberately into FAVA Trails.",
+  "peers": {
+    "chatgpt": "chatgpt",
+    "codex": "codex",
+    "hermes": "hermes"
+  },
+  "required_role": "user",
+  "service_url": "http://127.0.0.1:1933",
+  "user": "company-context"
+}

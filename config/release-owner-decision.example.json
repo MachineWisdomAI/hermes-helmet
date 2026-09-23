@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0rc1",
+  "source_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "base_digest": "sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294",
+  "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rollback_digest": "sha256:316b6849cf6d663dc7fe40d7b3a543ae1f0d16d20b9dd58e0f0b2564c8424691",
+  "platforms": {
+    "linux/amd64": {
+      "report": "delta-amd64.json",
+      "report_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "inherited_high_critical": 446
+    },
+    "linux/arm64": {
+      "report": "delta-arm64.json",
+      "report_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "inherited_high_critical": 528
+    }
+  },
+  "expires_at": "2026-10-20T00:00:00+00:00",
+  "review_conditions": {
+    "triggers": [
+      "next-stable-hermes",
+      "base-digest-change",
+      "emergency-security"
+    ],
+    "notes": "Re-review on the next stable Hermes release, a base-digest change, 30 days, or an emergency security trigger. Do not rebuild. Keep repository, release, package, and image private."
+  },
+  "accepted_inherited_risk": true,
+  "publication": false,
+  "visibility": "private",
+  "evidence_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}

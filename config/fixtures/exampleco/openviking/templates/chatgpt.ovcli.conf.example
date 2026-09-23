@@ -1,0 +1,19 @@
+{
+  "account": "exampleco",
+  "actor_peer_id": "chatgpt",
+  "api_key": "__OPENVIKING_USER_API_KEY__",
+  "chatgpt": {
+    "auto_scrape": false,
+    "connectivity": "loopback_or_private_only",
+    "intentional_tool_selection": true,
+    "note": "ChatGPT remains an operator-gated connected-app path with intentional tools and no transcript capture. Helmet does not ship a ChatGPT MCP adapter. Claude Code uses the official OpenViking memory plugin instead of a custom Helmet client.",
+    "official_claude_plugin": "openviking-memory",
+    "operator_gates_required": true,
+    "transcript_capture": false
+  },
+  "client": "chatgpt",
+  "license": "AGPL-3.0",
+  "required_role": "user",
+  "url": "http://127.0.0.1:1933",
+  "user": "company-context"
+}

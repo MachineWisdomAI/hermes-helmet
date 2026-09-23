@@ -1,0 +1,25 @@
+{
+  "company_slug": "exampleco",
+  "note": "Secret-free OpenAI-compatible contracts. Hermes executor stays on inference_provider/inference_model. Optional FAVA generation, OpenViking semantic generation, and embeddings are independent lanes.",
+  "contracts": {
+    "fava_generation": {
+      "kind": "chat_completions",
+      "path": "http://127.0.0.1:11434/v1/chat/completions",
+      "model_placeholder": "example-fava-chat"
+    },
+    "openviking_semantic_generation": {
+      "kind": "chat_completions",
+      "path": "http://127.0.0.1:11434/v1/chat/completions",
+      "model_placeholder": "example-ov-semantic",
+      "note": "Semantic generation is a separate chat contract from embeddings."
+    },
+    "embeddings": {
+      "kind": "embeddings",
+      "path": "http://127.0.0.1:11434/v1/embeddings",
+      "model_placeholder": "example-embed",
+      "dimensions": 768
+    }
+  },
+  "local_runtimes": ["Ollama", "Unsloth Studio", "OrbStack"],
+  "credential_policy": "owner-only runtime files; never policy"
+}
