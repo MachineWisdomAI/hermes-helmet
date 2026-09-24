@@ -20,6 +20,10 @@ owner-gated promotion.
 
 ## Codex runtime
 
+This historical candidate uses `hermes-helmet` in its exact command receipts.
+Keep that spelling when recording evidence for the bound image; the current
+source's `helmet` alias does not change the receipt contract or older binaries.
+
 Runtime dogfood of the skill loop is Codex. Static validation still covers
 Codex, Claude, and Hermes skill install targets. Claude Code and Hermes-host
 runtime acceptance are **not** required for this candidate.
@@ -27,9 +31,9 @@ runtime acceptance are **not** required for this candidate.
 Codex must repeat, and the receipt must record argv plus an output digest for
 each of:
 
-- clean-machine `helmet setup`
-- `helmet doctor`
-- read-only `helmet status` (no ledger or checkpoint writes)
+- clean-machine `hermes-helmet setup`
+- `hermes-helmet doctor`
+- read-only `hermes-helmet status` (no ledger or checkpoint writes)
 - persistence of ledgers, worktrees, and skills across restart
 - skills and no-skills startup
 - default integrations remaining skipped unless selected
@@ -43,8 +47,8 @@ create a newly acceptable digest.
 
 `helmet-epic` resumes from a persisted checkpoint and invokes `helmet-issue`
 only for dependency-ready children. Those invocations are recorded as exact
-argv receipts (`helmet epic <epic-url>` and
-`helmet issue <issue-url>`) through the released wrapper named in the
+argv receipts (`hermes-helmet epic <epic-url>` and
+`hermes-helmet issue <issue-url>`) through the released wrapper named in the
 bound manifest. `helmet-issue` adopts an existing worker task or pull request
 without an operator announcing that the PR exists. The wrapper image digest
 must match the bound candidate.
@@ -79,7 +83,8 @@ A whole-line `Merge when clean: yes` directive is the only unattended grant.
 
 ## Evidence
 
-Validate a secret-free receipt against the bound candidate. `--bound` is the
+Use the current-source CLI below to validate a secret-free receipt against the
+bound candidate. `--bound` is the
 owner-selected pin; `--policy` supplies version-2 Captain and repository
 authority. `--head` is required and must equal the named PR's live
 head. Command, observation, epic, dispatch, and GitHub claims are read from

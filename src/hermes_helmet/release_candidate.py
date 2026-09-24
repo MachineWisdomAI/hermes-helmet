@@ -84,7 +84,7 @@ ROLLBACK_PROCEDURE = (
     f"digest `{PREVIOUS_IMAGE_PIN}` (source revision {PREVIOUS_SOURCE_REVISION}, "
     f"mutable tag `{PREVIOUS_IMAGE_REF}` is not the rollback target). "
     "Do not rebuild. Do not retag `0.1.0`. Do not change visibility. Confirm "
-    "`helmet doctor` and read-only `helmet status` against that "
+    "`hermes-helmet doctor` and read-only `hermes-helmet status` against that "
     "previous revision."
 )
 
