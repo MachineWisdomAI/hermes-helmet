@@ -47,7 +47,7 @@ repo_visibility="$(
   gh api \
     --header 'Accept: application/vnd.github+json' \
     --header 'X-GitHub-Api-Version: 2022-11-28' \
-    "/repos/${GITHUB_REPOSITORY:-MachineWisdomAI/hermes-helmet-oss}" \
+    "/repos/${GITHUB_REPOSITORY:-MachineWisdomAI/hermes-helmet}" \
     --jq .visibility
 )"
 test "$repo_visibility" = private

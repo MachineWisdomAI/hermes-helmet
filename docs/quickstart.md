@@ -30,8 +30,8 @@ use `latest` or `main`.
 Clone and install the current public source:
 
 ```sh
-git clone https://github.com/MachineWisdomAI/hermes-helmet-oss.git
-cd hermes-helmet-oss
+git clone https://github.com/MachineWisdomAI/hermes-helmet.git
+cd hermes-helmet
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .

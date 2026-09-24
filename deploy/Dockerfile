@@ -13,7 +13,7 @@ ARG HERMES_GID=10000
 
 LABEL org.opencontainers.image.title="Hermes Helmet"
 LABEL org.opencontainers.image.description="Portable GitHub-to-Hermes control loop"
-LABEL org.opencontainers.image.source="https://github.com/MachineWisdomAI/hermes-helmet-oss"
+LABEL org.opencontainers.image.source="https://github.com/MachineWisdomAI/hermes-helmet"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.revision="${HERMES_HELMET_SOURCE_COMMIT}"
 LABEL org.opencontainers.image.version="${HERMES_HELMET_VERSION}"
