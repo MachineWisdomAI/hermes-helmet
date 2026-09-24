@@ -1,5 +1,9 @@
 # Hermes Helmet
 
+<p align="center">
+  <img src="docs/assets/hermes-helmet-winged-mark-v1.png" width="320" alt="Hermes Helmet: a futuristic winged helmet with a glowing cyan visor and tether.">
+</p>
+
 **An open-source software factory for teams using coding agents.**
 
 Hermes Helmet keeps delegated software work connected from a GitHub issue
