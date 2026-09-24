@@ -17,6 +17,9 @@ image have not been published.
   coding agents, with a walkthrough of delegation, review, repair, and acceptance.
 - Use the full product name in documentation and user-facing messages.
 - Clarify the Captain role, setup requirements, and preview command compatibility.
+- Complete the fresh-install quickstart so adopters clone the allowlisted
+  worker checkout, set Git identity and the GitHub credential helper, and
+  finish the named worker profile login before poller installation.
 
 ## Public source preview — September 23, 2026
 

@@ -137,7 +137,86 @@ removes the raw token variables, and only then enters the upstream s6 init
 chain. Supervised dashboard and gateway processes therefore do not inherit the
 PAT, while `/usr/local/bin/gh` can read it for one authorized GitHub command.
 
-## 3. Install the poller cron (once)
+## 3. Clone the allowlisted checkout in the worker volume
+
+The poller installer requires every policy `repositories[].worktree` to exist
+as a Git checkout the worker can see. Compose persists that tree on the
+`hermes_state` volume under `/opt/data`. The ExampleCo fixture uses slug
+`example-org/demo-repo` and worktree `/opt/data/repos/demo-repo`. Replace those
+placeholders with your allowlisted repository before enabling intake.
+
+Do this in the worker container, with the worker GitHub identity. Do not clone
+into a Captain checkout or reuse Captain credentials.
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  mkdir -p /opt/data/repos
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git config --global user.name "example-agent"
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git config --global user.email "example-agent@users.noreply.github.com"
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git config --global --replace-all credential.https://github.com.helper \
+  '!gh auth git-credential'
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git clone https://github.com/example-org/demo-repo.git \
+  /opt/data/repos/demo-repo
+```
+
+The credential helper asks `/usr/local/bin/gh` for GitHub HTTPS credentials.
+That wrapper reads the owner-only runtime token file. Do not put a token in the
+clone command, in Git config, in policy, or in source files. The worker Git
+identity is your `worker_github_login` (`example-agent` in the fixture), never
+`example-captain`.
+
+Confirm the path the installer will check:
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git -C /opt/data/repos/demo-repo rev-parse --is-inside-work-tree
+```
+
+## 4. Create the worker profile and complete provider login
+
+Kanban work runs as the policy `assignee` Hermes profile (`builder` in the
+ExampleCo fixture). Create that profile in the worker container, set the
+policy provider and model, then complete that profile's own provider login.
+Keep Captain and worker identities distinct: do not copy Captain host
+credentials, sessions, or profiles into the worker.
+
+These `hermes` invocations are the in-container Hermes Agent CLI. They are not
+the host Hermes Helmet command. Current source installs that host CLI as
+`helmet`, with compatible alias `hermes-helmet`; the dated preview wheel
+exposes only `hermes-helmet`.
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  /opt/hermes/.venv/bin/hermes profile create builder
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  /opt/hermes/.venv/bin/hermes -p builder config set model.provider openai
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  /opt/hermes/.venv/bin/hermes -p builder config set model.default gpt-4.1
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  /opt/hermes/.venv/bin/hermes -p builder config set agent.max_turns 100
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  /opt/hermes/.venv/bin/hermes -p builder auth add openai
+```
+
+`auth add` prompts locally for the credential. Do not pass `--api-key` or
+put provider secrets in commands or files. Match `model.provider` /
+`auth add` to your policy `inference_provider` and `inference_model`. Then
+make one bounded smoke call:
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  /opt/hermes/.venv/bin/hermes -p builder chat --oneshot --max-turns 1 \
+  -q "Reply with the single word ready."
+```
+
+OpenViking, FAVA Trails, Signal, and company skill packs stay optional and
+remain disabled in the ExampleCo fixture. Do not enable them on this path.
+
+## 5. Install the poller cron (once)
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
@@ -147,10 +226,14 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
 ```
 
 Use `--skip-model-config` until the worker profile has a real provider login.
-The installer still validates allowlisted worktrees and reconciles exactly one
-no-agent cron job (`cron_deliver` defaults to `local`).
+Without that login, the installer would still write provider, model, and max
+turns into the assignee profile, which fails or leaves a profile that cannot
+run work. After the smoke call succeeds, keep the flag so install does not
+overwrite the working profile. The installer still validates allowlisted
+worktrees and reconciles exactly one no-agent cron job (`cron_deliver`
+defaults to `local`).
 
-## 4. Trigger once
+## 6. Trigger once
 
 Label an allowlisted open issue with the policy `dispatch_label` (default
 `hermes-kanban-go`), then:
@@ -165,7 +248,7 @@ An eligible issue should now have one linked Kanban root task. Repeating intake
 for that issue reuses the existing task. Follow the worker's linked pull request
 when implementation finishes; task completion alone does not accept or merge it.
 
-## 5. Captain-side helmet-issue / helmet-epic (optional host)
+## 7. Captain-side helmet-issue / helmet-epic (optional host)
 
 On the Captain workstation (not the worker container identity):
 
