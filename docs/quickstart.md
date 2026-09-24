@@ -148,25 +148,36 @@ placeholders with your allowlisted repository before enabling intake.
 Do this in the worker container, with the worker GitHub identity. Do not clone
 into a Captain checkout or reuse Captain credentials.
 
+Set the wrapper-backed GitHub credential helper globally before cloning so
+HTTPS clone can authenticate. After the checkout exists, set worker identity
+and the same helper in that repository's local Git config. Linked worktrees
+inherit those local values, including Kanban checkouts that use a different
+home than Compose `HOME`. Do not run `gh auth setup-git`; it can record the
+underlying `gh` binary and bypass `/usr/local/bin/gh`.
+
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   mkdir -p /opt/data/repos
-docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
-  git config --global user.name "example-agent"
-docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
-  git config --global user.email "example-agent@users.noreply.github.com"
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   git config --global --replace-all credential.https://github.com.helper \
   '!gh auth git-credential'
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   git clone https://github.com/example-org/demo-repo.git \
   /opt/data/repos/demo-repo
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git -C /opt/data/repos/demo-repo config --local user.name "example-agent"
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git -C /opt/data/repos/demo-repo config --local user.email \
+  "example-agent@users.noreply.github.com"
+docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
+  git -C /opt/data/repos/demo-repo config --local --replace-all \
+  credential.https://github.com.helper '!gh auth git-credential'
 ```
 
-The credential helper asks `/usr/local/bin/gh` for GitHub HTTPS credentials.
-That wrapper reads the owner-only runtime token file. Do not put a token in the
-clone command, in Git config, in policy, or in source files. The worker Git
-identity is your `worker_github_login` (`example-agent` in the fixture), never
+The helper asks `/usr/local/bin/gh` for GitHub HTTPS credentials. That wrapper
+reads the owner-only runtime token file. Do not put a token in the clone
+command, in Git config, in policy, or in source files. The worker Git identity
+is your `worker_github_login` (`example-agent` in the fixture), never
 `example-captain`.
 
 Confirm the path the installer will check:
@@ -225,13 +236,12 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   --skip-model-config
 ```
 
-Use `--skip-model-config` until the worker profile has a real provider login.
-Without that login, the installer would still write provider, model, and max
-turns into the assignee profile, which fails or leaves a profile that cannot
-run work. After the smoke call succeeds, keep the flag so install does not
-overwrite the working profile. The installer still validates allowlisted
-worktrees and reconciles exactly one no-agent cron job (`cron_deliver`
-defaults to `local`).
+Use `--skip-model-config` so install keeps the assignee profile you configured
+and smoke-tested in the previous step instead of rewriting provider, model, and
+max turns. The installer does not perform provider login, and this flag does
+not prove credentials work; the bounded smoke call does. The installer still
+validates allowlisted worktrees and reconciles exactly one no-agent cron job
+(`cron_deliver` defaults to `local`).
 
 ## 6. Trigger once
 
