@@ -1,10 +1,9 @@
 # setup-helmet
 
-Portable adoption path for Hermes Helmet. The conversational `setup-helmet`
-skill and the deterministic `hermes-helmet setup` / `hermes-helmet doctor`
-commands produce the same validated configuration.
-
-This project is Hermes Helmet. Do not introduce cluster package-manager terminology.
+Configure Hermes Helmet for your repositories, worker identity, and model
+provider. The conversational `setup-helmet` skill calls `helmet setup`;
+`helmet doctor` checks the resulting configuration and access. You can run
+the same commands directly. Install the CLI through the [quickstart](quickstart.md).
 
 ## What setup collects
 

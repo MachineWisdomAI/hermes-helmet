@@ -9,7 +9,7 @@ operator action. Neither telemetry nor runtime memory becomes a governed
 decision automatically.
 
 This document targets the deployed OpenViking **0.4.19** contract: home-alias
-URIs (`viking://~/...`) and official Codex / Claude Code memory plugins. Helmet
+URIs (`viking://~/...`) and official Codex / Claude Code memory plugins. Hermes Helmet
 does not duplicate those plugins with a custom MCP adapter.
 
 ## What this integration provides
@@ -23,9 +23,9 @@ does not duplicate those plugins with a custom MCP adapter.
 - Pairwise-distinct logical peer identifiers (defaults: `codex`, `chatgpt`,
   `hermes`).
 - Separate owner-only client configuration files (mode `0600`).
-- `hermes-helmet doctor` verification of shared namespace + distinct provenance.
+- `helmet doctor` verification of shared namespace + distinct provenance.
 - Guided setup templates that use placeholders instead of adopter names.
-- Helmet CLI `write-marker` / `shared-proof` for intentional shared company
+- Hermes Helmet CLI `write-marker` / `shared-proof` for intentional shared company
   markers. Official client plugins handle their own recall/capture.
 
 ## Provenance mapping (do not over-claim)
@@ -35,10 +35,10 @@ provides:
 
 | Client | Provenance surface | Notes |
 | --- | --- | --- |
-| Codex | Official `openviking-memory` plugin + `actor_peer_id` / `X-OpenViking-Actor-Peer` | Do not install a Helmet MCP duplicate |
+| Codex | Official `openviking-memory` plugin + `actor_peer_id` / `X-OpenViking-Actor-Peer` | Do not install a Hermes Helmet MCP duplicate |
 | ChatGPT | Operator-gated connected app/tunnel; `actor_peer_id` header | Intentional tools only; no transcript capture |
-| Claude Code | Official `openviking-memory` plugin | Not a fourth Helmet client type; do not duplicate |
-| Hermes | `OPENVIKING_AGENT` / `actor_peer_id` → `X-OpenViking-Actor-Peer`; peer-scoped URIs under `viking://~/peers/<agent>/memories/` | Native Hermes provider + Helmet CLI for shared markers |
+| Claude Code | Official `openviking-memory` plugin | Not a fourth Hermes Helmet client type; do not duplicate |
+| Hermes | `OPENVIKING_AGENT` / `actor_peer_id` → `X-OpenViking-Actor-Peer`; peer-scoped URIs under `viking://~/peers/<agent>/memories/` | Native Hermes provider + Hermes Helmet CLI for shared markers |
 
 OpenViking 0.4.19 uses the actor-peer header for request context and peer view.
 A `remember` user-role session message may **not** serialize that actor peer into
@@ -103,7 +103,7 @@ Fail-closed rotation/recovery for all client configs:
    command line or in model context). Store it in an owner-only key file.
 3. Rewrite **every** client config (`codex`, `chatgpt`, `hermes`) with
    `openviking write-client` from that same key file.
-4. Run `hermes-helmet doctor --live`. If any file is missing, world-readable,
+4. Run `helmet doctor --live`. If any file is missing, world-readable,
    mismatched, or otherwise fails, stop — fix that file and rerun. Do not leave
    mixed old/new keys across clients.
 5. Only after all three pass, retire the old key on the OpenViking service.
@@ -114,8 +114,8 @@ Fail-closed rotation/recovery for all client configs:
   `actor_peer_id`).
 - Install the official OpenViking Codex memory plugin (`openviking-memory`)
   against that config. The plugin owns `/mcp` and lifecycle hooks.
-- Helmet does **not** register a duplicate stdio MCP for Codex.
-- Shared company markers still use Helmet `write-marker` / `shared-proof`
+- Hermes Helmet does **not** register a duplicate stdio MCP for Codex.
+- Shared company markers still use Hermes Helmet `write-marker` / `shared-proof`
   (intentional; not plugin auto-capture).
 
 ### Hermes
@@ -123,7 +123,7 @@ Fail-closed rotation/recovery for all client configs:
 - `hermes config set memory.provider openviking` (operator action).
 - `OPENVIKING_ENDPOINT`, `OPENVIKING_API_KEY`, `OPENVIKING_AGENT=hermes`.
 - Hermes sends `X-OpenViking-Actor-Peer` and writes peer-scoped memories for its
-  native remember path under `viking://~/peers/<agent>/memories/`. Helmet shared
+  native remember path under `viking://~/peers/<agent>/memories/`. Hermes Helmet shared
   markers use intentional `content/write` into common `events` memory instead
   (see shared-proof below).
 
@@ -139,9 +139,9 @@ ChatGPT must not scrape or capture chats automatically. Required operator steps:
 6. Keep tunnel health/UI on loopback or private connectivity.
 7. Call tools intentionally from Work or ordinary chat; no transcript capture.
 
-Helmet does not ship a ChatGPT MCP adapter or replace that tunnel. Claude Code
+Hermes Helmet does not ship a ChatGPT MCP adapter or replace that tunnel. Claude Code
 uses the official OpenViking memory plugin; that is a separate Anthropic client
-path, not a fourth Helmet peer type.
+path, not a fourth Hermes Helmet peer type.
 
 ## Doctor
 
@@ -211,7 +211,7 @@ Uid-less `viking://user/memories` (and the same shape for resources, skills,
 peers, privacy, sessions) fails closed. Peer-scoped trees
 (`viking://~/peers/<id>/...`) stay private to the actor peer. Hermes intentional
 `remember` still targets peer-scoped URIs; that is a supported private path, not
-the shared company-marker path. Helmet exposes the shared path as intentional
+the shared company-marker path. Hermes Helmet exposes the shared path as intentional
 content/write via `openviking write-marker` and `openviking shared-proof`.
 Provenance for shared markers is demonstrated through distinct
 `X-OpenViking-Actor-Peer` headers and client config origin views — not a stored
@@ -219,7 +219,7 @@ JSONL `actor_peer` field.
 
 ### Intentional shared proof
 
-Helmet CLI shared-proof is **not** official Codex, ChatGPT, or Hermes
+Hermes Helmet CLI shared-proof is **not** official Codex, ChatGPT, or Hermes
 foreground-app acceptance. Required real official-client acceptance remains a
 separate Captain/owner check against the live service and official clients.
 
@@ -255,7 +255,7 @@ The command prints transport, verification scope, and redacted origin evidence
 from the write request headers; it never prints credentials. Fake results are
 labeled `verification_scope=synthetic_non_acceptance` with `acceptance=false`.
 
-Helmet does not ship a duplicate stdio MCP adapter. Codex and Claude Code should
+Hermes Helmet does not ship a duplicate stdio MCP adapter. Codex and Claude Code should
 use the official plugins' `/mcp` proxy. Hermes may invoke the reviewed CLI from
 its supported terminal/tool path.
 

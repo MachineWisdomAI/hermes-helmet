@@ -16,7 +16,9 @@ here.
 
 ## What the candidate contains
 
-- Hermes Helmet CLI (`hermes-helmet`) version `0.1.0rc1`
+- Hermes Helmet CLI (Python package `hermes-helmet`) version `0.1.0rc1`.
+  Current source installs `helmet` and the compatible `hermes-helmet` command;
+  the dated preview wheel provides only `hermes-helmet`.
 - Bundled portable skills: `setup-helmet`, `helmet-issue`, `helmet-epic`
 - linux/amd64 and linux/arm64 image (the already-scanned `dev-<source-commit>`
   manifest)
@@ -41,9 +43,9 @@ removed.
 The proof installs the wheel with `PYTHONPATH` empty and runs the installed
 console entry points:
 
-- `hermes-helmet setup`
-- `hermes-helmet doctor`
-- read-only `hermes-helmet status` (creates no ledger or checkpoint state)
+- `helmet setup`
+- `helmet doctor`
+- read-only `helmet status` (creates no ledger or checkpoint state)
 - bundled `install-skills` for `setup-helmet`, `helmet-issue`, and `helmet-epic`
 - the minimum-runtime quickstart without skills packs, FAVA Trails, OpenViking,
   or optional model services
@@ -56,8 +58,9 @@ same checkout.
 
 ## Image identity
 
-CI continues to publish only the private `dev-<source-commit>` image after the
-H11 supply-chain gates. Scan builds, the final manifest, smoke acceptance, and
+In a private deployment repository, image publication uses the
+`dev-<source-commit>` image after the supply-chain gates. The public repository
+does not publish that image. Scan builds, the final manifest, smoke acceptance, and
 `dist/image-identity.json` use image version `0.1.0rc1`. Record
 `dist/image-identity.json` and `dist/rc/release-evidence.json`. Both name one
 digest, the exact source revision, and that image version. Do not rebuild for

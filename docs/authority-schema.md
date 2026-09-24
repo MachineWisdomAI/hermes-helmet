@@ -9,7 +9,7 @@ configuration system.
 | Version | Role |
 | --- | --- |
 | `1` | H1 control-loop policy. Still loadable by the poller for compatibility. |
-| `2` | Full Captain/Helmet authority document. Required for crew-contract render, private overlays, and preflight that enforces Captain/worker separation. |
+| `2` | Full Hermes Helmet authority document. Required for crew-contract render, private overlays, and preflight that enforces Captain/worker separation. |
 
 Load helpers:
 
@@ -116,7 +116,7 @@ Optional executor company pack (omit for minimum startup):
   Defaults to `false`. Enabling it does not start FAVA in the public Compose
   stack; see [fava-trails.md](fava-trails.md).
 - Optional `worker_access_scope` is `selected` (default) or `broader`.
-  Helmet still requires every configured work repository and its metadata,
+  Hermes Helmet still requires every configured work repository and its metadata,
   contents, pull-request, and issue capabilities. Extra public repository
   visibility is not a setup failure. Extra private visibility fails unless the
   adopter explicitly selects `broader`. The effective choice is reported.

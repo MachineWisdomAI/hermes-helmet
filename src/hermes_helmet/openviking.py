@@ -11,11 +11,11 @@ This module is intentionally portable:
 - Codex/ChatGPT provenance uses actor-peer request metadata
 - Hermes provenance uses the supported peer/agent surface (OPENVIKING_AGENT /
   actor_peer_id -> X-OpenViking-Actor-Peer and peer-scoped URIs)
-- Codex and Claude Code use official OpenViking memory plugins; Helmet does
+- Codex and Claude Code use official OpenViking memory plugins; Hermes Helmet does
   not duplicate those MCP adapters
 - Shared markers use OpenViking 0.4.19 home-alias URIs (viking://~/...)
 - doctor verifies configuration without printing credentials
-- Helmet operates when OpenViking is declined or unavailable
+- Hermes Helmet operates when OpenViking is declined or unavailable
 
 Do not claim actor-peer is serialized into stored OpenViking JSONL records
 where the installed server does not provide that field. Attribution is
@@ -436,9 +436,9 @@ def chatgpt_operator_gate_settings() -> dict[str, object]:
         "official_claude_plugin": "openviking-memory",
         "note": (
             "ChatGPT remains an operator-gated connected-app path with "
-            "intentional tools and no transcript capture. Helmet does "
+            "intentional tools and no transcript capture. Hermes Helmet does "
             "not ship a ChatGPT MCP adapter. Claude Code uses the "
-            "official OpenViking memory plugin instead of a custom Helmet "
+            "official OpenViking memory plugin instead of a custom Hermes Helmet "
             "client."
         ),
     }
@@ -553,7 +553,7 @@ def proof_verification_fields(*, transport_kind: str) -> dict[str, object]:
             "verification_scope": "live_http_cli_not_official_client_acceptance",
             "acceptance": False,
             "acceptance_note": (
-                "Helmet CLI HTTP proof is not official Codex/ChatGPT/Hermes "
+                "Hermes Helmet CLI HTTP proof is not official Codex/ChatGPT/Hermes "
                 "foreground-app acceptance."
             ),
         }
@@ -887,8 +887,8 @@ def example_client_config_payload(
             "peer_header": ACTOR_PEER_HEADER,
             "note": (
                 "Install the official OpenViking Codex memory plugin against "
-                "this ovcli.conf. Helmet does not ship a duplicate Codex MCP "
-                "adapter. Shared company markers use Helmet CLI write-marker "
+                "this ovcli.conf. Hermes Helmet does not ship a duplicate Codex MCP "
+                "adapter. Shared company markers use Hermes Helmet CLI write-marker "
                 "or shared-proof, not plugin auto-capture."
             ),
         }
@@ -2068,11 +2068,11 @@ def cross_client_marker_roundtrip(
         },
         "limitation": (
             "Native Hermes intentional remember still targets peer-scoped URIs; "
-            "Helmet shared markers use intentional content/write into common "
+            "Hermes Helmet shared markers use intentional content/write into common "
             f"{SHARED_MEMORY_TYPE} memory with distinct actor-peer request headers. "
             "Codex and Claude Code use the official openviking-memory plugins; "
-            "Hermes uses its native provider plus Helmet write-marker/shared-proof. "
-            "Helmet does not ship a duplicate MCP adapter. Fake transport is "
+            "Hermes uses its native provider plus Hermes Helmet write-marker/shared-proof. "
+            "Hermes Helmet does not ship a duplicate MCP adapter. Fake transport is "
             "synthetic/non-acceptance and does not replace official-client acceptance."
         ),
     }
@@ -2091,7 +2091,7 @@ def doctor_openviking(
     """Verify optional OpenViking shared-namespace configuration.
 
     When ``policy.integrations.openviking`` is false, returns a skipped OK
-    report so Helmet remains operable without the integration.
+    report so Hermes Helmet remains operable without the integration.
     """
 
     if not policy.integrations.openviking:
@@ -2103,7 +2103,7 @@ def doctor_openviking(
                 DoctorFinding(
                     code="openviking-declined",
                     ok=True,
-                    message="OpenViking integration declined; Helmet operates without it",
+                    message="OpenViking integration declined; Hermes Helmet operates without it",
                 ),
             ),
         )
@@ -2471,8 +2471,8 @@ def setup_messages(template: OpenVikingCompanyTemplate) -> list[str]:
         "Provision one least-privilege USER key (never root/admin) for the shared user.",
         "Write separate owner-only configs for codex, chatgpt, and hermes.",
         "Rotate by rewriting every owner-only client config from one new USER key, then doctor --live, then retire the old key; mixed keys fail closed.",
-        "Codex uses the official OpenViking memory plugin against ovcli.conf; do not install a Helmet MCP duplicate.",
-        "Claude Code uses the official OpenViking memory plugin; Helmet does not ship a Claude MCP adapter.",
+        "Codex uses the official OpenViking memory plugin against ovcli.conf; do not install a duplicate Hermes Helmet MCP adapter.",
+        "Claude Code uses the official OpenViking memory plugin; Hermes Helmet does not ship a Claude MCP adapter.",
         "ChatGPT stays operator-gated (intentional tools, loopback/private, no transcript capture).",
         "Codex/ChatGPT map peer via actor_peer_id and X-OpenViking-Actor-Peer.",
         "Hermes maps peer via OPENVIKING_AGENT / actor_peer_id and peer-scoped home-alias URIs.",
@@ -2481,6 +2481,6 @@ def setup_messages(template: OpenVikingCompanyTemplate) -> list[str]:
             "with distinct actor-peer headers (not native Hermes peer-remember)."
         ),
         "Use openviking shared-proof to exercise write/search/recall/read across clients.",
-        "Helmet starts and operates when OpenViking is declined or unavailable.",
+        "Hermes Helmet starts and operates when OpenViking is declined or unavailable.",
         *chatgpt_operator_checklist(),
     ]

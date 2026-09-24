@@ -525,9 +525,9 @@ def _validate_home_boundary(home: Path) -> None:
 def _validate_existing_secret_tree(root: Path) -> None:
     secrets = root / "secrets"
     if root.exists() or root.is_symlink():
-        _validate_owned_path(root, directory=True, mode=0o700, label="Helmet state directory")
+        _validate_owned_path(root, directory=True, mode=0o700, label="Hermes Helmet state directory")
     if secrets.exists() or secrets.is_symlink():
-        _validate_owned_path(secrets, directory=True, mode=0o700, label="Helmet secrets directory")
+        _validate_owned_path(secrets, directory=True, mode=0o700, label="Hermes Helmet secrets directory")
 
 
 def _validate_helmet_managed_paths(home: Path, *, extra_paths: tuple[Path, ...] = ()) -> None:
@@ -721,7 +721,7 @@ def run_setup(
         "status": "incomplete",
         "stage": "skills",
         "fingerprint": fingerprint,
-        "recovery": "rerun hermes-helmet setup with the same answers",
+        "recovery": "rerun helmet setup with the same answers",
     }
     _atomic_write(state_path, json.dumps(incomplete_state, indent=2, sort_keys=True) + "\n", 0o600)
     try:

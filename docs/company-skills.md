@@ -5,8 +5,8 @@ are two separate boundaries:
 
 | Boundary | What | Install path | Writes where |
 | --- | --- | --- | --- |
-| Captain / orchestrator | Bundled skills `helmet-issue`, `helmet-epic`, `setup-helmet` | Explicit setup only: `hermes-helmet setup` / `hermes-helmet install-skills` | Host agent skill dirs (Codex / Claude Code / Hermes) under an optional `--prefix` |
-| Executor / company pack | Adopter-owned skills (for example `repo-bootstrap`) | Optional runtime/setup import: `hermes-helmet import-company-skills` | **Hermes-owned** persistent state only (`$HERMES_HOME/hermes-helmet/company-skills` by default) |
+| Captain / orchestrator | Bundled skills `helmet-issue`, `helmet-epic`, `setup-helmet` | Explicit setup only: `helmet setup` / `helmet install-skills` | Host agent skill dirs (Codex / Claude Code / Hermes) under an optional `--prefix` |
+| Executor / company pack | Adopter-owned skills (for example `repo-bootstrap`) | Optional runtime/setup import: `helmet import-company-skills` | **Hermes-owned** persistent state only (`$HERMES_HOME/hermes-helmet/company-skills` by default) |
 
 Executor packs **cannot** grant review or merge authority. Reserved Captain
 skill names (`helmet-issue`, `helmet-epic`, `setup-helmet`) are rejected if they
@@ -146,7 +146,7 @@ pin and source URL fields, not as automatic imports.
 
 ## setup-helmet consumption
 
-`hermes-helmet skill-catalog --json` returns a stable document:
+`helmet skill-catalog --json` returns a stable document:
 
 - `status` — `skipped` / `imported` / …
 - `role_boundary` — `captain_setup_vs_executor_import`

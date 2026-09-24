@@ -8,7 +8,7 @@ OpenViking (when present) remains **operational working context**, not governed
 truth. Promotion from OpenViking into FAVA Trails is an **explicit** decision
 that leaves a governed trail — never automatic copying.
 
-Helmet does **not** reimplement FAVA governance. Use the canonical contracts:
+Hermes Helmet does **not** reimplement FAVA governance. Use the canonical contracts:
 
 | Contract | Pin (H7 inspected baseline) |
 | --- | --- |
@@ -24,7 +24,7 @@ Inspected baseline: `10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7` (0.7.0, MCP 2.2).
 - Ordinary Captain and executor principals with distinct `FAVA_TRAILS_AGENT_ID`
   values and one shared company scope.
 - Owner-only principal config files (mode `0600`) that never embed API keys.
-- `hermes-helmet doctor` offline checks (and optional live `fava-trails doctor`).
+- `helmet doctor` offline checks (and optional live `fava-trails doctor`).
 - A hermetic governed lifecycle demo on the **accepted FAVA engine**: draft
   isolation, proposal, Trust Gate approve/reject, frozen approved content,
   supersession/provenance, approved shared recall, and explicit OpenViking→FAVA

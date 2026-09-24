@@ -117,38 +117,38 @@ or issue does not satisfy its unfinished outcome.
 
 ## Commands
 
-Prefer the installed **`hermes-helmet`** console script.
+Prefer the installed **`helmet`** console script.
 
 ```sh
 # One truthful epic pass
-hermes-helmet epic EPIC_URL \
+helmet epic EPIC_URL \
   --config /path/to/policy.json \
   --accept-graph \
   --host-continuation cron|session|none|unknown
 
 # Graph/status only (no child dispatch)
-hermes-helmet epic EPIC_URL --config policy.json --no-dispatch --accept-graph
+helmet epic EPIC_URL --config policy.json --no-dispatch --accept-graph
 
 # After children/edges change underneath a run
-hermes-helmet epic EPIC_URL --config policy.json --accept-graph
+helmet epic EPIC_URL --config policy.json --accept-graph
 
 # Read-oriented status buckets
-hermes-helmet epic-status EPIC_URL --config policy.json
-hermes-helmet epic-status EPIC_URL --config policy.json --json
+helmet epic-status EPIC_URL --config policy.json
+helmet epic-status EPIC_URL --config policy.json --json
 
 # Optional explicit child seed (still requires Parent → epic)
-hermes-helmet epic EPIC_URL --child https://github.com/org/repo/issues/N
+helmet epic EPIC_URL --child https://github.com/org/repo/issues/N
 ```
 
 From a checkout before install: `PYTHONPATH=src python -m hermes_helmet.cli …`.
-Installed copies must use `hermes-helmet`.
+Installed copies must use `helmet`.
 
 Install skill copies:
 
 ```sh
-hermes-helmet install-skills --target codex
-hermes-helmet install-skills --target claude
-hermes-helmet install-skills --target hermes
+helmet install-skills --target codex
+helmet install-skills --target claude
+helmet install-skills --target hermes
 ```
 
 ## Procedure
@@ -188,14 +188,14 @@ Buckets (always re-read GitHub + child checkpoints before acting):
 
 1. Ready frontier = ready children, capped by `max_parallelism - active`.
 2. Default: continue independent branches when another fails/blocks.
-3. For each frontier URL invoke `helmet-issue` helpers (`hermes-helmet issue` /
+3. For each frontier URL invoke `helmet-issue` helpers (`helmet issue` /
    `run_preflight_and_adopt`) with epic body for merge inheritance.
 4. Never pass the epic root URL to helmet-issue dispatch.
 
 ### 5. STATUS + CLOSEOUT
 
 ```sh
-hermes-helmet epic-status EPIC_URL --config policy.json
+helmet epic-status EPIC_URL --config policy.json
 ```
 
 Leave the epic **open** by default. Report completed/active/ready/blocked/failed/
@@ -208,7 +208,7 @@ in session/Kanban closeout when you stop.
 
 | Host capability | Behavior |
 | --- | --- |
-| managed process wait | For each active child (bounded by `max_parallelism`), keep one `hermes-helmet wait CHILD_URL --timeout-seconds 1800` process handle; rerun the epic pass after the first meaningful wake |
+| managed process wait | For each active child (bounded by `max_parallelism`), keep one `helmet wait CHILD_URL --timeout-seconds 1800` process handle; rerun the epic pass after the first meaningful wake |
 | cron / scheduler | Fallback when managed waiting cannot resume the host; re-invoke `helmet-epic EPIC_URL` until children settle |
 | long session without worker wait | Loop with bounded backoff; do not repeatedly read unchanged state |
 | none / unknown | One truthful pass, `--one-pass-only`, report limitation |
@@ -234,7 +234,7 @@ to watch the waiter. Do not use model-managed sleeps or a shell polling loop.
 
 ## Verification checklist
 
-- [ ] `hermes-helmet epic` preflight passes only as Captain
+- [ ] `helmet epic` preflight passes only as Captain
 - [ ] Root never receives dispatch_label
 - [ ] Body fallback Parent / Blocked-by links validate; cycles rejected
 - [ ] Linear graphs invoke helmet-issue in dependency order

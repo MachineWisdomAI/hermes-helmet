@@ -20,6 +20,10 @@ owner-gated promotion.
 
 ## Codex runtime
 
+This historical candidate uses `hermes-helmet` in its exact command receipts.
+Keep that spelling when recording evidence for the bound image; the current
+source's `helmet` alias does not change the receipt contract or older binaries.
+
 Runtime dogfood of the skill loop is Codex. Static validation still covers
 Codex, Claude, and Hermes skill install targets. Claude Code and Hermes-host
 runtime acceptance are **not** required for this candidate.
@@ -79,7 +83,8 @@ A whole-line `Merge when clean: yes` directive is the only unattended grant.
 
 ## Evidence
 
-Validate a secret-free receipt against the bound candidate. `--bound` is the
+Use the current-source CLI below to validate a secret-free receipt against the
+bound candidate. `--bound` is the
 owner-selected pin; `--policy` supplies version-2 Captain and repository
 authority. `--head` is required and must equal the named PR's live
 head. Command, observation, epic, dispatch, and GitHub claims are read from
@@ -88,7 +93,7 @@ the trusted `github.json` snapshot, including independently fetched prior-repair
 PRs named by that snapshot; there is no unauthenticated local PR/head bypass.
 
 ```sh
-hermes-helmet dogfood-evidence config/dogfood-evidence.example.json \
+helmet dogfood-evidence config/dogfood-evidence.example.json \
   --bound config/dogfood-bound.json \
   --policy config/policy.example.json \
   --receipts config/dogfood-receipts \

@@ -1,6 +1,16 @@
 # Contributing to Hermes Helmet
 
-Thanks for helping keep the public Captain-and-Crew control loop portable.
+Help teams carry delegated software work through implementation, review,
+repair, and acceptance. Contributions to Hermes Helmet can improve setup,
+make a handoff clearer, or repair a defect in the shared workflow.
+
+## Report an experience or propose a change
+
+Open an issue with the task you attempted, what you expected, and what happened.
+For setup problems, include the command and relevant diagnostic output with
+secrets removed. For workflow problems, identify the step where work stopped
+or lost its connection to the issue or pull request. Use the
+[security policy](SECURITY.md) for vulnerability reports.
 
 ## Requirements
 
@@ -26,7 +36,7 @@ scripts/verify.sh
 
 ## Public vs private
 
-Reusable Helmet behavior lives in this repository. Concrete company logins,
+Reusable Hermes Helmet behavior lives in this repository. Concrete company logins,
 checkouts, PATs, and private services belong in an adopter overlay; see
 [docs/private-overlay.md](docs/private-overlay.md). Optional OpenViking is
 AGPL-3.0; do not treat it as a minimum-runtime dependency.

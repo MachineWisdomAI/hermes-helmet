@@ -7,7 +7,7 @@
   "official_plugin": {
     "harness": "codex",
     "name": "openviking-memory",
-    "note": "Install the official OpenViking Codex memory plugin against this ovcli.conf. Helmet does not ship a duplicate Codex MCP adapter. Shared company markers use Helmet CLI write-marker or shared-proof, not plugin auto-capture.",
+    "note": "Install the official OpenViking Codex memory plugin against this ovcli.conf. Hermes Helmet does not ship a duplicate Codex MCP adapter. Shared company markers use Hermes Helmet CLI write-marker or shared-proof, not plugin auto-capture.",
     "peer_header": "X-OpenViking-Actor-Peer"
   },
   "required_role": "user",

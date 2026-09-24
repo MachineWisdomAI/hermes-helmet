@@ -1,31 +1,66 @@
 # Hermes Helmet
 
-**Give your coding agent its own identity. Keep review and merge authority with you.**
+**An open-source software factory for teams using coding agents.**
 
-Hermes Helmet turns GitHub issues into implementation, review, and repair work
-for [Hermes Agent](https://github.com/NousResearch/hermes-agent). The worker uses
-its own GitHub account, credentials, container, and checkout. A human-directed
-Captain reviews its pull requests from a separate checkout and controls merging.
-The worker does not receive the Captain's credentials.
+Hermes Helmet keeps delegated software work connected from a GitHub issue
+through implementation, review, repair, and acceptance. Set the direction,
+follow progress, and return when the work needs your judgment. The next step
+continues from the task, branch, and review already recorded.
 
-```text
-You / Captain                         Hermes worker
-Your GitHub identity                  Its own GitHub identity
-Scope work, review, authorize merge → Implement, test, open a PR
-Review the PR                       → Repair the same PR
-Merge when authorized                 Never merge
-```
+If your team maintains those handoffs with internal scripts and procedures,
+Hermes Helmet gives you a shared workflow to operate and adapt. It builds on
+[Hermes Agent](https://github.com/NousResearch/hermes-agent), Hermes Kanban,
+and GitHub, with separate worker authority and a configurable model provider.
 
-This is the first **Apache-2.0 public source preview**, published September 23,
-2026. It includes the working control loop, setup, issue and epic orchestration,
-and portable skills developed through real repository work. Read the
-[preview notes and known limitations](docs/public-preview.md).
+The name evokes the mythical helmet of Hermes, the Greek messenger god.
+The product name is **Hermes Helmet**; the short CLI command is **`helmet`**.
 
-## Start here
+## Follow one issue through review and repair
 
-You need Docker Compose, Python 3.11+, a separate GitHub account/token for your
-worker, and credentials for your chosen model provider. Clone this repository
-and install the CLI in a virtual environment:
+1. **Delegate a bounded issue.** Hermes Helmet links an eligible GitHub issue
+   to a worker task in Hermes Kanban.
+2. **Implement and open a pull request.** The Hermes worker writes and tests
+   the change under its own GitHub account, then links the pull request to its task.
+3. **Review the result.** The Captain reviews the current change from a separate
+   checkout. A trusted review that requests a repair sends the worker back to
+   the same branch and pull request, where it reads the feedback from GitHub.
+4. **Accept under your policy.** The Captain checks the result and handles an
+   authorized merge. A completed implementation task alone does not mean the
+   pull request has been accepted.
+
+For a small bug fix, you can follow the issue, worker assignment, pull request,
+review, and any repair without reconstructing the task in a new conversation.
+GitHub holds the code, review, checks, and merge record; the board shows worker
+assignments. Larger efforts use dependent issues and bounded parallel work.
+
+## Who runs the work?
+
+You set the outcome and authority policy. The **Captain** is the coordination
+and review role on your behalf: a coding-agent host runs the bundled
+`helmet-issue` and `helmet-epic` skills. The **worker** is Hermes Agent running
+in Docker with its own GitHub credentials and checkout. See
+[Captain and Crew](docs/captain-and-crew.md) for the operating model.
+
+Captain and worker use separate GitHub accounts. The worker implements,
+opens pull requests, and repairs them; it never merges. The repository allowlist
+controls where Hermes Helmet dispatches work. GitHub permissions determine
+what each account can actually access. The worker never receives Captain
+credentials. See the [authority configuration](docs/authority-schema.md).
+
+The Captain host must remain able to execute or resume the workflow.
+`helmet wait` follows changes; it cannot wake an application that has stopped.
+
+## Try the public preview
+
+The [September 23, 2026 source preview](https://github.com/MachineWisdomAI/hermes-helmet-oss/releases/tag/preview-2026-09-23)
+provides Apache-2.0 source, an installable CLI, and portable Captain skills.
+The runtime builds from source. Read the
+[preview notes and known limitations](docs/public-preview.md), including the
+inherited container findings and current integration coverage.
+
+You need Docker Compose, Python 3.11+, a separate GitHub account and token for
+the worker, access to your chosen model provider, and a Captain host for
+coordination and review. Install from the current source:
 
 ```sh
 git clone https://github.com/MachineWisdomAI/hermes-helmet-oss.git
@@ -33,146 +68,87 @@ cd hermes-helmet-oss
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
-hermes-helmet --help
+helmet --help
 ```
 
-The ExampleCo fixture uses `example-captain` and `example-agent`; replace
-those identities and its repository entries with your own.
+The Python package remains `hermes-helmet`. Current source installs both
+`helmet` and the compatible `hermes-helmet` command. The dated preview wheel
+predates the short command and uses `hermes-helmet`.
 
-Follow the [quickstart](docs/quickstart.md) to configure identities, repositories,
-provider access, and the Docker runtime. The documented runtime builds from
-source; no access to a private image registry is required.
+Follow the [quickstart](docs/quickstart.md) to configure your identities,
+repositories, model access, and Docker runtime. The ExampleCo fixture uses
+`example-captain` and `example-agent`; replace these identities and its
+repository entries with your own. Start with one small issue and follow its
+linked task and pull request through review and acceptance.
 
-OpenViking working memory, FAVA Trails governed decisions, and external skill
-packs are optional. The core works without a private company repository or
-private toolkit. Bundled Captain skills are maintained in `skills/` and packaged
-from that single source.
+The bundled Captain skills install into Codex, Claude Code, and Hermes.
+The preview has been exercised through the Codex workflow; the other skill
+targets have installation and static validation. See the
+[single-issue guide](docs/helmet-issue.md) for commands and status fields.
 
-## Why separate identities?
+## Choose the model, retain the workflow
 
-A pull request should show which agent wrote it and which person accepted it.
-Giving the worker its own credentials and workspace makes that distinction
-visible and lets you restrict its access independently. Repository policy limits
-where Helmet dispatches work; GitHub permissions remain the actual access ceiling.
+The Hermes executor's provider and model are configurable. You can retain task
+records, review practices, and authority policy while changing that choice.
+Hosted providers and compatible local endpoints are documented in
+[provider and model configuration](docs/model-lanes.md).
 
-The Captain-and-Crew model combines a named human owner, bounded worker tasks,
-visible GitHub reviews, same-PR repairs, and explicit merge policy. See the
-[operating model](docs/captain-and-crew.md) and
-[authority contract](docs/authority-schema.md).
+Local inference requires a model server and suitable hardware; the public
+Compose stack does not start that server. Provider access, compute, retries,
+and review contribute to operating cost.
 
-The [Blueprint Alliance white paper](https://www.okta.com/content/dam/resources/en_us/whitepapers/Blueprint%20Alliance%20Whitepaper-Sep18-Final.pdf)
-published during Oktane 2026 emphasizes distinct agent identities and traceable
-delegation. Helmet applies that principle to a concrete coding workflow. It is
-an independent project; this preview does not implement Okta Agent SSO or claim
-Blueprint certification.
+## Add integrations when you need them
 
-## Captain orchestration (helmet-issue / helmet-epic)
+The core runs without a private company repository, private toolkit, or
+external skill pack. These integrations are optional:
 
-```sh
-PYTHONPATH=src python3 -m hermes_helmet.cli install-skills
-PYTHONPATH=src python3 -m hermes_helmet.cli issue ISSUE_URL --config config/policy.json
-PYTHONPATH=src python3 -m hermes_helmet.cli status ISSUE_URL --config config/policy.json
-PYTHONPATH=src python3 -m hermes_helmet.cli epic EPIC_URL --config config/policy.json --accept-graph
-PYTHONPATH=src python3 -m hermes_helmet.cli epic-status EPIC_URL --config config/policy.json
-```
+| Integration | What it adds |
+| --- | --- |
+| [FAVA Trails](docs/fava-trails.md) | Governed decisions and observations, with approval and lineage |
+| [OpenViking](docs/openviking.md) | Working context across clients, using official memory plugins where supported; optional AGPL-3.0 service |
+| [Company skill packs](docs/company-skills.md) | Adopter-owned instructions imported into Hermes-owned state |
+| [Private configuration](docs/private-overlay.md) | Company identities, credentials, and deployment wiring outside the public source |
 
-See [docs/helmet-issue.md](docs/helmet-issue.md),
-[docs/helmet-epic.md](docs/helmet-epic.md), [docs/setup-helmet.md](docs/setup-helmet.md),
-`skills/helmet-issue/SKILL.md`, `skills/helmet-epic/SKILL.md`, and
-`skills/setup-helmet/SKILL.md`.
+Promotion from working context into FAVA Trails is explicit. Captain skills
+install separately from worker skill packs. Their canonical source is `skills/`;
+the Python package includes those same assets.
 
-## Validate
+## Develop and contribute
+
+Try a bounded issue, then [report where setup or a handoff became unclear](https://github.com/MachineWisdomAI/hermes-helmet-oss/issues).
+Include the command, expected result, and observed behavior with secrets removed.
+For code and documentation changes, follow [CONTRIBUTING.md](CONTRIBUTING.md).
+Report vulnerabilities through the [security policy](SECURITY.md).
+
+Run the repository checks before submitting a change:
 
 ```sh
 scripts/verify.sh
 ```
 
-## Development image
+Build a development image from the pinned Hermes Agent base:
 
 ```sh
 scripts/build-dev-image.sh
-# optional publish:
-# HERMES_HELMET_PUSH=1 scripts/build-dev-image.sh
 ```
 
-Default base is the immutable official release
-`nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294`
-(Hermes Agent 0.21.3), shared by `deploy/Dockerfile`, Compose, and the build
-script. The script writes `dist/image-identity.json` with the source commit and
-image id/digest for wrapper consumers.
+The build records its source and image identity in `dist/image-identity.json`.
+See [container candidate tooling](docs/release-candidate.md) for image evidence
+and promotion requirements.
 
-## Control loop
+## Documentation
 
-See [docs/control-loop.md](docs/control-loop.md).
-
-## Authority contract
-
-See [docs/authority-schema.md](docs/authority-schema.md) and
-[docs/private-overlay.md](docs/private-overlay.md). The ExampleCo fixture lives
-at `config/fixtures/exampleco/policy.json` and is mirrored by
-`config/policy.example.json`.
-
-## Optional FAVA Trails (governed company brain)
-
-FAVA Trails is optional and outside the minimum runtime. Guided setup, doctor,
-and an accepted-engine lifecycle demo (requires installed fava-trails + jj):
-
-```sh
-PYTHONPATH=src python3 -m hermes_helmet.cli doctor --config config/policy.json
-PYTHONPATH=src python3 -m hermes_helmet.cli fava setup --config config/policy.json --write-templates
-PYTHONPATH=src python3 -m hermes_helmet.cli fava lifecycle-demo --config config/policy.json
-```
-
-See [docs/fava-trails.md](docs/fava-trails.md). Canonical FAVA install and agent
-contracts are linked there (not copied). OpenViking remains distinct optional
-working context; promotion into FAVA is explicit.
-
-## Optional OpenViking working context
-
-OpenViking is optional AGPL-3.0 operational working context (not governed
-truth). Helmet templates owner-only client configs and doctor/shared-proof
-surfaces; Codex and Claude Code use the official OpenViking memory plugins
-instead of a Helmet-owned MCP adapter. See
-[docs/openviking.md](docs/openviking.md).
-
-```sh
-PYTHONPATH=src python3 -m hermes_helmet.cli doctor --config config/policy.json
-PYTHONPATH=src python3 -m hermes_helmet.cli openviking setup --config config/policy.json
-```
-
-## Optional model lanes
-
-Provider/model selection for the Hermes executor is independent of optional FAVA
-generation, OpenViking semantic generation, and embedding lanes. Local
-OpenAI-compatible endpoints are supported; declining them leaves the minimum
-runtime up. See [docs/model-lanes.md](docs/model-lanes.md).
-
-```sh
-PYTHONPATH=src python3 -m hermes_helmet.cli models setup --config config/policy.json
-```
-
-## Company skills
-
-Optional executor skill packs import into Hermes-owned state only. Captain
-skills install through an explicit setup action. See
-[docs/company-skills.md](docs/company-skills.md).
-
-## Public documents
-
-- [Captain and Crew](docs/captain-and-crew.md)
-- [Configuration reference](docs/authority-schema.md)
-- [Private overlay seam](docs/private-overlay.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [Code of conduct](CODE_OF_CONDUCT.md)
-- [Changelog](CHANGELOG.md)
+- [Setup and diagnostics](docs/setup-helmet.md)
+- [Single-issue orchestration](docs/helmet-issue.md)
+- [Dependent issues and epics](docs/helmet-epic.md)
+- [Control loop](docs/control-loop.md)
+- [Authority configuration](docs/authority-schema.md)
 - [Public preview and limitations](docs/public-preview.md)
-- [Container candidate tooling](docs/release-candidate.md)
-- [Third-party notices](NOTICE)
-- Generic agent guidance: [AGENTS.md](AGENTS.md)
+- [Changelog](CHANGELOG.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). OpenViking is an
-optional AGPL-3.0 service boundary; enabling it is an adopter choice and is
-not required to start Helmet. See [docs/openviking.md](docs/openviking.md).
+Hermes Helmet is licensed under Apache-2.0. See [LICENSE](LICENSE) and
+[NOTICE](NOTICE). OpenViking is an optional AGPL-3.0 service; enabling it is
+an adopter choice.

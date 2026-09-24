@@ -298,7 +298,7 @@ def validate_evidence(payload: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(image, Mapping):
         raise ReleaseCandidateError("image evidence is required")
     if image.get("repository") != IMAGE_REPOSITORY:
-        raise ReleaseCandidateError("image repository is not the private Helmet image")
+        raise ReleaseCandidateError("image repository is not the private Hermes Helmet image")
     _require_digest(image.get("digest"), label="image digest")
     platforms = tuple(image.get("platforms") or ())
     if platforms != PLATFORMS:

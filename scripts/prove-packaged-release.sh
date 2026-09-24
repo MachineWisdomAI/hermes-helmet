@@ -1,6 +1,6 @@
 #!/bin/sh
 # Install the packaged wheel outside PYTHONPATH=src and prove:
-# hermes-helmet setup, hermes-helmet doctor, hermes-helmet status,
+# helmet setup, helmet doctor, helmet status,
 # install-skills (setup-helmet, helmet-issue, helmet-epic), company path, quickstart.
 set -eu
 
@@ -37,7 +37,7 @@ fi
 VENV_PY="$WORK/venv/bin/python"
 "$VENV_PY" -m pip install --upgrade pip >/dev/null
 "$VENV_PY" -m pip install --no-deps "$WHEEL"
-CONSOLE="$WORK/venv/bin/hermes-helmet"
+CONSOLE="$WORK/venv/bin/helmet"
 
 # Force empty PYTHONPATH so checkout src/ cannot shadow the wheel.
 export PYTHONPATH=""
@@ -46,4 +46,4 @@ export PYTHONPATH=""
   --fixture-root "$ROOT" \
   --work "$WORK/proof"
 
-echo "packaged hermes-helmet setup, doctor, status, install-skills, company path, and quickstart passed"
+echo "packaged helmet setup, doctor, status, install-skills, company path, and quickstart passed"

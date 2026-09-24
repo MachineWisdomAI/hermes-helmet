@@ -1,6 +1,11 @@
 # Control loop
 
-Hermes Helmet extracts the proven GitHub-to-Hermes intake loop:
+Hermes Helmet links a GitHub issue to a Hermes Kanban task, the resulting pull
+request, and any repair requested during review. GitHub holds the development
+record; Kanban holds worker assignments. The poller keeps those links current
+so the worker can continue on the same change after feedback.
+
+The runtime handles intake and repair in five parts:
 
 1. **Issue intake** — poll allowlisted repositories for open issues carrying the
    configured dispatch label; create one Kanban root task per canonical issue URL.
@@ -29,12 +34,12 @@ Hermes Helmet extracts the proven GitHub-to-Hermes intake loop:
 Captain-side single-issue orchestration is layered on top without a second
 watcher:
 
-6. **helmet-issue** — portable skill + `hermes-helmet` CLI helpers that
+6. **helmet-issue** — portable skill + `helmet` CLI helpers that
    preflight Captain identity, adopt existing root tasks/PRs, wait for the
    worker PR, review each head, post formal GitHub findings, and apply the
    merge gate. Repair Kanban tasks remain owned exclusively by the H1 poller.
    See [helmet-issue.md](helmet-issue.md).
-7. **helmet-epic** — portable skill + `hermes-helmet epic` helpers that load a
+7. **helmet-epic** — portable skill + `helmet epic` helpers that load a
    parent/child dependency graph (native sub-issues when available, else
    explicit `Parent` / `Blocked by` body links), compute the ready frontier,
    and invoke helmet-issue with bounded parallelism. The epic root is never

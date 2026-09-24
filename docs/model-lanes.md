@@ -99,7 +99,7 @@ values in policy, CLI output, or model context. Live HTTP probes refuse
 credential-bearing cross-origin redirects.
 
 Changing an embedding model, dimension, or quantization during setup requires
-`--embedding-index-state` and `--reindex-confirmed`. Helmet compares the
+`--embedding-index-state` and `--reindex-confirmed`. Hermes Helmet compares the
 candidate read-only before probes and persists the new identity only after
 every required probe succeeds. Failed or unprobed setup leaves the stored
 fingerprint unchanged.
@@ -148,11 +148,11 @@ and embeddings unless each contract has been probed independently.
 ## Re-index and rollback
 
 Changing an embedding **model**, **dimension**, or **quantization** requires a
-deliberate re-index. Helmet refuses the change until `reindex_confirmed` is
+deliberate re-index. Hermes Helmet refuses the change until `reindex_confirmed` is
 set, and it does not persist the candidate until probes succeed. The previous
 fingerprint is retained so operators can restore a compatible preserved index
 or re-index with the old identity, then run
-`hermes-helmet models rollback-embedding --embedding-index-state PATH --index-restore-confirmed`
+`helmet models rollback-embedding --embedding-index-state PATH --index-restore-confirmed`
 to commit the prior fingerprint. The command does not re-embed production data
 and will not claim the live vectors match the old identity without that
 confirmation.
@@ -164,7 +164,7 @@ production data: never re-embed or delete the live store as part of a probe.
 
 `integrations.fava_trails` and `integrations.openviking` stay independent of
 model-lane selection. Omitting `model_lanes` (or omitting every optional lane)
-is the default ExampleCo fixture. Offline `hermes-helmet models setup` and
+is the default ExampleCo fixture. Offline `helmet models setup` and
 `doctor` then report optional lanes skipped and the control loop remains
 available. Live `doctor --live` still probes the always-selected Hermes
 executor before reporting success.
