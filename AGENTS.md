@@ -1,8 +1,13 @@
-# hermes-helmet - AI Agent Instructions
+# Hermes Helmet - AI Agent Instructions
 
 ## Project
 
-This repository is an agent control-loop software project.
+Hermes Helmet is an open-source software factory for teams using coding agents.
+It connects delegated work through implementation, review, repair, and acceptance.
+
+Use **Hermes Helmet** as the full product name in prose and user-facing text.
+The name evokes the mythical helmet of Hermes. Use `helmet` for the CLI;
+preserve package, module, skill, path, and configuration identifiers.
 
 ## Shared Operating Rules
 

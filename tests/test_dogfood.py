@@ -329,9 +329,9 @@ class VersionAndDocsTests(unittest.TestCase):
         self.assertNotRegex(docs, r"\bH11\b")
         self.assertNotRegex(docs, r"\bH13\b")
         changelog = _read("CHANGELOG.md")
-        unreleased = changelog.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
-        self.assertIn("dogfood", unreleased.casefold())
-        self.assertIn("0.1.0rc1", unreleased)
+        preview = changelog.split("## Public source preview", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("dogfood", preview.casefold())
+        self.assertIn("0.1.0rc1", preview)
 
     def test_example_evidence_validates_against_bound_manifest(self) -> None:
         path = ROOT / "config" / "dogfood-evidence.example.json"

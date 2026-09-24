@@ -1,9 +1,11 @@
 # Public source preview — September 23, 2026
 
-Hermes Helmet is an Apache-2.0 coding workflow built around separate human and
-agent identities. The worker implements under its own GitHub identity; the
-Captain reviews and decides whether to merge. This public preview releases the
-existing working core so others can use, inspect, and improve it.
+Hermes Helmet is an Apache-2.0 software factory for teams already using coding
+agents. It connects delegated work from a GitHub issue through implementation,
+review, repair, and acceptance. The Hermes worker implements under its own
+GitHub identity; the Captain coordinates, reviews, and handles merging under
+the human owner's policy. The public preview makes that workflow available
+for teams to operate and adapt.
 
 ## Included
 
@@ -19,9 +21,14 @@ existing working core so others can use, inspect, and improve it.
 
 Start with the [quickstart](quickstart.md). Install the CLI from this repository
 or the wheel attached to the dated public release. The Python distribution and
-CLI retain the name `hermes-helmet` and version `0.1.0rc1`; the public release tag
+CLI in that wheel use the name `hermes-helmet` and version `0.1.0rc1`; the public release tag
 `preview-2026-09-23` distinguishes this source publication. The complete source
 archive includes Docker configuration, tests, and documentation.
+
+Current source also installs the short `helmet` command. Both command names
+call the same CLI; the Python distribution remains `hermes-helmet`. When using
+the dated preview wheel, replace `helmet` in current examples with
+`hermes-helmet`, or install from current source to use the short command.
 
 This is a preview, with working deployments behind it, rather than a claim of
 universal installation coverage or fully unattended operation. The Captain host
@@ -36,8 +43,8 @@ five-task autonomy pilot has not been claimed.
 Separate identities make access and authorship attributable; they do not make
 arbitrary agent-generated code safe. Use a dedicated worker account, configure
 its GitHub permissions, and review changes before granting merge authority.
-A repository allowlist constrains Helmet's actions, not the token's capabilities
-outside Helmet. Do not mount personal or Captain credentials into the worker.
+A repository allowlist constrains Hermes Helmet's actions, not the token's capabilities
+outside Hermes Helmet. Do not mount personal or Captain credentials into the worker.
 
 ## Container builds
 
@@ -55,7 +62,7 @@ and image distribution can proceed independently of this source release.
 
 ## Source and contributions
 
-This is the public home for reusable Helmet development. It starts from the
+This is the public home for reusable Hermes Helmet development. It starts from the
 reviewed core at source revision `f8e4fce009905fac2211a0cd2b72f578b49636ef`, with
 publication documentation and repository/CI routing adjustments. Private company
 history, configuration, credentials, and skill packs are not included.

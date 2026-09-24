@@ -1,6 +1,6 @@
 ---
 name: Bug
-about: Unexpected reusable Helmet behavior
+about: Unexpected reusable Hermes Helmet behavior
 labels: []
 ---
 

@@ -88,7 +88,7 @@ if [ "$image_version" != "0.1.0rc1" ]; then
     exit 1
 fi
 
-# Report Hermes Agent version and confirm the Helmet package imports.
+# Report Hermes Agent version and confirm the Hermes Helmet package imports.
 version_out="$(
     docker exec --env GH_TOKEN= --env GITHUB_TOKEN= "$container_name" \
         sh -c 'hermes --version && /opt/hermes/.venv/bin/python -c "import hermes_helmet; print(hermes_helmet.__name__)"'

@@ -2,7 +2,15 @@
 
 Captain-side single-issue orchestration for Hermes Helmet.
 
-## Purpose
+## Follow an issue through acceptance
+
+Give the Captain one GitHub issue URL. It adopts an existing worker task or
+dispatches one, follows the linked pull request, reviews the current change,
+and requests repairs on that same pull request. The human owner's policy
+determines whether a clean result may be merged. After an interruption, the
+Captain resumes from its checkpoint and current GitHub state.
+
+## Review and resume behavior
 
 `helmet-issue` takes one GitHub issue URL and drives the resumable loop:
 
@@ -51,9 +59,9 @@ issue links remain discovery leads only — not ownership.
 | Surface | Role |
 | --- | --- |
 | `skills/helmet-issue/SKILL.md` | Portable skill (also packaged under `hermes_helmet/bundled_skills/`) |
-| `hermes-helmet issue ISSUE_URL` | Deterministic preflight/adopt/discover pass + checkpoint |
-| `hermes-helmet status ISSUE_URL` | Read-only status |
-| `hermes-helmet install-skills` | Install skill into host skill directories |
+| `helmet issue ISSUE_URL` | Deterministic preflight/adopt/discover pass + checkpoint |
+| `helmet status ISSUE_URL` | Read-only status |
+| `helmet install-skills` | Install skill into host skill directories |
 | H1 `github_issue_poller` | Sole creator of repair Kanban tasks |
 
 ## Checkpoint
@@ -66,7 +74,7 @@ command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional Captain→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,
 `dispatch-root`, `wait`) so an absent local ledger can still adopt worker truth
-without inventing a second queue. `hermes-helmet wait ISSUE_URL` holds one
+without inventing a second queue. `helmet wait ISSUE_URL` holds one
 bounded, read-only worker-side wait and returns a secret-free cursor plus a wake
 reason. A long-lived host keeps that process handle, runs one fresh issue pass
 after a meaningful wake, and avoids model-driven status loops. Exit `2` is a
@@ -82,12 +90,12 @@ not wake repeatedly.
 | Claude Code | `~/.claude/skills/helmet-issue/` |
 | Hermes | `~/.hermes/skills/hermes-helmet/helmet-issue/` |
 
-Static validation covers all three. Runtime dogfood of the skill loop is
-required in Codex only (private W3b).
+Installation and static validation cover all three targets. The preview's
+runtime workflow has been exercised through Codex.
 
 ## Status fields
 
-`hermes-helmet status` reports:
+`helmet status` reports:
 
 - root task id
 - pull request URL

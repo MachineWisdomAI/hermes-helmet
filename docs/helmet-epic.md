@@ -2,7 +2,12 @@
 
 Captain-side multi-issue (epic) orchestration for Hermes Helmet.
 
-## Purpose
+## Coordinate dependent issues
+
+Use an epic when a body of work spans several issues. The Captain identifies
+which issues are ready, runs independent work within the configured limit,
+and follows each child's implementation, review, and acceptance through
+`helmet-issue`. You retain the final closeout of the parent issue.
 
 `helmet-epic` takes one GitHub epic/parent issue URL and drives:
 
@@ -39,9 +44,9 @@ ambiguous multi-Parent sets.
 | Surface | Role |
 | --- | --- |
 | `skills/helmet-epic/SKILL.md` | Portable skill (also under `bundled_skills/`) |
-| `hermes-helmet epic EPIC_URL` | One truthful graph/frontier/child-invoke pass |
-| `hermes-helmet epic-status EPIC_URL` | Status buckets without child dispatch |
-| `hermes-helmet issue` | Per-child orchestration (invoked by epic) |
+| `helmet epic EPIC_URL` | One truthful graph/frontier/child-invoke pass |
+| `helmet epic-status EPIC_URL` | Status buckets without child dispatch |
+| `helmet issue` | Per-child orchestration (invoked by epic) |
 
 ## Checkpoint
 
@@ -55,7 +60,7 @@ until `--accept-graph`.
 
 ## Status buckets
 
-`hermes-helmet epic-status` reports:
+`helmet epic-status` reports:
 
 - completed
 - active
@@ -81,8 +86,8 @@ still stops each merge for explicit approval when no marker is present.
 | Claude Code | `~/.claude/skills/helmet-epic/` |
 | Hermes | `~/.hermes/skills/hermes-helmet/helmet-epic/` |
 
-Static validation covers all three. Runtime dogfood of the skill loop is
-required in Codex only (private follow-on).
+Installation and static validation cover all three targets. The preview's
+runtime workflow has been exercised through Codex.
 
 ## Related
 

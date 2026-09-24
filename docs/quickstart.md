@@ -1,19 +1,24 @@
 # Hermes Helmet quickstart
 
-This path starts the minimum control-loop runtime. It does **not** require
-WisdomHelm, WisdomLoop, `wise-agents-toolkit`, FAVA Trails, OpenViking, Signal,
-or any external skill pack. Bundled Captain skills (`skills/setup-helmet`,
-`skills/helmet-issue`, `skills/helmet-epic`) are optional on the Captain host.
+Start with one bounded GitHub issue. This guide sets up the Hermes worker,
+links the issue to its Kanban assignment, and introduces the Captain commands
+for following the pull request through review and acceptance.
+
+The worker runs in Docker. The Captain runs in your coding-agent host with a
+separate GitHub identity. FAVA Trails, OpenViking, private company repositories,
+and external skill packs are optional. The bundled `setup-helmet`,
+`helmet-issue`, and `helmet-epic` skills provide the Captain workflow.
 
 ## Prerequisites
 
 - Docker and Docker Compose v2
 - A GitHub token for the worker identity named in your policy
   (`worker_github_login` / H1 `github_identity`)
-- Python 3.11+ only if you run the hermetic tests on the host
+- Python 3.11+ for the host CLI and tests
+- Model-provider access for the Hermes worker
 - For Captain orchestration: a separate Captain GitHub identity and the
-  portable `helmet-issue` / `helmet-epic` skills (Codex dogfood; Claude/Hermes
-  install+static)
+  portable `helmet-issue` / `helmet-epic` skills. The preview has been exercised
+  through Codex; Claude Code and Hermes have installation and static validation.
 
 The development image defaults pin the official Hermes Agent base
 `nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294`
@@ -22,13 +27,21 @@ use `latest` or `main`.
 
 ## Install the CLI
 
-From a clone of the public repository:
+Clone and install the current public source:
 
 ```sh
+git clone https://github.com/MachineWisdomAI/hermes-helmet-oss.git
+cd hermes-helmet-oss
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
+helmet --help
 ```
+
+The help output lists the Captain commands. Current source installs `helmet`
+and its compatible alias `hermes-helmet`; the Python package is named
+`hermes-helmet`. If you installed the September 23 preview wheel, use
+`hermes-helmet` in place of `helmet` in these examples.
 
 ## 1. Configure
 
@@ -37,8 +50,8 @@ For a new adopter, start from the secret-free setup questionnaire:
 ```sh
 cp config/setup.answers.example.json /private/path/setup.answers.json
 # replace every ExampleCo identity, repository, checkout, and provider value
-hermes-helmet setup --answers /private/path/setup.answers.json --json
-hermes-helmet doctor --config ~/.hermes-helmet/policy.json --home ~ --live --json
+helmet setup --answers /private/path/setup.answers.json --json
+helmet doctor --config ~/.hermes-helmet/policy.json --home ~ --live --json
 ```
 
 Setup-state doctor is a pre-dispatch gate. With `--home` it performs the live
@@ -56,10 +69,10 @@ gstack remain pinned recommendations and are never installed by setup.
 The default live model probe supports OpenAI. Another provider must expose an
 OpenAI-compatible endpoint configured as
 `model_lanes.hermes_executor.base_url`; unsupported providers fail before setup
-creates labels or writes state. Helmet state and secrets directories must be
+creates labels or writes state. Hermes Helmet state and secrets directories must be
 owned by the current user with mode `0700`, credential files must be regular
 owner-owned `0600` files, and symlinks are rejected. Pre-dispatch doctor checks
-every existing component of the supplied home, Helmet state/generated/secret
+every existing component of the supplied home, Hermes Helmet state/generated/secret
 paths, and Codex/Claude/Hermes skill roots and destinations is
 current-user-owned, non-symlink, and not group/other writable. It also checks every configured origin fetch and
 push URL against the repository slug, admitting only credential-free canonical
@@ -147,6 +160,10 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   /opt/hermes/.venv/bin/python -m hermes_helmet \
   --config /opt/data/github-issue-poller/policy.json
 ```
+
+An eligible issue should now have one linked Kanban root task. Repeating intake
+for that issue reuses the existing task. Follow the worker's linked pull request
+when implementation finishes; task completion alone does not accept or merge it.
 
 ## 5. Captain-side helmet-issue / helmet-epic (optional host)
 

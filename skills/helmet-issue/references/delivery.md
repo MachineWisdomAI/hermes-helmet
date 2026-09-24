@@ -1,6 +1,6 @@
 # Review and recovery decisions
 
-Use this guidance when reviewing or recovering a Helmet task. It ships with the
+Use this guidance when reviewing or recovering a Hermes Helmet task. It ships with the
 skill and needs no external planning, review, or company skill pack. The issue,
 repository rules, authority policy, and explicit operator decisions define the
 accepted outcome. Additional reviewer preferences do not redefine it.
@@ -70,7 +70,7 @@ with task-management authority performs the replacement:
    worker writes the implementation in its own checkout. Reuse useful tests
    and interfaces, not the failed mechanism's accumulated patches.
 
-Helmet's portable issue/transport API does not currently provide a cancellation
+Hermes Helmet's portable issue/transport API does not currently provide a cancellation
 verb. Inspect the deployed controller's supported interface. If old execution
 or future repair dispatch cannot be safely stopped, keep the prepared successor
 undispatched and report that exact blocker. Do not invent a cancel command,

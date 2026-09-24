@@ -1,11 +1,14 @@
 # Captain and Crew
 
-Hermes Helmet is a portable Captain-and-Crew operating model. A named human
-Captain stays on the helm. A separately identified executor works in allowlisted
-repositories under a single adopter-owned authority policy.
+Hermes Helmet is an open-source software factory that keeps delegated work
+connected through implementation, review, repair, and acceptance. You set the
+outcome and policy. The Captain coordinates and reviews on your behalf, while
+a separate Hermes worker implements and repairs changes in allowed repositories.
 
-This document describes reusable Helmet behavior. It does not require a private
-WisdomHelm overlay, WisdomLoop, Signal, or any other adopter-specific service.
+The Captain runs through bundled skills in a coding-agent host, such as Codex.
+The host uses the Captain GitHub identity and a checkout separate from the
+worker's. The human owner determines what may be delegated and merged. These
+roles share one authority policy; the worker receives only its own credentials.
 
 ## Roles
 
@@ -60,7 +63,7 @@ review, required checks, and mergeability pass. Private-plan `local-only` worker
 completion does not treat GitHub `mergeable_state=clean` as those required checks.
 
 GitHub remains authoritative for issues, pull requests, checks, reviews, heads,
-and merge state. Helmet does not copy review prose into Kanban and does not
+and merge state. Hermes Helmet does not copy review prose into Kanban and does not
 start repairs from check failure alone.
 
 ## Delivery contract
@@ -88,7 +91,7 @@ It installs with the Captain skill and is available without this source
 checkout or any external review, planning, or company skill pack. Optional
 skills can help apply the contract; their installation is not an acceptance gate.
 
-One `hermes-helmet wait` process and cursor per active child owns unchanged
+One `helmet wait` process and cursor per active child owns unchanged
 waiting. The Captain resumes for meaningful changes or a bounded timeout,
 reconciles once, and continues pending work. Repeated model turns announcing an
 unchanged waiter waste quota; an extra watcher does not improve continuity.

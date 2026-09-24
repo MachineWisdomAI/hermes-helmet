@@ -165,7 +165,7 @@ def validate_skill_tree(skill_dir: Path) -> None:
     # Portable entrypoints must not require a checkout-local module path alone.
     if "python -m hermes_helmet" in text and "hermes-helmet" not in text:
         raise InstallError(
-            f"skill must document the hermes-helmet console script for portability: {skill_md}"
+            f"skill must document the helmet console script for portability: {skill_md}"
         )
 
 

@@ -72,7 +72,7 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 
 ## Commands (deterministic helpers)
 
-Prefer the installed **`hermes-helmet`** console script (works without a source
+Prefer the installed **`helmet`** console script (works without a source
 checkout). Override binaries with `HERMES_HELMET_GH` / `HERMES_HELMET_HERMES` or
 `--gh` / `--hermes`. Optional worker transport: `HERMES_HELMET_WORKER_RUNTIME` or
 `--worker-runtime` (verbs `ledger-root`, `ledger-watch`, `dispatch-root`, `wait`) so
@@ -82,33 +82,33 @@ structured codes only (no raw stderr, no review prose).
 
 ```sh
 # Read-only status (no mutation)
-hermes-helmet status ISSUE_URL --config /path/to/policy.json
+helmet status ISSUE_URL --config /path/to/policy.json
 
 # One truthful pass: Captain preflight, adopt/dispatch, PR discovery, checkpoint
-hermes-helmet issue ISSUE_URL \
+helmet issue ISSUE_URL \
   --config /path/to/policy.json \
   --host-continuation cron|session|none|unknown \
   --one-pass-only   # when host cannot recur
 
 # Discovery only (no dispatch label, no root-task create)
-hermes-helmet issue ISSUE_URL --config /path/to/policy.json --no-dispatch
+helmet issue ISSUE_URL --config /path/to/policy.json --no-dispatch
 
 # After posting a formal GitHub review on the exact live head, record outcome
-hermes-helmet issue ISSUE_URL \
+helmet issue ISSUE_URL \
   --config /path/to/policy.json \
   --record-review clean|changes_requested|blocked \
   --head-sha HEAD_SHA
 ```
 
 From a checkout before install, `PYTHONPATH=src python -m hermes_helmet.cli …`
-is an equivalent developer path; installed copies must use `hermes-helmet`.
+is an equivalent developer path; installed copies must use `helmet`.
 
 Install skill copies into host directories:
 
 ```sh
-hermes-helmet install-skills --target codex
-hermes-helmet install-skills --target claude
-hermes-helmet install-skills --target hermes
+helmet install-skills --target codex
+helmet install-skills --target claude
+helmet install-skills --target hermes
 ```
 
 ## Procedure
@@ -117,7 +117,7 @@ hermes-helmet install-skills --target hermes
 
 1. Load authority policy version 2 (`captain_github_login`, `worker_github_login`,
    repositories, labels, budgets, merge markers).
-2. Run `hermes-helmet issue ISSUE_URL` (or the Python helper) so identity,
+2. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
    allowlist, open issue state, ready/dispatch labels, and budgets are checked.
 3. Stop with precise status on authority mismatch, closed issue, non-allowlisted
    repo, missing labels, or exhausted budget.
@@ -208,7 +208,7 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
 ### 7. Status and closeout
 
 ```sh
-hermes-helmet status ISSUE_URL --config policy.json
+helmet status ISSUE_URL --config policy.json
 ```
 
 Reports root task, PR, reviewed head, repair state, merge gate, blocker, and
@@ -227,7 +227,7 @@ Leave the six-question audit in the session/Kanban closeout when you stop:
 
 | Host capability | Behavior |
 | --- | --- |
-| managed process wait | Run one `hermes-helmet wait ISSUE_URL --timeout-seconds 1800`; keep its process handle; after exit 0, run one fresh `helmet-issue` pass and wait again only if still pending |
+| managed process wait | Run one `helmet wait ISSUE_URL --timeout-seconds 1800`; keep its process handle; after exit 0, run one fresh `helmet-issue` pass and wait again only if still pending |
 | cron / scheduler | Fallback when the host cannot keep a process handle: re-invoke `helmet-issue ISSUE_URL` on interval until terminal |
 | long session without worker wait | Fallback with bounded backoff; do not spend turns repeatedly reading unchanged state |
 | none / unknown | One truthful pass, `--one-pass-only`, report limitation |
@@ -263,11 +263,11 @@ Kanban. It does not dispatch, review, repair, merge, or create a second watcher.
 
 ## Verification checklist
 
-- [ ] `hermes-helmet issue` preflight passes only as Captain
+- [ ] `helmet issue` preflight passes only as Captain
 - [ ] Reinvocation adopts the same root task and PR
 - [ ] Open worker PR discovered without human-supplied PR URL
 - [ ] Review anchored to exact head; formal GitHub review posted when actionable
 - [ ] No Kanban repair created by this skill
-- [ ] `hermes-helmet status` matches checkpoint + live GitHub without writes
+- [ ] `helmet status` matches checkpoint + live GitHub without writes
 - [ ] Merge gate respects default vs `Merge when clean: yes`
 - [ ] One-pass hosts report continuation limitation honestly

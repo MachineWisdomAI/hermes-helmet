@@ -2057,7 +2057,7 @@ def import_company_skills_from_policy(
 def captain_install_boundary_message() -> str:
     return (
         "Captain/orchestrator bundled skills install only through explicit "
-        "setup action (hermes-helmet install-skills). Executor company packs "
+        "setup action (helmet install-skills). Executor company packs "
         "import only into Hermes-owned persistent state and cannot grant "
         "review or merge authority."
     )

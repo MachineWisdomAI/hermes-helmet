@@ -42,8 +42,8 @@ def _section(ok: bool, message: str, **extra: object) -> dict[str, object]:
 def _file_modes(root: Path, paths: tuple[Path, ...]) -> dict[str, object]:
     findings: list[str] = []
     for directory, label in (
-        (root, "Helmet state directory"),
-        (root / "secrets", "Helmet secrets directory"),
+        (root, "Hermes Helmet state directory"),
+        (root / "secrets", "Hermes Helmet secrets directory"),
     ):
         try:
             _validate_owned_path(directory, directory=True, mode=0o700, label=label)
@@ -201,7 +201,7 @@ def signal_report(policy: Policy) -> dict[str, object]:
     if not policy.integrations.signal:
         return _section(
             True,
-            "Signal integration declined; Helmet operates without it",
+            "Signal integration declined; Hermes Helmet operates without it",
             enabled=False,
             skipped=True,
         )

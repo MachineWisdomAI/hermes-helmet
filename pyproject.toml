@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermes-helmet"
 version = "0.1.0rc1"
-description = "Portable GitHub-to-Hermes control loop"
+description = "Open-source software factory for coding agents: delegation, review, and repair"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -15,6 +15,7 @@ authors = [{ name = "Machine Wisdom AI" }]
 hermes-helmet-poller = "hermes_helmet.github_issue_poller:main"
 hermes-helmet-install-poller = "hermes_helmet.install_poller:main"
 hermes-helmet = "hermes_helmet.cli:main"
+helmet = "hermes_helmet.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

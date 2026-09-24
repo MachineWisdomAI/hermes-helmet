@@ -27,9 +27,9 @@ runtime acceptance are **not** required for this candidate.
 Codex must repeat, and the receipt must record argv plus an output digest for
 each of:
 
-- clean-machine `hermes-helmet setup`
-- `hermes-helmet doctor`
-- read-only `hermes-helmet status` (no ledger or checkpoint writes)
+- clean-machine `helmet setup`
+- `helmet doctor`
+- read-only `helmet status` (no ledger or checkpoint writes)
 - persistence of ledgers, worktrees, and skills across restart
 - skills and no-skills startup
 - default integrations remaining skipped unless selected
@@ -43,8 +43,8 @@ create a newly acceptable digest.
 
 `helmet-epic` resumes from a persisted checkpoint and invokes `helmet-issue`
 only for dependency-ready children. Those invocations are recorded as exact
-argv receipts (`hermes-helmet epic <epic-url>` and
-`hermes-helmet issue <issue-url>`) through the released wrapper named in the
+argv receipts (`helmet epic <epic-url>` and
+`helmet issue <issue-url>`) through the released wrapper named in the
 bound manifest. `helmet-issue` adopts an existing worker task or pull request
 without an operator announcing that the PR exists. The wrapper image digest
 must match the bound candidate.
@@ -88,7 +88,7 @@ the trusted `github.json` snapshot, including independently fetched prior-repair
 PRs named by that snapshot; there is no unauthenticated local PR/head bypass.
 
 ```sh
-hermes-helmet dogfood-evidence config/dogfood-evidence.example.json \
+helmet dogfood-evidence config/dogfood-evidence.example.json \
   --bound config/dogfood-bound.json \
   --policy config/policy.example.json \
   --receipts config/dogfood-receipts \

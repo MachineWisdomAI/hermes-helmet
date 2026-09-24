@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hermes-helmet CLI: status, issue/epic helpers, doctor, FAVA Trails, OpenViking, skills."""
+"""Hermes Helmet CLI: status, issue/epic helpers, doctor, FAVA Trails, OpenViking, skills."""
 
 from __future__ import annotations
 
@@ -154,7 +154,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             worker_runtime=args.worker_runtime,
         )
     except HelmetIssueError as exc:
-        print(f"hermes-helmet status failed: {exc}", file=sys.stderr)
+        print(f"helmet status failed: {exc}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(report.to_public_dict(), indent=2, sort_keys=True))
@@ -202,7 +202,7 @@ def cmd_dogfood_evidence(args: argparse.Namespace) -> int:
             live_github=live_github,
         )
     except (DogfoodError, AuthorityError, OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        print(f"hermes-helmet dogfood-evidence failed: {exc}", file=sys.stderr)
+        print(f"helmet dogfood-evidence failed: {exc}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(validated, indent=2, sort_keys=True))
@@ -211,7 +211,7 @@ def cmd_dogfood_evidence(args: argparse.Namespace) -> int:
     worker = validated.get("worker")
     runtime = validated.get("runtime")
     if not isinstance(image, dict) or not isinstance(worker, dict) or not isinstance(runtime, dict):
-        print("hermes-helmet dogfood-evidence failed: evidence is incomplete", file=sys.stderr)
+        print("helmet dogfood-evidence failed: evidence is incomplete", file=sys.stderr)
         return 1
     print(f"digest:         {image.get('digest')}")
     print(f"source:         {validated.get('source_revision')}")
@@ -233,7 +233,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
             cursor=args.cursor,
         )
     except HelmetIssueError as exc:
-        print(f"hermes-helmet wait failed: {exc}", file=sys.stderr)
+        print(f"helmet wait failed: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(report.to_public_dict(), indent=2, sort_keys=True))
     return 2 if report.outcome == "timeout" else 0
@@ -246,7 +246,7 @@ def cmd_issue(args: argparse.Namespace) -> int:
         if args.record_review:
             if not args.head_sha:
                 print(
-                    "hermes-helmet issue failed: --head-sha is required with --record-review",
+                    "helmet issue failed: --head-sha is required with --record-review",
                     file=sys.stderr,
                 )
                 return 1
@@ -280,7 +280,7 @@ def cmd_issue(args: argparse.Namespace) -> int:
             parent_epic_url=args.parent_epic_url or None,
         )
     except HelmetIssueError as exc:
-        print(f"hermes-helmet issue failed: {exc}", file=sys.stderr)
+        print(f"helmet issue failed: {exc}", file=sys.stderr)
         return 1
     payload = {
         "checkpoint": checkpoint.to_public_dict(),
@@ -314,7 +314,7 @@ def cmd_epic(args: argparse.Namespace) -> int:
             worker_runtime=args.worker_runtime,
         )
     except (HelmetEpicError, HelmetIssueError) as exc:
-        print(f"hermes-helmet epic failed: {exc}", file=sys.stderr)
+        print(f"helmet epic failed: {exc}", file=sys.stderr)
         return 1
     payload = {
         "checkpoint": checkpoint.to_public_dict(),
@@ -360,7 +360,7 @@ def cmd_epic_status(args: argparse.Namespace) -> int:
             worker_runtime=args.worker_runtime,
         )
     except (HelmetEpicError, HelmetIssueError) as exc:
-        print(f"hermes-helmet epic-status failed: {exc}", file=sys.stderr)
+        print(f"helmet epic-status failed: {exc}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(report.to_public_dict(), indent=2, sort_keys=True))
@@ -399,7 +399,7 @@ def cmd_install_skills(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
         )
     except Exception as exc:  # noqa: BLE001
-        print(f"hermes-helmet install-skills failed: {exc}", file=sys.stderr)
+        print(f"helmet install-skills failed: {exc}", file=sys.stderr)
         return 1
     print(captain_install_boundary_message())
     for item in results:
@@ -421,7 +421,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
             probe=True,
         )
     except (helmet_setup.SetupError, OSError) as exc:
-        print(f"hermes-helmet setup failed: {exc}", file=sys.stderr)
+        print(f"helmet setup failed: {exc}", file=sys.stderr)
         return 1
     payload = report.to_public_dict()
     if args.json:
@@ -636,7 +636,7 @@ def cmd_fava_template(args: argparse.Namespace) -> int:
         else:
             print(render_company_template(template), end="")
     except (AuthorityError, FavaTrailsError, OSError) as exc:
-        print(f"hermes-helmet fava template failed: {exc}", file=sys.stderr)
+        print(f"helmet fava template failed: {exc}", file=sys.stderr)
         return 1
     return 0
 
@@ -683,7 +683,7 @@ def cmd_fava_setup(args: argparse.Namespace) -> int:
             )
             print(json.dumps(result, indent=2, sort_keys=True))
     except (AuthorityError, FavaTrailsError, OSError) as exc:
-        print(f"hermes-helmet fava setup failed: {exc}", file=sys.stderr)
+        print(f"helmet fava setup failed: {exc}", file=sys.stderr)
         return 1
     return 0
 
@@ -714,7 +714,7 @@ def cmd_fava_write_principal(args: argparse.Namespace) -> int:
         )
     except (AuthorityError, FavaTrailsError, OSError) as exc:
         print(
-            f"hermes-helmet fava write-principal failed: {type(exc).__name__}",
+            f"helmet fava write-principal failed: {type(exc).__name__}",
             file=sys.stderr,
         )
         return 1
@@ -757,7 +757,7 @@ def cmd_fava_lifecycle_demo(args: argparse.Namespace) -> int:
                 print(f"  - {name}: {'ok' if ok else 'FAIL'}")
         return 0 if result.get("ok") else 1
     except (AuthorityError, FavaTrailsError, OSError, KeyError) as exc:
-        print(f"hermes-helmet fava lifecycle-demo failed: {exc}", file=sys.stderr)
+        print(f"helmet fava lifecycle-demo failed: {exc}", file=sys.stderr)
         return 1
 def cmd_import_company_skills(args: argparse.Namespace) -> int:
     try:
@@ -771,10 +771,10 @@ def cmd_import_company_skills(args: argparse.Namespace) -> int:
             register_discovery=not args.skip_discovery_registration,
         )
     except (CompanySkillError, OSError) as exc:
-        print(f"hermes-helmet import-company-skills failed: {exc}", file=sys.stderr)
+        print(f"helmet import-company-skills failed: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:  # noqa: BLE001 - authority errors etc.
-        print(f"hermes-helmet import-company-skills failed: {exc}", file=sys.stderr)
+        print(f"helmet import-company-skills failed: {exc}", file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(result.to_public_dict(), indent=2, sort_keys=True))
@@ -809,7 +809,7 @@ def cmd_skill_catalog(args: argparse.Namespace) -> int:
                 policy = load_policy(args.config)
         catalog = build_skill_catalog(policy=policy, state_root=args.state_root)
     except CompanySkillError as exc:
-        print(f"hermes-helmet skill-catalog failed: {exc}", file=sys.stderr)
+        print(f"helmet skill-catalog failed: {exc}", file=sys.stderr)
         return 1
     payload = catalog.to_public_dict()
     if args.json:
@@ -879,7 +879,7 @@ def cmd_openviking_template(args: argparse.Namespace) -> int:
         else:
             print(render_openviking_company_template(template), end="")
     except (AuthorityError, OpenVikingError, OSError) as exc:
-        print(f"hermes-helmet openviking template failed: {exc}", file=sys.stderr)
+        print(f"helmet openviking template failed: {exc}", file=sys.stderr)
         return 1
     return 0
 
@@ -907,7 +907,7 @@ def cmd_openviking_setup(args: argparse.Namespace) -> int:
                 )
                 print(f"wrote {path}")
     except (AuthorityError, OpenVikingError, OSError) as exc:
-        print(f"hermes-helmet openviking setup failed: {exc}", file=sys.stderr)
+        print(f"helmet openviking setup failed: {exc}", file=sys.stderr)
         return 1
     return 0
 
@@ -942,7 +942,7 @@ def cmd_openviking_write_client(args: argparse.Namespace) -> int:
         )
     except (AuthorityError, OpenVikingError, OSError) as exc:
         print(
-            f"hermes-helmet openviking write-client failed: {type(exc).__name__}",
+            f"helmet openviking write-client failed: {type(exc).__name__}",
             file=sys.stderr,
         )
         return 1
@@ -957,7 +957,7 @@ def cmd_openviking_shared_proof(args: argparse.Namespace) -> int:
         missing = [name for name in ("codex", "chatgpt", "hermes") if name not in paths]
         if missing:
             print(
-                "hermes-helmet openviking shared-proof requires codex, chatgpt, and hermes configs",
+                "helmet openviking shared-proof requires codex, chatgpt, and hermes configs",
                 file=sys.stderr,
             )
             return 1
@@ -1008,7 +1008,7 @@ def cmd_openviking_shared_proof(args: argparse.Namespace) -> int:
         return 0 if result.get("ok") else 1
     except (OpenVikingError, OSError, ValueError) as exc:
         print(
-            f"hermes-helmet openviking shared-proof failed: {type(exc).__name__}",
+            f"helmet openviking shared-proof failed: {type(exc).__name__}",
             file=sys.stderr,
         )
         return 1
@@ -1049,7 +1049,7 @@ def cmd_openviking_write_marker(args: argparse.Namespace) -> int:
         return 0
     except (OpenVikingError, OSError, ValueError) as exc:
         print(
-            f"hermes-helmet openviking write-marker failed: {type(exc).__name__}",
+            f"helmet openviking write-marker failed: {type(exc).__name__}",
             file=sys.stderr,
         )
         return 1
@@ -1076,7 +1076,7 @@ def cmd_models_setup(args: argparse.Namespace) -> int:
             reindex_confirmed=bool(getattr(args, "reindex_confirmed", False)),
         )
     except (AuthorityError, ModelLaneError, OSError) as exc:
-        print(f"hermes-helmet models setup failed: {exc}", file=sys.stderr)
+        print(f"helmet models setup failed: {exc}", file=sys.stderr)
         return 1
     payload = report.to_public_dict()
     payload["examples"] = secret_free_contract_examples()
@@ -1101,7 +1101,7 @@ def cmd_models_rollback_embedding(args: argparse.Namespace) -> int:
             index_restore_confirmed=bool(getattr(args, "index_restore_confirmed", False)),
         )
     except (ModelLaneError, OSError, ValueError) as exc:
-        print(f"hermes-helmet models rollback-embedding failed: {exc}", file=sys.stderr)
+        print(f"helmet models rollback-embedding failed: {exc}", file=sys.stderr)
         return 1
     payload = restored.public_dict()
     payload["index_restore_confirmed"] = True
@@ -1116,10 +1116,10 @@ def cmd_models_rollback_embedding(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="hermes-helmet",
+        prog="helmet",
         description=(
-            "Hermes Helmet Captain-side CLI "
-            "(status, issue/epic helpers, doctor, FAVA Trails, OpenViking, skills)"
+            "Hermes Helmet: Open-source software factory for coding agents: "
+            "delegation, review, and repair"
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1286,7 +1286,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     setup_p = sub.add_parser(
         "setup",
-        help="Create or resume a validated adopter-owned Helmet installation",
+        help="Create or resume a validated adopter-owned Hermes Helmet installation",
     )
     setup_p.add_argument(
         "--answers",

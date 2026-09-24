@@ -84,7 +84,7 @@ ROLLBACK_PROCEDURE = (
     f"digest `{PREVIOUS_IMAGE_PIN}` (source revision {PREVIOUS_SOURCE_REVISION}, "
     f"mutable tag `{PREVIOUS_IMAGE_REF}` is not the rollback target). "
     "Do not rebuild. Do not retag `0.1.0`. Do not change visibility. Confirm "
-    "`hermes-helmet doctor` and read-only `hermes-helmet status` against that "
+    "`helmet doctor` and read-only `helmet status` against that "
     "previous revision."
 )
 
@@ -298,7 +298,7 @@ def validate_evidence(payload: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(image, Mapping):
         raise ReleaseCandidateError("image evidence is required")
     if image.get("repository") != IMAGE_REPOSITORY:
-        raise ReleaseCandidateError("image repository is not the private Helmet image")
+        raise ReleaseCandidateError("image repository is not the private Hermes Helmet image")
     _require_digest(image.get("digest"), label="image digest")
     platforms = tuple(image.get("platforms") or ())
     if platforms != PLATFORMS:

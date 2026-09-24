@@ -1,4 +1,24 @@
-# Public source preview — September 23, 2026
+# Changelog
+
+All notable changes to Hermes Helmet are recorded here. The project follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The public source preview
+uses CLI package version `0.1.0rc1`; a stable release and public prebuilt container
+image have not been published.
+
+## Unreleased
+
+### Added
+
+- Short `helmet` CLI command, with `hermes-helmet` retained as a compatible alias.
+
+### Changed
+
+- Introduce Hermes Helmet as an open-source software factory for teams using
+  coding agents, with a walkthrough of delegation, review, repair, and acceptance.
+- Use the full product name in documentation and user-facing messages.
+- Clarify the Captain role, setup requirements, and preview command compatibility.
+
+## Public source preview — September 23, 2026
 
 - Publish the existing Hermes Helmet core under Apache-2.0 with separate worker
   identity, credentials, checkout, and Captain review/merge authority.
@@ -6,14 +26,6 @@
   and optional OpenViking/FAVA integrations.
 - Provide source-build instructions and explicit preview limitations.
 - Keep private deployment history and prebuilt container promotion separate.
-
-# Changelog
-
-All notable changes to Hermes Helmet are recorded here. The project follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The first numbered
-public release has not been cut. `0.1.0rc1` is a private release candidate.
-
-## Unreleased
 
 ### Added
 
@@ -47,9 +59,10 @@ public release has not been cut. `0.1.0rc1` is a private release candidate.
 
 ## 0.1.0rc1
 
-Private release candidate. This is not a public numbered release. Repository, package,
-release, and image visibility stay private. The numbered `0.1.0` image tag is
-not minted until an owner decision names the exact base digest, both platform
+This version began as a private release candidate. The September 23 source
+preview subsequently published the source and CLI package at this version;
+private container promotion remains separate. The numbered `0.1.0` image tag
+is not minted until an owner decision names the exact base digest, both platform
 scan reports, inherited HIGH/CRITICAL counts, and expiry/review conditions.
 
 ### Added

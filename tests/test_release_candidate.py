@@ -227,9 +227,9 @@ class VersionAndDocsTests(unittest.TestCase):
         self.assertIn("private", docs.casefold())
         for skill in rc.BUNDLED_SKILLS:
             self.assertIn(skill, docs)
-        self.assertIn("hermes-helmet setup", docs)
-        self.assertIn("hermes-helmet doctor", docs)
-        self.assertIn("hermes-helmet status", docs)
+        self.assertIn("helmet setup", docs)
+        self.assertIn("helmet doctor", docs)
+        self.assertIn("helmet status", docs)
 
     def test_security_policy_requires_named_owner_decision_before_minting(self) -> None:
         policy = " ".join(_read("SECURITY.md").split())
@@ -1098,9 +1098,9 @@ class PackagingScriptTests(unittest.TestCase):
         self,
     ) -> None:
         script = _read("scripts/prove-packaged-release.sh")
-        self.assertIn("hermes-helmet setup", script)
-        self.assertIn("hermes-helmet doctor", script)
-        self.assertIn("hermes-helmet status", script)
+        self.assertIn("helmet setup", script)
+        self.assertIn("helmet doctor", script)
+        self.assertIn("helmet status", script)
         self.assertIn("install-skills", script)
         self.assertIn("setup-helmet", script)
         self.assertIn("helmet-issue", script)
@@ -1203,8 +1203,8 @@ class PackagedReleaseProofTests(unittest.TestCase):
             def venv_python(path: Path) -> Path:
                 return path / "bin" / "python"
 
-            def venv_console(path: Path) -> Path:
-                return path / "bin" / "hermes-helmet"
+            def venv_console(path: Path, name: str) -> Path:
+                return path / "bin" / name
 
             def clean_env(**extra: str) -> dict[str, str]:
                 env = {
@@ -1305,7 +1305,8 @@ class PackagedReleaseProofTests(unittest.TestCase):
 
             venv.create(install_venv, with_pip=True, clear=True)
             python = venv_python(install_venv)
-            console = venv_console(install_venv)
+            console = venv_console(install_venv, "helmet")
+            legacy = venv_console(install_venv, "hermes-helmet")
             installed = subprocess.run(
                 [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
                 capture_output=True,
@@ -1320,6 +1321,49 @@ class PackagedReleaseProofTests(unittest.TestCase):
                 msg=f"{installed.stdout}\n{installed.stderr}",
             )
             self.assertTrue(console.is_file())
+            self.assertTrue(legacy.is_file())
+
+            help_short = subprocess.run(
+                [str(console), "--help"],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(run_cwd),
+                env=clean_env(),
+            )
+            help_legacy = subprocess.run(
+                [str(legacy), "--help"],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(run_cwd),
+                env=clean_env(),
+            )
+            self.assertEqual(help_short.returncode, 0, msg=help_short.stderr)
+            self.assertEqual(help_legacy.returncode, help_short.returncode)
+            self.assertEqual(help_legacy.stdout, help_short.stdout)
+            self.assertEqual(help_legacy.stderr, help_short.stderr)
+
+            missing_short = subprocess.run(
+                [str(console)],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(run_cwd),
+                env=clean_env(),
+            )
+            missing_legacy = subprocess.run(
+                [str(legacy)],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=str(run_cwd),
+                env=clean_env(),
+            )
+            self.assertNotEqual(missing_short.returncode, 0)
+            self.assertEqual(missing_legacy.returncode, missing_short.returncode)
+            self.assertEqual(missing_legacy.stdout, missing_short.stdout)
+            self.assertEqual(missing_legacy.stderr, missing_short.stderr)
 
             probe = subprocess.run(
                 [

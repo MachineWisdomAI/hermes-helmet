@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adopter-owned Captain/Helmet authority configuration.
+"""Adopter-owned Hermes Helmet authority configuration.
 
 This module extends the H1 versioned policy into one authority document. It is
 the single source of truth for company identity, Captain and worker GitHub
@@ -775,7 +775,7 @@ def load_policy(path: Path) -> Policy:
 
 
 def load_authority(path: Path) -> Policy:
-    """Load a full Captain/Helmet authority document (version >= 2)."""
+    """Load a full Hermes Helmet authority document (version >= 2)."""
 
     policy = load_policy(path)
     if policy.version < 2:
