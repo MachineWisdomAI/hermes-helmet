@@ -362,7 +362,7 @@ jobs:
             HERMES_HELMET_VERSION=0.1.0rc1
           labels: |
             org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
-            org.opencontainers.image.source=https://github.com/MachineWisdomAI/hermes-helmet-oss
+            org.opencontainers.image.source=https://github.com/MachineWisdomAI/hermes-helmet
             com.machinewisdom.hermes-helmet.source-commit=${{ env.SOURCE_COMMIT }}
           cache-from: |
             type=gha,scope=scan-amd64

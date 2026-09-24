@@ -43,7 +43,7 @@ SOURCE_REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 CHECKSUM_RE = re.compile(r"^[0-9a-f]{64}$")
 CHECKSUM_LINE_RE = re.compile(r"^([0-9a-f]{64})  ([^/\s]+)$")
-DEFAULT_GITHUB_REPOSITORY = "MachineWisdomAI/hermes-helmet-oss"
+DEFAULT_GITHUB_REPOSITORY = "MachineWisdomAI/hermes-helmet"
 PINNED_HERMES_BASE = (
     "sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294"
 )

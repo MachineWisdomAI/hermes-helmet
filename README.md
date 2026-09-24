@@ -56,7 +56,7 @@ The Captain host must remain able to execute or resume the workflow.
 
 ## Try the public preview
 
-The [September 23, 2026 source preview](https://github.com/MachineWisdomAI/hermes-helmet-oss/releases/tag/preview-2026-09-23)
+The [September 23, 2026 source preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
 provides Apache-2.0 source, an installable CLI, and portable Captain skills.
 The runtime builds from source. Read the
 [preview notes and known limitations](docs/public-preview.md), including the
@@ -67,8 +67,8 @@ the worker, access to your chosen model provider, and a Captain host for
 coordination and review. Install from the current source:
 
 ```sh
-git clone https://github.com/MachineWisdomAI/hermes-helmet-oss.git
-cd hermes-helmet-oss
+git clone https://github.com/MachineWisdomAI/hermes-helmet.git
+cd hermes-helmet
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
@@ -119,7 +119,7 @@ the Python package includes those same assets.
 
 ## Develop and contribute
 
-Try a bounded issue, then [report where setup or a handoff became unclear](https://github.com/MachineWisdomAI/hermes-helmet-oss/issues).
+Try a bounded issue, then [report where setup or a handoff became unclear](https://github.com/MachineWisdomAI/hermes-helmet/issues).
 Include the command, expected result, and observed behavior with secrets removed.
 For code and documentation changes, follow [CONTRIBUTING.md](CONTRIBUTING.md).
 Report vulnerabilities through the [security policy](SECURITY.md).

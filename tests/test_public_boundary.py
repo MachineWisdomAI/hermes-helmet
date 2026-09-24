@@ -70,7 +70,7 @@ class PublicBoundaryTests(unittest.TestCase):
         )
         self.assertFalse(
             public_surface.has_forbidden_public_marker(
-                "https://github.com/MachineWisdomAI/hermes-helmet-oss"
+                "https://github.com/MachineWisdomAI/hermes-helmet"
             )
         )
 
