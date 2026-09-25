@@ -4,67 +4,90 @@
   <img src="docs/assets/hermes-helmet-winged-mark-v1.png" width="320" alt="Hermes Helmet: a futuristic winged helmet with a glowing cyan visor and tether.">
 </p>
 
-**An open-source software factory for teams using coding agents.**
+**Give Hermes the wings to carry your plan through, under its own identity**
 
-Hermes Helmet keeps delegated software work connected from a GitHub issue
-through implementation, review, repair, and acceptance. Set the direction,
-follow progress, and return when the work needs your judgment. The next step
-continues from the task, branch, and review already recorded.
+Hermes Helmet is an open-source software factory that gives
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) the ability to
+keep going: to take on a body of work, carry it through review
+and repairs, and finish within the authority you grant it. Named after the
+winged helmet of the Greek god Hermes, it adds a process for long-running
+autonomy, with connected tasks, review, and guardrails.
 
-If your team maintains those handoffs with internal scripts and procedures,
-Hermes Helmet gives you a shared workflow to operate and adapt. It builds on
-[Hermes Agent](https://github.com/NousResearch/hermes-agent), Hermes Kanban,
-and GitHub, with separate worker authority and a configurable model provider.
+Put together a written plan with your coding agent, record the work as linked
+GitHub issues, and delegate authority to carry that plan through. Hermes
+implements under its own identity. Your coding agent coordinates the work,
+reviews the result, directs repairs, and handles authorized merges. You can
+follow progress through the Hermes Kanban board and GitHub without relaying
+every handoff yourself.
 
-The name evokes the mythical helmet of Hermes, the Greek messenger god.
-The product name is **Hermes Helmet**; the short CLI command is **`helmet`**.
+Read [Hermes Helmet: giving your software factory wings](https://machine-wisdom.ai/writing/hermes-helmet-software-factory/)
+for the story behind the project and examples of delivered work.
 
-## Follow one issue through review and repair
+## You set the direction; your first officer sees it through
 
-1. **Delegate a bounded issue.** Hermes Helmet links an eligible GitHub issue
-   to a worker task in Hermes Kanban.
-2. **Implement and open a pull request.** The Hermes worker writes and tests
-   the change under its own GitHub account, then links the pull request to its task.
-3. **Review the result.** The Captain reviews the current change from a separate
-   checkout. A trusted review that requests a repair sends the worker back to
-   the same branch and pull request, where it reads the feedback from GitHub.
-4. **Accept under your policy.** The Captain checks the result and handles an
-   authorized merge. A completed implementation task alone does not mean the
-   pull request has been accepted.
+**You are the Captain.** You agree on the goal, the plan, and the authority to
+act. **Your coding agent is the first officer**—Codex, Claude Code, or another
+Hermes instance. It runs under your OS account and uses your credentials to
+coordinate and accept work on your behalf. **Hermes is the crew**, running in
+Docker with its own GitHub account, credentials, and checkout to implement,
+test, and repair changes.
 
-For a small bug fix, you can follow the issue, worker assignment, pull request,
-review, and any repair without reconstructing the task in a new conversation.
-GitHub holds the code, review, checks, and merge record; the board shows worker
-assignments. Larger efforts use dependent issues and bounded parallel work.
+```mermaid
+flowchart TB
+    subgraph captain_side["Captain identity · your workstation"]
+        captain["You · Captain"]
+        officer["First officer<br/>Your OS account + GitHub credentials"]
+        captain -->|"Written plan + delegated authority"| officer
+    end
 
-## Who runs the work?
+    github["GitHub<br/>Issues · pull requests · reviews · checks"]
 
-You set the outcome and authority policy. The **Captain** is the coordination
-and review role on your behalf: a coding-agent host runs the bundled
-`helmet-issue` and `helmet-epic` skills. The **worker** is Hermes Agent running
-in Docker with its own GitHub credentials and checkout. See
-[Captain and Crew](docs/captain-and-crew.md) for the operating model.
+    subgraph compose["Docker Compose · deploy/compose.yaml"]
+        subgraph container["Hermes container · worker identity"]
+            poller["Issue and review poller"] --> kanban["Hermes Kanban"]
+            kanban --> worker["Hermes worker<br/>Own GitHub account + token"]
+        end
+        state[("Persistent worker volume · /opt/data<br/>Checkouts · credentials · task history")]
+        worker --- state
+    end
 
-Captain and worker use separate GitHub accounts. The worker implements,
-opens pull requests, and repairs them; it never merges. The repository allowlist
-controls where Hermes Helmet dispatches work. GitHub permissions determine
-what each account can actually access. The worker never receives Captain
-credentials. See the [authority configuration](docs/authority-schema.md).
+    officer <-->|"Assign · review · authorized merge"| github
+    github -->|"Issues + review feedback"| poller
+    worker -->|"Commits · pull requests · repairs"| github
 
-The Captain host must remain able to execute or resume the workflow.
-`helmet wait` follows changes; it cannot wake an application that has stopped.
+    style captain_side fill:#F2EAF8,stroke:#6B3FA0,color:#241036
+    style compose fill:none,stroke:#6A6A6A,color:#222222
+    style container fill:#E5F5F1,stroke:#1A7A6D,color:#06332E
+    style captain fill:#F8E6C4,stroke:#A56A12,color:#2C1A00
+    style officer fill:#E6D4F5,stroke:#6B3FA0,color:#241036
+    style worker fill:#C9EDE8,stroke:#1A7A6D,color:#06332E
+    style github fill:#E8E8E8,stroke:#6A6A6A,color:#222222
+```
 
-## Try the public preview
+The skills bundled with Hermes Helmet give the first officer its operating
+instructions. The `helmet` CLI supplies the checks, state transitions, and
+status commands those skills use. The first officer performs the review;
+Hermes does the implementation.
 
-The [September 23, 2026 source preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
-provides Apache-2.0 source, an installable CLI, and portable Captain skills.
-The runtime builds from source. Read the
-[preview notes and known limitations](docs/public-preview.md), including the
-inherited container findings and current integration coverage.
+| Skill | What your first officer uses it for |
+| --- | --- |
+| [`setup-helmet`](skills/setup-helmet/SKILL.md) | Configure identities, repositories, model access, and the worker runtime. |
+| [`helmet-issue`](skills/helmet-issue/SKILL.md) | Carry one issue through implementation, review, repairs, and acceptance. |
+| [`helmet-epic`](skills/helmet-epic/SKILL.md) | Coordinate dependent issues and run independent work in parallel. |
 
-You need Docker Compose, Python 3.11+, a separate GitHub account and token for
-the worker, access to your chosen model provider, and a Captain host for
-coordination and review. Install from the current source:
+In configuration and command references, **Captain-side** means the side where
+your first officer operates with your delegated authority. The two GitHub
+identities are `captain_github_login` and `worker_github_login`. See the
+[operating model](docs/captain-and-crew.md) for their responsibilities.
+
+## Start with one issue
+
+Use the [quickstart](docs/quickstart.md), or point your coding agent at the
+[`setup-helmet` skill](skills/setup-helmet/SKILL.md). You need Docker Compose,
+Python 3.11+, a separate worker GitHub account and token, and access to your
+chosen model provider.
+
+Install the CLI from the current public source:
 
 ```sh
 git clone https://github.com/MachineWisdomAI/hermes-helmet.git
@@ -75,80 +98,169 @@ python -m pip install .
 helmet --help
 ```
 
-The Python package remains `hermes-helmet`. Current source installs both
-`helmet` and the compatible `hermes-helmet` command. The dated preview wheel
-predates the short command and uses `hermes-helmet`.
+The quickstart configures the worker, builds its runtime on a pinned stable
+release of the official Hermes Agent Docker image, completes provider login,
+and enables issue intake. Install the bundled skills into your coding-agent
+host, then give your first officer one GitHub issue to carry through the
+workflow. For example, after setup:
 
-Follow the [quickstart](docs/quickstart.md) to configure your identities,
-repositories, model access, and Docker runtime. The ExampleCo fixture uses
-`example-captain` and `example-agent`; replace these identities and its
-repository entries with your own. Start with one small issue and follow its
-linked task and pull request through review and acceptance.
+> Use helmet-issue to implement https://github.com/example-org/demo-repo/issues/123.
+> Follow the issue through review, necessary repairs, and acceptance under the
+> agreed merge authority.
 
-The bundled Captain skills install into Codex, Claude Code, and Hermes.
-The preview has been exercised through the Codex workflow; the other skill
-targets have installation and static validation. See the
-[single-issue guide](docs/helmet-issue.md) for commands and status fields.
+The [September 23, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
+provides packaged artifacts. Its CLI command is `hermes-helmet`; current source
+also installs the shorter `helmet` command used here. See the
+[preview notes](docs/public-preview.md) for that release's details.
 
-## Choose the model, retain the workflow
+## How the work moves
 
-The Hermes executor's provider and model are configurable. You can retain task
-records, review practices, and authority policy while changing that choice.
-Hosted providers and compatible local endpoints are documented in
-[provider and model configuration](docs/model-lanes.md).
+Hermes Helmet connects three existing surfaces: your coding-agent host,
+Hermes Agent and its Kanban executor, and GitHub. The worker runtime runs an
+issue poller on the configured schedule. That poller turns eligible issues and
+trusted review activity into Kanban assignments.
 
-Local inference requires a model server and suitable hardware; the public
-Compose stack does not start that server. Provider access, compute, retries,
-and review contribute to operating cost.
+### From issue to pull request
 
-## Add integrations when you need them
+The first officer uses `helmet-issue` to check the configured identity and
+repository, adopt any existing task or PR, and dispatch eligible work. The
+poller selects open issues with the configured `dispatch_label` in allowlisted
+repositories. It records one root Kanban task per issue URL in a SQLite ledger,
+so later passes can find the existing assignment.
 
-The core runs without a private company repository, private toolkit, or
-external skill pack. These integrations are optional:
+Hermes works in a Git worktree, implements the issue, runs tests, and opens a
+pull request under `worker_github_login`. It records the PR URL in its run
+metadata as `published_pr`. That links the issue, assignment, branch, and PR
+for the next stage.
+
+### Review and repair on the same change
+
+The first officer reviews the current PR commit from a separate checkout,
+checks the result against the agreed outcome, and posts findings to GitHub.
+The poller accepts review activity from configured repository roles and
+explicitly trusted bots. It ignores approvals and the worker's own activity.
+
+When trusted feedback arrives, the poller creates a dependent repair task
+that reuses the worker's branch and worktree. Hermes fetches the current
+GitHub review, comments, checks, and mergeability, makes the correction, and
+pushes to the same PR. Review text stays on GitHub; the assignment points the
+worker back to that record. While a repair is outstanding, the poller waits
+before creating another one.
+
+The first officer then reviews the repaired commit. A failed CI check is
+input to that review; the poller starts repairs from trusted review activity.
+The accepted issue defines completion, so consequential defects are repaired
+without turning optional improvements into new release requirements.
+
+### Acceptance and authorized merge
+
+The first officer's review is recorded against a specific commit SHA. Before
+an unattended merge, the merge gate checks that the live PR still has that
+reviewed head, an effective approval, passing required checks, and a mergeable
+state. The merge request includes the head SHA, and Hermes Helmet reads back
+GitHub's merge state afterward.
+
+You choose the merge authority. By default, the first officer asks for your
+approval. An explicit whole-line `Merge when clean: yes` directive on an issue
+or its parent epic authorizes it to merge once those conditions pass. A child
+can narrow inherited authority with `Merge when clean: no`. Implementation and
+repair stay with the worker; merging stays on the Captain side.
+
+### Resume from the existing record
+
+The Docker volume at `/opt/data` persists worker configuration, credentials,
+checkouts, scheduler state, and task history. The poller's SQLite ledger keeps
+the issue-to-task links and review progress. On your workstation, checkpoints
+under `~/.hermes-helmet/checkpoints/` retain the task, PR, reviewed commit, repair
+count, and merge mode.
+
+When the first officer resumes, it reconciles those records with current
+GitHub and worker state. `helmet wait` provides a bounded wait for changes;
+`helmet status` reports the linked task, PR, review state, and next action.
+This lets the first officer continue the existing work across sessions.
+
+The [control-loop guide](docs/control-loop.md) and
+[single-issue reference](docs/helmet-issue.md) describe the interfaces and
+recovery behavior.
+
+## Carry a plan across dependent issues
+
+For a larger body of work, `helmet-epic` reads a parent issue and its children,
+validates their dependencies, and dispatches the children whose prerequisites
+are satisfied. It uses GitHub sub-issues and dependency relationships where
+available, with explicit `Parent` and `Blocked by` links as the fallback.
+
+Each child follows the same issue, review, repair, and merge workflow.
+`max_epic_parallelism` bounds concurrent work, while runtime and repair budgets
+bound each issue. Independent children can continue when another is blocked.
+A changed dependency graph is presented for acceptance before new dispatch,
+and the parent remains open for your closeout. See the
+[epic guide](docs/helmet-epic.md).
+
+## Give the worker its own identity and chosen access
+
+One [authority policy](docs/authority-schema.md) names the company, both GitHub
+identities, repositories, labels, trusted reviewers, model, merge rules, and
+budgets. Setup, preflight, and task instructions use that same document. The
+[ExampleCo policy](config/policy.example.json) uses `example-captain` and
+`example-agent`; replace them with your two accounts.
+
+The worker's GitHub personal access token determines what it can access and
+change. The repository allowlist determines where Hermes Helmet dispatches
+work. Configure each for its purpose; a dispatch list does not change the
+permissions of a token. Preflight checks that the live worker login matches
+`worker_github_login` and differs from `captain_github_login`.
+
+Credentials live in owner-only runtime files, outside the policy and source.
+The Docker entrypoint prepares the worker token file and removes the token
+variables before starting the supervised services; the GitHub CLI wrapper
+loads the token for GitHub commands. The first officer retains your credentials
+on the Captain side. Company-specific configuration belongs in your
+[private overlay](docs/private-overlay.md).
+
+## Keep the workflow as models change
+
+Choose the coding agent that acts as first officer separately from the model
+behind the Hermes worker. The policy's `inference_provider` and
+`inference_model` select the worker's model. Changing that selection preserves
+the worker's task records and GitHub identity, and the first officer keeps its
+review responsibilities.
+See [provider and model configuration](docs/model-lanes.md) for hosted
+providers and compatible local endpoints.
+
+GitHub preserves the feedback and acceptance history for each change. Optional
+memory integrations make context and accepted lessons available across clients:
 
 | Integration | What it adds |
 | --- | --- |
-| [FAVA Trails](docs/fava-trails.md) | Governed decisions and observations, with approval and lineage |
-| [OpenViking](docs/openviking.md) | Working context across clients, using official memory plugins where supported; optional AGPL-3.0 service |
-| [Company skill packs](docs/company-skills.md) | Adopter-owned instructions imported into Hermes-owned state |
-| [Private configuration](docs/private-overlay.md) | Company identities, credentials, and deployment wiring outside the public source |
+| [OpenViking](docs/openviking.md) | Working context across sessions and clients. |
+| [FAVA Trails](docs/fava-trails.md) | Governed decisions and observations, with approval, provenance, and supersession. |
+| [Company skill packs](docs/company-skills.md) | Your own instructions imported into Hermes-owned state. |
 
-Promotion from working context into FAVA Trails is explicit. Captain skills
-install separately from worker skill packs. Their canonical source is `skills/`;
-the Python package includes those same assets.
+Promotion from working context into FAVA Trails is explicit. These integrations
+can be added to the core issue-to-merge workflow when you need them.
 
 ## Develop and contribute
 
-Try a bounded issue, then [report where setup or a handoff became unclear](https://github.com/MachineWisdomAI/hermes-helmet/issues).
-Include the command, expected result, and observed behavior with secrets removed.
-For code and documentation changes, follow [CONTRIBUTING.md](CONTRIBUTING.md).
-Report vulnerabilities through the [security policy](SECURITY.md).
-
-Run the repository checks before submitting a change:
+Follow [CONTRIBUTING.md](CONTRIBUTING.md) for code and documentation changes
+and the [security policy](SECURITY.md) for vulnerability reports. Run the
+repository checks before submitting a change:
 
 ```sh
 scripts/verify.sh
 ```
 
-Build a development image from the pinned Hermes Agent base:
-
-```sh
-scripts/build-dev-image.sh
-```
-
-The build records its source and image identity in `dist/image-identity.json`.
-See [container candidate tooling](docs/release-candidate.md) for image evidence
-and promotion requirements.
+Build a development image with `scripts/build-dev-image.sh`. The build records
+its source and image identity in `dist/image-identity.json`; see
+[container candidate tooling](docs/release-candidate.md).
 
 ## Documentation
 
-- [Setup and diagnostics](docs/setup-helmet.md)
-- [Single-issue orchestration](docs/helmet-issue.md)
-- [Dependent issues and epics](docs/helmet-epic.md)
-- [Control loop](docs/control-loop.md)
-- [Authority configuration](docs/authority-schema.md)
-- [Public preview and limitations](docs/public-preview.md)
-- [Changelog](CHANGELOG.md)
+- [Quickstart](docs/quickstart.md) and [setup diagnostics](docs/setup-helmet.md)
+- [Captain, first officer, and crew](docs/captain-and-crew.md)
+- [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
+- [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)
+- [Public preview](docs/public-preview.md) and [changelog](CHANGELOG.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## License
