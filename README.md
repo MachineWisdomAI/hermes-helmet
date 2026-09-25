@@ -32,37 +32,10 @@ coordinate and accept work on your behalf. **Hermes is the crew**, running in
 Docker with its own GitHub account, credentials, and checkout to implement,
 test, and repair changes.
 
-```mermaid
-flowchart TB
-    subgraph captain_side["Captain identity · your workstation"]
-        captain["You · Captain"]
-        officer["First officer<br/>Your OS account + GitHub credentials"]
-        captain -->|"Written plan + delegated authority"| officer
-    end
+[![Captain and first officer use the Captain identity; GitHub connects them to the separately identified Hermes worker inside Docker Compose. Kanban and worker state persist in /opt/data.](diagrams/identity-and-runtime.svg)](diagrams/identity-and-runtime.svg)
 
-    github["GitHub<br/>Issues · pull requests · reviews · checks"]
-
-    subgraph compose["Docker Compose · deploy/compose.yaml"]
-        subgraph container["Hermes container · worker identity"]
-            poller["Issue and review poller"] --> kanban["Hermes Kanban"]
-            kanban --> worker["Hermes worker<br/>Own GitHub account + token"]
-        end
-        state[("Persistent worker volume · /opt/data<br/>Checkouts · credentials · task history")]
-        worker --- state
-    end
-
-    officer <-->|"Assign · review · authorized merge"| github
-    github -->|"Issues + review feedback"| poller
-    worker -->|"Commits · pull requests · repairs"| github
-
-    style captain_side fill:#F2EAF8,stroke:#6B3FA0,color:#241036
-    style compose fill:none,stroke:#6A6A6A,color:#222222
-    style container fill:#E5F5F1,stroke:#1A7A6D,color:#06332E
-    style captain fill:#F8E6C4,stroke:#A56A12,color:#2C1A00
-    style officer fill:#E6D4F5,stroke:#6B3FA0,color:#241036
-    style worker fill:#C9EDE8,stroke:#1A7A6D,color:#06332E
-    style github fill:#E8E8E8,stroke:#6A6A6A,color:#222222
-```
+Solid arrows show work and feedback. Dotted lines show persistent state.
+[Editable diagram and image downloads](diagrams/README.md).
 
 The skills bundled with Hermes Helmet give the first officer its operating
 instructions. The `helmet` CLI supplies the checks, state transitions, and

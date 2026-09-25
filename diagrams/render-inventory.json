@@ -1,0 +1,22 @@
+{
+  "bundle": {
+    "name": "gstack-diagram-render",
+    "deps": {
+      "@excalidraw/excalidraw": "0.18.1",
+      "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+      "mermaid": "11.16.1",
+      "react": "18.3.1",
+      "react-dom": "18.3.1"
+    }
+  },
+  "diagrams": [
+    {
+      "slug": "identity-and-runtime",
+      "width": 2400,
+      "height": 5097,
+      "svgWidth": 412,
+      "svgHeight": 875,
+      "editableElements": 34
+    }
+  ]
+}
