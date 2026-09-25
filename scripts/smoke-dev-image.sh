@@ -9,6 +9,7 @@ fi
 image_ref="$1"
 container_name="hermes-helmet-image-smoke-$$"
 sentinel="helmet-smoke-sentinel-not-a-secret"
+expected_version="${HERMES_HELMET_VERSION:-0.0.0-dev}"
 
 cleanup() {
     docker rm -f "$container_name" >/dev/null 2>&1 || true
@@ -83,8 +84,8 @@ image_version="$(
     docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' \
         "$container_name"
 )"
-if [ "$image_version" != "0.1.0rc1" ]; then
-    echo "smoke: expected org.opencontainers.image.version=0.1.0rc1, got ${image_version}" >&2
+if [ "$image_version" != "$expected_version" ]; then
+    echo "smoke: expected org.opencontainers.image.version=${expected_version}, got ${image_version}" >&2
     exit 1
 fi
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Build a private development OCI image and record commit + digest.
+# Build a local development OCI image and record its source identity.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-IMAGE_REPO="${HERMES_HELMET_IMAGE_REPO:-ghcr.io/machinewisdomai/hermes-helmet-oss}"
+IMAGE_REPO="${HERMES_HELMET_IMAGE_REPO:-hermes-helmet}"
 SOURCE_COMMIT="${HERMES_HELMET_SOURCE_COMMIT:-$(git rev-parse HEAD)}"
 SHORT_COMMIT="$(printf '%s' "$SOURCE_COMMIT" | cut -c1-12)"
 VERSION="${HERMES_HELMET_VERSION:-0.0.0-dev}"
@@ -14,7 +14,6 @@ FULL_REF="${IMAGE_REPO}:${TAG}"
 BASE_IMAGE="${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294}"
 OUT_DIR="${HERMES_HELMET_DIST_DIR:-$ROOT/dist}"
 IDENTITY_FILE="${OUT_DIR}/image-identity.json"
-PUSH="${HERMES_HELMET_PUSH:-0}"
 
 mkdir -p "$OUT_DIR"
 
@@ -39,22 +38,7 @@ docker build \
   .
 
 IMAGE_ID="$(docker inspect --format='{{.Id}}' "${FULL_REF}")"
-DIGEST=""
-
-if [ "$PUSH" = "1" ]; then
-  docker push "${FULL_REF}"
-  DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "${FULL_REF}" || true)"
-  if [ -z "$DIGEST" ] || [[ "$DIGEST" != *"@sha256:"* ]]; then
-    if command -v docker >/dev/null 2>&1 && docker buildx imagetools inspect "${FULL_REF}" >/tmp/hermes-helmet-imagetools.txt 2>/dev/null; then
-      remote_digest="$(awk '/Digest:/ {print $2; exit}' /tmp/hermes-helmet-imagetools.txt || true)"
-      if [ -n "${remote_digest:-}" ]; then
-        DIGEST="${IMAGE_REPO}@${remote_digest}"
-      fi
-    fi
-  fi
-fi
-
-export IDENTITY_FILE FULL_REF IMAGE_REPO TAG IMAGE_ID DIGEST SOURCE_COMMIT VERSION BASE_IMAGE PUSH
+export IDENTITY_FILE FULL_REF IMAGE_REPO TAG IMAGE_ID SOURCE_COMMIT VERSION BASE_IMAGE
 python3 - <<'PY'
 import json
 import os
@@ -65,11 +49,11 @@ identity = {
     "image_tag": os.environ["TAG"],
     "image_ref": os.environ["FULL_REF"],
     "image_id": os.environ["IMAGE_ID"],
-    "image_digest": os.environ.get("DIGEST") or None,
+    "image_digest": None,
     "source_commit": os.environ["SOURCE_COMMIT"],
     "version": os.environ["VERSION"],
     "base_image": os.environ["BASE_IMAGE"],
-    "pushed": os.environ.get("PUSH") == "1",
+    "pushed": False,
 }
 path = Path(os.environ["IDENTITY_FILE"])
 path.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")

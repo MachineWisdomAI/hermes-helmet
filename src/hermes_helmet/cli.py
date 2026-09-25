@@ -79,14 +79,6 @@ from hermes_helmet.company_skills import (
     import_company_skills_from_policy,
 )
 from hermes_helmet.authority import load_authority, load_policy
-from hermes_helmet.dogfood import (
-    DogfoodError,
-    fetch_live_github,
-    github_evidence_matches,
-    load_bound_candidate,
-    load_observed_receipts,
-    validate_runtime_evidence,
-)
 from hermes_helmet.model_lanes import (
     HttpOpenAITransport,
     ModelLaneError,
@@ -169,56 +161,6 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"merge_gate:     {report.merge_gate}")
         print(f"blocker:        {report.blocker or '-'}")
         print(f"terminal:       {report.terminal}")
-    return 0
-
-
-def cmd_dogfood_evidence(args: argparse.Namespace) -> int:
-    try:
-        payload = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise DogfoodError("evidence must be a JSON object")
-        bound = load_bound_candidate(Path(args.bound), policy=load_authority(Path(args.policy)))
-        expected_head = str(args.head or "").strip()
-        if not expected_head:
-            raise DogfoodError("current pull-request head is required")
-        published_pr = str(payload.get("published_pr") or "")
-        receipts_dir = Path(args.receipts)
-        _, _, trusted_github = load_observed_receipts(receipts_dir, bound)
-        trusted_priors = trusted_github.get("prior_repairs") or []
-        if not isinstance(trusted_priors, list):
-            raise DogfoodError("a clean review must cite a real prior repair")
-        live_github = fetch_live_github(
-            published_pr,
-            bound,
-            gh=args.gh,
-            prior_repairs=trusted_priors,
-        )
-        github_evidence_matches(live_github, trusted_github)
-        validated = validate_runtime_evidence(
-            payload,
-            bound=bound,
-            receipts_dir=receipts_dir,
-            expected_head=expected_head,
-            live_github=live_github,
-        )
-    except (DogfoodError, AuthorityError, OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        print(f"helmet dogfood-evidence failed: {exc}", file=sys.stderr)
-        return 1
-    if args.json:
-        print(json.dumps(validated, indent=2, sort_keys=True))
-        return 0
-    image = validated.get("image")
-    worker = validated.get("worker")
-    runtime = validated.get("runtime")
-    if not isinstance(image, dict) or not isinstance(worker, dict) or not isinstance(runtime, dict):
-        print("helmet dogfood-evidence failed: evidence is incomplete", file=sys.stderr)
-        return 1
-    print(f"digest:         {image.get('digest')}")
-    print(f"source:         {validated.get('source_revision')}")
-    print(f"task:           {validated.get('task_id')}")
-    print(f"pr:             {validated.get('published_pr')}")
-    print(f"worker_merged:  {worker.get('merged')}")
-    print(f"dogfood_host:   {runtime.get('dogfood_host')}")
     return 0
 
 
@@ -1129,42 +1071,6 @@ def build_parser() -> argparse.ArgumentParser:
     status_p.add_argument("issue_url")
     status_p.add_argument("--json", action="store_true")
     status_p.set_defaults(func=cmd_status)
-
-    dogfood_p = sub.add_parser(
-        "dogfood-evidence",
-        help="Validate bound-candidate runtime dogfood evidence (read-only)",
-    )
-    dogfood_p.add_argument("evidence", type=Path, help="Secret-free dogfood evidence JSON")
-    dogfood_p.add_argument(
-        "--bound",
-        type=Path,
-        default=Path("config/dogfood-bound.json"),
-        help="Owner-selected bound candidate identity JSON",
-    )
-    dogfood_p.add_argument(
-        "--policy",
-        type=Path,
-        default=Path("config/policy.example.json"),
-        help="Version-2 authority policy that binds Captain and repositories",
-    )
-    dogfood_p.add_argument(
-        "--receipts",
-        type=Path,
-        required=True,
-        help="Directory of immutable Codex receipts and observations",
-    )
-    dogfood_p.add_argument(
-        "--head",
-        required=True,
-        help="Live pull-request head the evidence must match",
-    )
-    dogfood_p.add_argument(
-        "--gh",
-        default="gh",
-        help="gh binary used to read live pull, reviews, and commits",
-    )
-    dogfood_p.add_argument("--json", action="store_true")
-    dogfood_p.set_defaults(func=cmd_dogfood_evidence)
 
     wait_p = sub.add_parser(
         "wait",

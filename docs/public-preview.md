@@ -1,73 +1,80 @@
-# Public source preview — September 23, 2026
+# Hermes Helmet public preview — September 23, 2026
 
-Hermes Helmet is an Apache-2.0 software factory for teams already using coding
-agents. It connects delegated work from a GitHub issue through implementation,
-review, repair, and acceptance. The Hermes worker implements under its own
-GitHub identity; the Captain coordinates, reviews, and handles merging under
-the human owner's policy. The public preview makes that workflow available
-for teams to operate and adapt.
+Hermes Helmet is an Apache-2.0 software factory for teams using coding agents.
+It connects accepted GitHub work through implementation, review, repair, and
+authorized merge while preserving who did what.
 
-## Included
+## What ships
 
-- A Docker-hosted Hermes executor with separate credentials and checkout.
-- Configurable Captain/worker identities, repository scope, budgets, and merge policy.
-- GitHub issue intake, pull-request review, and repair of the same PR.
-- Persistent single-issue and epic orchestration, status, and managed event waits.
-- Setup and doctor commands, portable Captain skills, and optional company packs.
-- Optional OpenViking working memory and FAVA Trails governed records.
-- Tests, source-build instructions, Apache-2.0 license, and third-party notices.
+- A Docker-hosted Hermes worker with its own GitHub identity, credentials, and
+  checkout.
+- Configurable Captain and worker identities, repository scope, budgets, and
+  merge policy.
+- GitHub issue intake, pull-request discovery, trusted-review handling, and
+  repair of the same pull request.
+- Persistent single-issue and epic orchestration with resumable status and
+  managed waits.
+- `setup-helmet`, `helmet-issue`, and `helmet-epic` skills for the Captain-side
+  coding agent.
+- Setup and doctor commands, a minimum Docker Compose deployment, and
+  user-facing verification on Linux and macOS.
+- Optional company skills, OpenViking working context, and FAVA Trails governed
+  records.
 
-## Use and limitations
+## Proven delivery loop
 
-Start with the [quickstart](quickstart.md). Install the CLI from this repository
-or the wheel attached to the dated public release. The Python distribution and
-CLI in that wheel use the name `hermes-helmet` and version `0.1.0rc1`; the public release tag
-`preview-2026-09-23` distinguishes this source publication. The complete source
-archive includes Docker configuration, tests, and documentation.
+The workflow has delivered multi-issue changes through worker-authored pull
+requests, Captain review, repairs on the same pull request, and authorized
+merge. The worker account remains the implementation author; the Captain-side
+agent coordinates, reviews, and merges only within delegated authority.
 
-Current source also installs the short `helmet` command. Both command names
-call the same CLI; the Python distribution remains `hermes-helmet`. When using
-the dated preview wheel, replace `helmet` in current examples with
-`hermes-helmet`, or install from current source to use the short command.
+GitHub holds issues, commits, checks, reviews, and merge history. Hermes Kanban
+and the worker ledger hold durable execution assignments. The two records are
+linked rather than duplicated.
 
-This is a preview, with working deployments behind it, rather than a claim of
-universal installation coverage or fully unattended operation. The Captain host
-must remain able to run or resume the workflow. A waiting command cannot wake an
-application that has stopped executing.
+## Install
 
-Hosted ChatGPT integration varies with the available app tools and authentication.
-Its full post-restart integration matrix remains incomplete. It is optional and
-is not needed for the GitHub issue/review/repair workflow. A complete formal
-five-task autonomy pilot has not been claimed.
+Start with the [quickstart](quickstart.md), or point a compatible coding agent
+at the [`setup-helmet` skill](../skills/setup-helmet/SKILL.md).
 
-Separate identities make access and authorship attributable; they do not make
-arbitrary agent-generated code safe. Use a dedicated worker account, configure
-its GitHub permissions, and review changes before granting merge authority.
-A repository allowlist constrains Hermes Helmet's actions, not the token's capabilities
-outside Hermes Helmet. Do not mount personal or Captain credentials into the worker.
+Install from current source to use the `helmet` command:
 
-## Container builds
+```sh
+git clone https://github.com/MachineWisdomAI/hermes-helmet.git
+cd hermes-helmet
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install .
+helmet --help
+```
 
-The source includes a Docker build using the pinned upstream Hermes Agent
-0.21.3 base. The existing base scans reported 439 high/critical findings on amd64
-and 522 on arm64, inherited from that base, with no additional high/critical
-identities attributed to the wrapper in the tested candidate. Those counts are
-scan findings, not a claim that every finding is exploitable. They are a known
-limitation of that pinned runtime; review the base before deployment.
+The dated [`preview-2026-09-23`](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
+release contains the `0.1.0rc1` Python package. Its original console command is
+`hermes-helmet`; current source keeps that name as a compatible alias and adds
+the shorter `helmet` command.
 
-This release publishes source and the Python CLI, not a prebuilt container image
-or a stable 1.0 security claim. Private image promotion stays disabled in public
-CI. Building locally does not remove inherited base risks. Container upgrades
-and image distribution can proceed independently of this source release.
+## What you provide
 
-## Source and contributions
+- Docker Compose and Python 3.11 or later.
+- A separate GitHub account and token for the Hermes worker.
+- A Captain-side coding agent such as Codex or Claude Code.
+- Access to the model provider selected for the worker.
+- A repository and an accepted GitHub issue to carry through the workflow.
 
-This is the public home for reusable Hermes Helmet development. It starts from the
-reviewed core at source revision `f8e4fce009905fac2211a0cd2b72f578b49636ef`, with
-publication documentation and repository/CI routing adjustments. Private company
-history, configuration, credentials, and skill packs are not included.
+The worker token controls what the worker can access on GitHub. The repository
+scope in Hermes Helmet controls where it dispatches work. Keep Captain
+credentials on the Captain side and worker credentials inside the worker
+runtime.
 
-Keep portable skills in `skills/`; wheels and installed folders are generated
-outputs. Keep company-specific configuration in your own overlay. See
-[CONTRIBUTING.md](../CONTRIBUTING.md) for contributing and
-[SECURITY.md](../SECURITY.md) for vulnerability reporting.
+## Extend the factory
+
+The core issue-to-merge workflow does not require a particular project tracker,
+memory service, or company skill pack. Keep company-specific configuration in a
+[private overlay](private-overlay.md). Add [OpenViking](openviking.md),
+[FAVA Trails](fava-trails.md), [company skills](company-skills.md), or separate
+[model lanes](model-lanes.md) when they serve your deployment.
+
+See [Captain and Crew](captain-and-crew.md) for the operating model,
+[single-issue orchestration](helmet-issue.md) and [epic orchestration](helmet-epic.md)
+for delivery, and [SECURITY.md](../SECURITY.md) for credential and vulnerability
+reporting guidance.

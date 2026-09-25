@@ -34,21 +34,6 @@ for required in \
     docs/company-skills.md \
     docs/openviking.md \
     docs/model-lanes.md \
-    docs/release-candidate.md \
-    docs/dogfood.md \
-    config/release-owner-decision.example.json \
-    config/dogfood-evidence.example.json \
-    config/dogfood-bound.json \
-    config/dogfood-receipts/github.json \
-    config/dogfood-receipts/observations.json \
-    src/hermes_helmet/dogfood.py \
-    tests/test_dogfood.py \
-    scripts/package-release-candidate.sh \
-    scripts/prove-packaged-release.sh \
-    scripts/prove-packaged-release.py \
-    scripts/promote-release-candidate.sh \
-    src/hermes_helmet/release_candidate.py \
-    tests/test_release_candidate.py \
     skills/setup-helmet/SKILL.md \
     skills/helmet-issue/SKILL.md \
     skills/helmet-epic/SKILL.md \
@@ -66,9 +51,7 @@ for required in \
     src/hermes_helmet/jj_toolchain.py \
     tests/test_public_boundary.py \
     tests/test_ci_supply_chain.py \
-    tests/test_compare_trivy_reports.py \
     scripts/ci-product-proof.sh \
-    scripts/compare_trivy_reports.py \
     .github/workflows/verify.yml \
     .github/dependabot.yml \
     .github/PULL_REQUEST_TEMPLATE.md \
@@ -111,9 +94,7 @@ PY
 
 # Syntax-check shell scripts.
 for script in scripts/verify.sh scripts/ci-product-proof.sh scripts/build-dev-image.sh \
-    scripts/smoke-dev-image.sh scripts/package-release-candidate.sh \
-    scripts/prove-packaged-release.sh scripts/promote-release-candidate.sh \
-    deploy/hermes/*.sh; do
+    scripts/smoke-dev-image.sh deploy/hermes/*.sh; do
     sh -n "$script"
 done
 
