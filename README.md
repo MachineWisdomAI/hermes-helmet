@@ -4,7 +4,7 @@
   <img src="docs/assets/hermes-helmet-winged-mark-v1.png" width="320" alt="Hermes Helmet: a futuristic winged helmet with a glowing cyan visor and tether.">
 </p>
 
-**An open-source software factory for teams using coding agents.**
+**Give Hermes the wings to carry your plan through, under its own identity**
 
 Hermes Helmet gives [Hermes Agent](https://github.com/NousResearch/hermes-agent)
 the ability to keep going: to take on a body of work, carry it through review
