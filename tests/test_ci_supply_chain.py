@@ -196,14 +196,26 @@ class WorkflowSupplyChainTests(unittest.TestCase):
     def test_public_ci_contains_no_private_release_operations(self) -> None:
         workflow = _read(".github/workflows/verify.yml")
         for marker in (
-            "release-candidate",
             "release-evidence",
             "dogfood",
             "ghcr.io/machinewisdomai",
             "push: true",
             "ENABLE_PRIVATE_IMAGE_PUBLISH",
+            "package-release-candidate.sh",
+            "promote-release-candidate.sh",
+            "prove-packaged-release",
         ):
             self.assertNotIn(marker, workflow)
+
+    def test_release_candidate_job_verifies_distributable_packaging(self) -> None:
+        workflow = _read(".github/workflows/verify.yml")
+        jobs = re.split(r"(?m)^(?=  [A-Za-z0-9_-]+:)", workflow)
+        job = next(item for item in jobs if item.startswith("  release-candidate:"))
+        self.assertIn("Confirm packaging checkout matches recorded source", job)
+        self.assertIn('test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"', job)
+        self.assertIn("python -m unittest tests.test_packaged_release -v", job)
+        self.assertNotIn("scripts/package-release-candidate.sh", job)
+        self.assertNotIn("ghcr.io/", job)
 
     def test_ci_runs_on_linux_and_macos(self) -> None:
         combined = "\n".join(_workflow_texts().values())

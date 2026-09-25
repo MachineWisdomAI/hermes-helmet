@@ -255,7 +255,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # Three skills × three targets.
     assert len(installed) == 9, installed
 print("setup-helmet, helmet-issue, and helmet-epic validate for all targets")
-print("canonical skills validate; packaged asset coverage runs in the release tests")
+print("canonical skills validate; packaged sdist/wheel asset coverage runs in tests.test_packaged_release")
 PY
 
 # Company skill pack import: skip without pack, import allowlisted, preserve, reject.
