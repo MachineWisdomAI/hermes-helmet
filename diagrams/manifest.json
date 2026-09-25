@@ -1,9 +1,9 @@
 {
   "diagrams": [
     {
-      "slug": "identity-and-runtime",
-      "title": "Hermes Helmet identity and runtime",
-      "alt": "The human Captain delegates a written plan to the first officer, which uses the Captain account and credentials. GitHub carries issues, pull requests, reviews and checks between the first officer and an independently identified Hermes worker inside Docker Compose. The issue and review poller assigns Kanban tasks. Kanban and the worker use persistent state at /opt/data. Solid arrows show work and feedback; dotted lines connect persistent state."
+      "slug": "delegation-and-identity",
+      "title": "Hermes Helmet delegation and identity",
+      "alt": "The human Captain agrees on a written plan, then delegates authority to the coding agent acting as first officer under the Captain identity. The first officer assigns work and directs repairs to Hermes, which uses its own identity. Hermes submits or updates a pull request for first-officer review. The first officer handles the authorized merge of an accepted change."
     }
   ]
 }

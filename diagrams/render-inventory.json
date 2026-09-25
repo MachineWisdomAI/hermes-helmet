@@ -11,12 +11,12 @@
   },
   "diagrams": [
     {
-      "slug": "identity-and-runtime",
+      "slug": "delegation-and-identity",
       "width": 2400,
-      "height": 5097,
-      "svgWidth": 412,
-      "svgHeight": 875,
-      "editableElements": 34
+      "height": 1961,
+      "svgWidth": 470,
+      "svgHeight": 384,
+      "editableElements": 16
     }
   ]
 }

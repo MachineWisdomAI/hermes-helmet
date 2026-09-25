@@ -1,0 +1,16 @@
+%%{init: {"flowchart": {"rankSpacing": 32, "nodeSpacing": 26, "padding": 12, "subGraphTitleMargin": {"top": 6, "bottom": 16}}, "themeVariables": {"fontSize": "18px"}}}%%
+flowchart TB
+  classDef captain fill:#F8E6C4,stroke:#A56A12,color:#2C1A00,stroke-width:1.5px
+  classDef officer fill:#E6D4F5,stroke:#6B3FA0,color:#241036,stroke-width:1.5px
+  classDef hermes fill:#C9EDE8,stroke:#1A7A6D,color:#06332E,stroke-width:1.5px
+  classDef result fill:#D5EDD8,stroke:#2E7A45,color:#14331C,stroke-width:1.5px
+  classDef store fill:#F1F5F9,stroke:#64748B,color:#172B32,stroke-width:1.5px
+
+  CAP["You · Captain<br/>Agree on a written plan"]:::captain
+  FO["First officer<br/>Your coding agent<br/>Your identity"]:::officer
+  HERMES["Hermes · crew<br/>Implements + repairs<br/>Its own identity"]:::hermes
+  DONE["Merged change"]:::result
+  CAP -->|"Delegate authority"| FO
+  FO -->|"Assign work<br/>Direct repairs"| HERMES
+  HERMES -->|"PR for review"| FO
+  FO -->|"Review + authorized merge"| DONE

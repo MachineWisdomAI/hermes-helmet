@@ -32,9 +32,8 @@ coordinate and accept work on your behalf. **Hermes is the crew**, running in
 Docker with its own GitHub account, credentials, and checkout to implement,
 test, and repair changes.
 
-[![Captain and first officer use the Captain identity; GitHub connects them to the separately identified Hermes worker inside Docker Compose. Kanban and worker state persist in /opt/data.](diagrams/identity-and-runtime.svg)](diagrams/identity-and-runtime.svg)
+[![You agree on a written plan and delegate authority to your coding agent. It assigns work and directs repairs to Hermes under a separate identity, then reviews the PR and handles the authorized merge.](diagrams/delegation-and-identity.svg)](diagrams/delegation-and-identity.svg)
 
-Solid arrows show work and feedback. Dotted lines show persistent state.
 [Editable diagram and image downloads](diagrams/README.md).
 
 The skills bundled with Hermes Helmet give the first officer its operating
