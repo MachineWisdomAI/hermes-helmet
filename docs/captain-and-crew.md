@@ -1,20 +1,30 @@
-# Captain and Crew
+# Captain, first officer, and crew
 
 Hermes Helmet is an open-source software factory that keeps delegated work
-connected through implementation, review, repair, and acceptance. You set the
-outcome and policy. The Captain coordinates and reviews on your behalf, while
-a separate Hermes worker implements and repairs changes in allowed repositories.
+connected through implementation, review, repair, and acceptance. You are the
+Captain: you agree on a written plan with your coding agent and delegate
+authority to carry it through. Your coding agent is the first officer,
+coordinating assignments, reviewing changes, directing repairs, and handling
+authorized merges. Hermes is the crew, implementing, testing, and repairing
+under its own worker identity.
 
-The Captain runs through bundled skills in a coding-agent host, such as Codex.
-The host uses the Captain GitHub identity and a checkout separate from the
-worker's. The human owner determines what may be delegated and merged. These
-roles share one authority policy; the worker receives only its own credentials.
+The first officer runs the bundled skills in a coding-agent host, such as Codex
+or Claude Code, under the Captain's OS account and credentials. It reviews from
+a checkout separate from the worker's. Hermes runs in Docker with its own
+GitHub account and credentials. One authority policy records their identities
+and the work you have authorized.
+
+In the CLI, policy, and references below, **Captain-side** operations are those
+performed by the first officer on your behalf. `captain_github_login` names your
+account; `worker_github_login` names the worker account. These configuration
+names also apply when you carry out a Captain-side operation yourself.
 
 ## Roles
 
 | Role | Identity | Authority |
 | --- | --- | --- |
-| Captain | `captain_github_login` (ExampleCo: `example-captain`) | Review, merge, epic dispatch, setup |
+| Human Captain | `captain_github_login` (ExampleCo: `example-captain`) | Set direction, approve the plan, delegate authority, close out the parent epic |
+| Coding-agent first officer | Uses the Captain's account and credentials | Coordinate, review, direct repairs, and merge within delegated authority |
 | Executor / worker | `worker_github_login` (ExampleCo: `example-agent`) | Bounded Kanban work, pull requests, never merge |
 | Trusted humans | GitHub repository roles `OWNER`, `MEMBER`, `COLLABORATOR` | Repair-triggering review |
 | Trusted bots | Exact logins in `trusted_review_bots` | Repair-triggering review |
