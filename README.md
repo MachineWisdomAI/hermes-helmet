@@ -19,6 +19,9 @@ reviews the result, directs repairs, and handles authorized merges. You can
 follow progress through the Hermes Kanban board and GitHub without relaying
 every handoff yourself.
 
+Read [Hermes Helmet: giving your software factory wings](https://machine-wisdom.ai/writing/hermes-helmet-software-factory/)
+for the story behind the project and examples of delivered work.
+
 ## You set the direction; your first officer sees it through
 
 **You are the Captain.** You agree on the goal, the plan, and the authority to
