@@ -3,7 +3,7 @@
 Hermes Helmet is an open-source software factory that keeps delegated work
 connected through implementation, review, repair, and acceptance. You are the
 Captain: you agree on a written plan with your coding agent and delegate
-authority to carry it through. Your coding agent is the first officer,
+authority to carry it through. Your coding agent becomes the first officer,
 coordinating assignments, reviewing changes, directing repairs, and handling
 authorized merges. Hermes is the crew, implementing, testing, and repairing
 under its own worker identity.
@@ -18,6 +18,38 @@ In the CLI, policy, and references below, **Captain-side** operations are those
 performed by the first officer on your behalf. `captain_github_login` names your
 account; `worker_github_login` names the worker account. These configuration
 names also apply when you carry out a Captain-side operation yourself.
+
+## From project planning to delegated delivery
+
+Your project tracker holds priorities, roadmap, ownership, and the day-to-day
+workflow you prefer, including on mobile. Linear, Jira, GitHub Projects, and
+other trackers can serve that purpose. Hermes Helmet's delivery loop is
+independent of that choice; roadmap management and product prioritization stay
+with you and your planning system.
+
+Use the planning approach and skills you prefer, such as Matt Pocock's skills
+or your own. Planning skills are deliberately left out of the release so
+adopters can choose them. The bundled `setup-helmet`, `helmet-issue`, and
+`helmet-epic` skills provide setup and delivery orchestration.
+
+The handoff has three steps:
+
+1. **Shape a deliverable with your coding agent.** Put the product requirements
+   document (PRD) in a GitHub parent issue, with bounded sub-issues and explicit
+   dependencies. A small change can use a single bounded issue.
+2. **Accept the plan and delegate authority.** You decide the outcome, scope,
+   and merge authority. Creating the issues alone does not authorize execution.
+3. **The same agent becomes your first officer.** It uses `helmet-issue` or
+   `helmet-epic` to coordinate the accepted work, review changes, direct repairs,
+   and handle authorized merges. Hermes implements and repairs under its own
+   identity. You remain the Captain and source of authority.
+
+GitHub issues are the execution contract because they sit beside the
+repositories, branches, pull requests, checks, and reviews. They record the
+accepted work and its dependencies where the delivery loop can follow them.
+Hermes Helmet begins at delegation and carries that issue graph through
+implementation, review, repair, and authorized merge. The
+[epic guide](helmet-epic.md#graph-model) describes how to express the graph.
 
 ## Roles
 
