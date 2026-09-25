@@ -199,7 +199,6 @@ jobs:
           scan-type: image
           image-ref: hermes-base:scan-${{ matrix.arch }}
           scanners: vuln,secret
-          severity: HIGH,CRITICAL
           format: json
           output: dist/preview/${{ matrix.arch }}/base.json
           exit-code: "0"
@@ -230,7 +229,6 @@ jobs:
           scan-type: image
           image-ref: hermes-helmet:preview-linux-${{ matrix.arch }}
           scanners: vuln,secret
-          severity: HIGH,CRITICAL
           format: json
           output: dist/preview/${{ matrix.arch }}/derived.json
           exit-code: "0"
@@ -518,7 +516,7 @@ jobs:
             echo "- Version: \`${PACKAGE_VERSION}\`"
             echo "- Tag: \`${PREVIEW_TAG}\`"
             echo "- Repository: \`${IMAGE_REPOSITORY}\`"
-            echo "- Inherited findings: see artifact \`delta.json\` for each platform; wrapper HIGH/CRITICAL additions are rejected."
+            echo "- Inherited findings: see \`delta.json\` \`inherited_high_or_critical\` for CVE/package/version/severity still in the candidate. Wrapper HIGH/CRITICAL additions and any secret finding are rejected. Raw Trivy JSON is not retained."
             echo "- Owner package-visibility step: the first package is created private. Decide public visibility from this exact candidate. This workflow does not change visibility. Check anonymous digest pull only after that decision."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -578,9 +576,16 @@ jobs:
           delta_path = Path(sys.argv[2])
           if delta_path.is_file():
               delta = json.loads(delta_path.read_text(encoding="utf-8"))
-              inherited = delta.get("base", {}).get("high_or_critical")
+              inherited = delta.get("delta", {}).get("inherited_high_or_critical") or []
               added = delta.get("delta", {}).get("added_high_or_critical") or []
-              print(f"- inherited HIGH/CRITICAL: {inherited}")
+              print(f"- inherited HIGH/CRITICAL still in candidate: {len(inherited)}")
+              for item in inherited:
+                  fixed = item.get("fixed_version") or "unfixed"
+                  print(
+                      f"- `{item.get('id')}` {item.get('package')} "
+                      f"{item.get('installed_version')} "
+                      f"(fixed: {fixed}, {item.get('severity')})"
+                  )
               print(f"- wrapper-added HIGH/CRITICAL: {len(added)}")
           PY
               else

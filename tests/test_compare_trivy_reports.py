@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,6 +74,13 @@ class CompareTrivyReportsTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(summary["base"]["high_or_critical"], 1)
         self.assertEqual(summary["delta"]["added_high_or_critical"], [])
+        inherited = summary["delta"]["inherited_high_or_critical"]
+        self.assertEqual(len(inherited), 1)
+        self.assertEqual(inherited[0]["id"], "CVE-INHERITED")
+        self.assertEqual(inherited[0]["package"], "base-package")
+        self.assertEqual(inherited[0]["installed_version"], "1.0")
+        self.assertEqual(inherited[0]["fixed_version"], "1.1")
+        self.assertEqual(inherited[0]["severity"], "HIGH")
         self.assertEqual(summary["trivy_java_database_sha256"], "absent")
 
     def test_wrapper_added_high_or_critical_finding_fails(self) -> None:
@@ -121,6 +129,30 @@ class CompareTrivyReportsTests(unittest.TestCase):
         self.assertEqual(summary["derived"]["secret_findings"], 1)
         self.assertTrue(any("secret findings" in failure for failure in failures))
 
+    def test_lower_severity_derived_secret_fails(self) -> None:
+        derived = report(derived=True)
+        derived["Results"][0]["Secrets"] = [
+            {
+                "RuleID": "generic-secret",
+                "Severity": "MEDIUM",
+                "Match": "AKIAEXAMPLESECRET",
+                "Code": {"Lines": [{"Content": "token=AKIAEXAMPLESECRET"}]},
+                "StartLine": 2,
+                "EndLine": 2,
+            }
+        ]
+        summary, failures = MODULE.compare(
+            report(), derived,
+            expected_platform="linux/amd64", expected_base_ref=BASE_REF,
+            database_sha256=DATABASE_SHA256,
+            java_database_sha256="absent",
+        )
+        self.assertEqual(summary["derived"]["secret_findings"], 1)
+        self.assertTrue(any("secret findings" in failure for failure in failures))
+        dumped = json.dumps(summary)
+        self.assertNotIn("AKIAEXAMPLESECRET", dumped)
+        self.assertNotIn("token=", dumped)
+
     def test_platform_layer_base_label_and_scanner_mismatches_fail(self) -> None:
         derived = report(derived=True)
         derived["Metadata"]["ImageConfig"]["architecture"] = "arm64"
@@ -157,6 +189,40 @@ class CompareTrivyReportsTests(unittest.TestCase):
         )
         self.assertEqual(failures, [])
         self.assertEqual(len(summary["delta"]["removed_high_or_critical"]), 1)
+        self.assertEqual(summary["delta"]["inherited_high_or_critical"], [])
+
+    def test_retained_inherited_report_excludes_removed_findings(self) -> None:
+        base = report()
+        base["Results"][0]["Vulnerabilities"].append(
+            {
+                "VulnerabilityID": "CVE-REMOVED",
+                "PkgName": "gone-package",
+                "InstalledVersion": "3.0",
+                "FixedVersion": "3.1",
+                "Severity": "HIGH",
+            }
+        )
+        derived = report(derived=True)
+        summary, failures = MODULE.compare(
+            base, derived,
+            expected_platform="linux/amd64", expected_base_ref=BASE_REF,
+            database_sha256=DATABASE_SHA256,
+            java_database_sha256="absent",
+        )
+        self.assertEqual(failures, [])
+        inherited_ids = [
+            item["id"] for item in summary["delta"]["inherited_high_or_critical"]
+        ]
+        removed_ids = [
+            item["id"] for item in summary["delta"]["removed_high_or_critical"]
+        ]
+        self.assertEqual(inherited_ids, ["CVE-INHERITED"])
+        self.assertEqual(removed_ids, ["CVE-REMOVED"])
+        inherited = summary["delta"]["inherited_high_or_critical"][0]
+        self.assertEqual(inherited["package"], "base-package")
+        self.assertEqual(inherited["installed_version"], "1.0")
+        self.assertEqual(inherited["fixed_version"], "1.1")
+        self.assertEqual(inherited["severity"], "HIGH")
 
     def test_operating_system_mismatch_fails(self) -> None:
         derived = report(derived=True)

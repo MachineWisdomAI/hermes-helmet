@@ -237,8 +237,10 @@ def compare(
     derived_vulnerabilities = _vulnerabilities(derived)
     added_keys = set(derived_vulnerabilities) - set(base_vulnerabilities)
     removed_keys = set(base_vulnerabilities) - set(derived_vulnerabilities)
+    inherited_keys = set(base_vulnerabilities) & set(derived_vulnerabilities)
     added = _ordered(derived_vulnerabilities[key] for key in added_keys)
     removed = _ordered(base_vulnerabilities[key] for key in removed_keys)
+    inherited = _ordered(derived_vulnerabilities[key] for key in inherited_keys)
     secrets = _secrets(derived)
     if added:
         failures.append(f"wrapper adds {len(added)} HIGH or CRITICAL vulnerability identities")
@@ -272,6 +274,7 @@ def compare(
         "delta": {
             "added_high_or_critical": added,
             "removed_high_or_critical": removed,
+            "inherited_high_or_critical": inherited,
         },
         "failures": failures,
     }
@@ -312,9 +315,10 @@ def main() -> int:
         for failure in failures:
             print(f"supply-chain gate: {failure}", file=sys.stderr)
         return 1
+    inherited = (summary.get("delta") or {}).get("inherited_high_or_critical") or []
     print(
         "supply-chain gate: clean wrapper delta; "
-        f"{summary['base']['high_or_critical']} inherited HIGH/CRITICAL findings reported"
+        f"{len(inherited)} inherited HIGH/CRITICAL findings still in the candidate"
     )
     return 0
 
