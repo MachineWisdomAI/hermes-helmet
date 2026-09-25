@@ -80,6 +80,24 @@ your first officer operates with your delegated authority. The two GitHub
 identities are `captain_github_login` and `worker_github_login`. See the
 [operating model](docs/captain-and-crew.md) for their responsibilities.
 
+## Bring your own planning system
+
+Keep priorities, roadmap, ownership, and your mobile project workflow in Linear,
+Jira, GitHub Projects, or whichever tracker you prefer. Shape the next deliverable
+with your coding agent using the planning approach and skills you choose.
+Planning skills are intentionally outside the Hermes Helmet release.
+
+**Hermes Helmet begins at delegation.** GitHub issues are its execution contract
+because they sit beside the repositories, branches, pull requests, checks, and
+reviews. The accepted work can be one bounded issue or a parent with bounded
+sub-issues and explicit dependencies. Once you accept the plan and grant
+authority, the same coding agent becomes your first officer and uses Hermes
+Helmet to carry that work through implementation, review, repair, and
+authorized merge.
+
+See [From project planning to delegated delivery](docs/captain-and-crew.md#from-project-planning-to-delegated-delivery)
+for the handoff.
+
 ## Start with one issue
 
 Use the [quickstart](docs/quickstart.md), or point your coding agent at the
