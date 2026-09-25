@@ -32,6 +32,38 @@ coordinate and accept work on your behalf. **Hermes is the crew**, running in
 Docker with its own GitHub account, credentials, and checkout to implement,
 test, and repair changes.
 
+```mermaid
+flowchart TB
+    subgraph captain_side["Captain identity · your workstation"]
+        captain["You · Captain"]
+        officer["First officer<br/>Your OS account + GitHub credentials"]
+        captain -->|"Written plan + delegated authority"| officer
+    end
+
+    github["GitHub<br/>Issues · pull requests · reviews · checks"]
+
+    subgraph compose["Docker Compose · deploy/compose.yaml"]
+        subgraph container["Hermes container · worker identity"]
+            poller["Issue and review poller"] --> kanban["Hermes Kanban"]
+            kanban --> worker["Hermes worker<br/>Own GitHub account + token"]
+        end
+        state[("Persistent worker volume · /opt/data<br/>Checkouts · credentials · task history")]
+        worker --- state
+    end
+
+    officer <-->|"Assign · review · authorized merge"| github
+    github -->|"Issues + review feedback"| poller
+    worker -->|"Commits · pull requests · repairs"| github
+
+    style captain_side fill:#F2EAF8,stroke:#6B3FA0,color:#241036
+    style compose fill:none,stroke:#6A6A6A,color:#222222
+    style container fill:#E5F5F1,stroke:#1A7A6D,color:#06332E
+    style captain fill:#F8E6C4,stroke:#A56A12,color:#2C1A00
+    style officer fill:#E6D4F5,stroke:#6B3FA0,color:#241036
+    style worker fill:#C9EDE8,stroke:#1A7A6D,color:#06332E
+    style github fill:#E8E8E8,stroke:#6A6A6A,color:#222222
+```
+
 The skills bundled with Hermes Helmet give the first officer its operating
 instructions. The `helmet` CLI supplies the checks, state transitions, and
 status commands those skills use. The first officer performs the review;
@@ -87,18 +119,6 @@ Hermes Helmet connects three existing surfaces: your coding-agent host,
 Hermes Agent and its Kanban executor, and GitHub. The worker runtime runs an
 issue poller on the configured schedule. That poller turns eligible issues and
 trusted review activity into Kanban assignments.
-
-```mermaid
-flowchart TB
-    captain["You · Captain"] -->|"Written plan and delegated authority"| officer["Coding agent · first officer"]
-    officer <-->|"Dispatch, review, authorized merge"| github["GitHub · issues, PRs, reviews, checks"]
-    subgraph runtime["Docker worker runtime"]
-        poller["Issue and review poller<br/>SQLite ledger"] --> kanban["Hermes Kanban · assignments"]
-        kanban --> worker["Hermes · implementation, tests, repairs"]
-    end
-    github -->|"Eligible issues and trusted feedback"| poller
-    worker -->|"Commits and pull requests"| github
-```
 
 ### From issue to pull request
 
