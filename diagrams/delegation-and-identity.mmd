@@ -1,4 +1,4 @@
-%%{init: {"flowchart": {"rankSpacing": 32, "nodeSpacing": 26, "padding": 12, "subGraphTitleMargin": {"top": 6, "bottom": 16}}, "themeVariables": {"fontSize": "18px"}}}%%
+%%{init: {"flowchart": {"rankSpacing": 66, "nodeSpacing": 56, "padding": 16, "curve": "stepAfter"}, "themeVariables": {"fontSize": "18px", "edgeLabelBackground": "#FFFFFF"}, "themeCSS": ".edgeLabel rect { opacity: 1 !important; fill: #FFFFFF !important; }"}}%%
 flowchart TB
   classDef captain fill:#F8E6C4,stroke:#A56A12,color:#2C1A00,stroke-width:1.5px
   classDef officer fill:#E6D4F5,stroke:#6B3FA0,color:#241036,stroke-width:1.5px
@@ -13,4 +13,4 @@ flowchart TB
   CAP -->|"Delegate authority"| FO
   FO -->|"Assign work<br/>Direct repairs"| HERMES
   HERMES -->|"PR for review"| FO
-  FO -->|"Review + authorized merge"| DONE
+  FO -->|"Authorized merge"| DONE
