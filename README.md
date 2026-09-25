@@ -6,8 +6,9 @@
 
 **Give Hermes the wings to carry your plan through, under its own identity**
 
-Hermes Helmet gives [Hermes Agent](https://github.com/NousResearch/hermes-agent)
-the ability to keep going: to take on a body of work, carry it through review
+Hermes Helmet is an open-source software factory that gives
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) the ability to
+keep going: to take on a body of work, carry it through review
 and repairs, and finish within the authority you grant it. Named after the
 winged helmet of the Greek god Hermes, it adds a process for long-running
 autonomy, with connected tasks, review, and guardrails.
