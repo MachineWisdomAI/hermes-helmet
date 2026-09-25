@@ -1,0 +1,590 @@
+name: Preview runtime image
+
+# Build and scan linux/amd64 and linux/arm64 from deploy/Dockerfile.
+# Publication is manual, from this workflow file on protected main, using an
+# explicit full commit SHA that is already on main. The publish job loads the
+# tested image tarballs from this run and pushes them without rebuilding.
+# Destination: ghcr.io/machinewisdomai/hermes-helmet/runtime
+# Tag: preview-<full-sha>  (no latest or stable)
+# The workflow never changes package visibility. The first package is created
+# private; the owner decides public visibility from the candidate evidence.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full 40-character commit SHA on protected main to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/machinewisdomai/hermes-helmet/runtime
+  HERMES_BASE_IMAGE: nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294
+  HERMES_BASE_AMD64_IMAGE: nousresearch/hermes-agent@sha256:1f983df4d778d46b3c3892d7598c9d57291430a6e35936ebc371ae1e5766699a
+  HERMES_BASE_ARM64_IMAGE: nousresearch/hermes-agent@sha256:011f2e232f119a9601cf6525f7542921d758703c7771ce2f7b639a07fa8640d1
+
+jobs:
+  resolve-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      source_commit: ${{ steps.record.outputs.source_commit }}
+      package_version: ${{ steps.record.outputs.package_version }}
+      preview_tag: ${{ steps.record.outputs.preview_tag }}
+      image_repository: ${{ steps.record.outputs.image_repository }}
+    steps:
+      - name: Reject untrusted publication dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_SHA: ${{ github.event.inputs.source_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "publication dispatch must use the protected main workflow ref" >&2
+            exit 1
+          fi
+          if [ "${GITHUB_REPOSITORY}" != "MachineWisdomAI/hermes-helmet" ]; then
+            echo "publication is confined to MachineWisdomAI/hermes-helmet" >&2
+            exit 1
+          fi
+          if ! printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "source_sha must be a full 40-character lowercase commit SHA" >&2
+            exit 1
+          fi
+          ahead="$(
+            gh api \
+              --header 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/compare/main...${SOURCE_SHA}" \
+              --jq .ahead_by
+          )"
+          if [ "$ahead" != "0" ]; then
+            echo "source_sha is not on protected main (ahead_by=${ahead})" >&2
+            exit 1
+          fi
+
+      - name: Check out selected source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Record source identity
+        id: record
+        env:
+          DISPATCH_SHA: ${{ github.event.inputs.source_sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          source_commit="$(git rev-parse HEAD)"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            test "$source_commit" = "$DISPATCH_SHA"
+          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            test "$source_commit" = "$PR_SHA"
+          else
+            test "$source_commit" = "$PUSH_SHA"
+          fi
+          package_version="$(
+            python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])'
+          )"
+          init_version="$(
+            python3 -c 'import pathlib, re; text = pathlib.Path("src/hermes_helmet/__init__.py").read_text(encoding="utf-8"); print(re.search(r"__version__ = \"([^\"]+)\"", text).group(1))'
+          )"
+          test "$package_version" = "$init_version"
+          {
+            echo "source_commit=${source_commit}"
+            echo "package_version=${package_version}"
+            echo "preview_tag=preview-${source_commit}"
+            echo "image_repository=${IMAGE_REPOSITORY}"
+          } >> "$GITHUB_OUTPUT"
+          echo "source=${source_commit} version=${package_version} tag=preview-${source_commit}"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: resolve-source
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    env:
+      SOURCE_COMMIT: ${{ needs.resolve-source.outputs.source_commit }}
+      PACKAGE_VERSION: ${{ needs.resolve-source.outputs.package_version }}
+      PREVIEW_TAG: ${{ needs.resolve-source.outputs.preview_tag }}
+      LOCAL_TAG: hermes-helmet:preview-linux-${{ matrix.arch }}
+      OUT_DIR: dist/preview/${{ matrix.arch }}
+    steps:
+      - name: Prepare runner disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
+          docker system prune --all --force || true
+          df -h /
+
+      - name: Check out recorded source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          persist-credentials: false
+
+      - name: Confirm image checkout matches recorded source
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Create artifact directory
+        run: mkdir -p "$OUT_DIR"
+
+      - name: Build ${{ matrix.platform }} image once
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: false
+          provenance: false
+          sbom: false
+          tags: hermes-helmet:preview-linux-${{ matrix.arch }}
+          outputs: type=docker,dest=dist/preview/${{ matrix.arch }}/hermes-helmet-linux-${{ matrix.arch }}.tar
+          build-args: |
+            HERMES_BASE_IMAGE=${{ env.HERMES_BASE_IMAGE }}
+            HERMES_HELMET_SOURCE_COMMIT=${{ env.SOURCE_COMMIT }}
+            HERMES_HELMET_VERSION=${{ env.PACKAGE_VERSION }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/MachineWisdomAI/hermes-helmet
+            org.opencontainers.image.revision=${{ env.SOURCE_COMMIT }}
+            org.opencontainers.image.version=${{ env.PACKAGE_VERSION }}
+            com.machinewisdom.hermes-helmet.source-commit=${{ env.SOURCE_COMMIT }}
+
+      - name: Load tested ${{ matrix.platform }} bytes
+        run: |
+          set -eu
+          mkdir -p "$OUT_DIR"
+          docker load -i "$OUT_DIR/hermes-helmet-linux-${{ matrix.arch }}.tar"
+          docker image inspect "$LOCAL_TAG" >/dev/null
+
+      - name: Pull exact ${{ matrix.platform }} base for differential scan
+        run: |
+          set -eu
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            base_ref="$HERMES_BASE_AMD64_IMAGE"
+          else
+            base_ref="$HERMES_BASE_ARM64_IMAGE"
+          fi
+          docker pull "$base_ref"
+          docker tag "$base_ref" "hermes-base:scan-${{ matrix.arch }}"
+
+      - name: Scan ${{ matrix.platform }} base image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: hermes-base:scan-${{ matrix.arch }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          format: json
+          output: dist/preview/${{ matrix.arch }}/base.json
+          exit-code: "0"
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          hide-progress: true
+
+      - name: Record Trivy database snapshot
+        run: |
+          set -eu
+          test -s .cache/trivy/db/trivy.db
+          test -s .cache/trivy/db/metadata.json
+          sha256sum .cache/trivy/db/trivy.db > "$OUT_DIR/trivy-db.sha256"
+          cp .cache/trivy/db/metadata.json "$OUT_DIR/trivy-db-metadata.json"
+          if [ -s .cache/trivy/java-db/trivy-java.db ]; then
+            sha256sum .cache/trivy/java-db/trivy-java.db > "$OUT_DIR/trivy-java-db.sha256"
+            cp .cache/trivy/java-db/metadata.json "$OUT_DIR/trivy-java-db-metadata.json"
+          else
+            printf 'absent\n' > "$OUT_DIR/trivy-java-db.sha256"
+          fi
+
+      - name: Scan ${{ matrix.platform }} image
+        env:
+          TRIVY_SKIP_DB_UPDATE: "true"
+          TRIVY_SKIP_JAVA_DB_UPDATE: "true"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          cache: false
+          scan-type: image
+          image-ref: hermes-helmet:preview-linux-${{ matrix.arch }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          format: json
+          output: dist/preview/${{ matrix.arch }}/derived.json
+          exit-code: "0"
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          hide-progress: true
+
+      - name: Verify unchanged Trivy database
+        run: |
+          set -eu
+          sha256sum --check "$OUT_DIR/trivy-db.sha256"
+          if grep -qx absent "$OUT_DIR/trivy-java-db.sha256"; then
+            test ! -e .cache/trivy/java-db/trivy-java.db
+          else
+            sha256sum --check "$OUT_DIR/trivy-java-db.sha256"
+          fi
+
+      - name: Enforce clean ${{ matrix.platform }} wrapper delta
+        run: |
+          python3 scripts/compare_trivy_reports.py \
+            --base "$OUT_DIR/base.json" \
+            --derived "$OUT_DIR/derived.json" \
+            --platform "${{ matrix.platform }}" \
+            --expected-base-ref "$HERMES_BASE_IMAGE" \
+            --database-sha256-file "$OUT_DIR/trivy-db.sha256" \
+            --java-database-sha256-file "$OUT_DIR/trivy-java-db.sha256" \
+            --output "$OUT_DIR/delta.json"
+
+      - name: Generate ${{ matrix.platform }} SBOM from tested bytes
+        env:
+          TRIVY_SKIP_DB_UPDATE: "true"
+          TRIVY_SKIP_JAVA_DB_UPDATE: "true"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          cache: false
+          scan-type: image
+          image-ref: hermes-helmet:preview-linux-${{ matrix.arch }}
+          format: spdx-json
+          output: dist/preview/${{ matrix.arch }}/sbom.spdx.json
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          hide-progress: true
+
+      - name: Smoke-test tested ${{ matrix.platform }} bytes
+        env:
+          HERMES_HELMET_VERSION: ${{ env.PACKAGE_VERSION }}
+        run: scripts/smoke-dev-image.sh "$LOCAL_TAG"
+
+      - name: Record checksums and image identity
+        run: |
+          set -eu
+          tar_file="$OUT_DIR/hermes-helmet-linux-${{ matrix.arch }}.tar"
+          image_id="$(docker inspect --format '{{.Id}}' "$LOCAL_TAG")"
+          revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$LOCAL_TAG")"
+          version="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$LOCAL_TAG")"
+          source="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$LOCAL_TAG")"
+          architecture="$(docker inspect --format '{{.Architecture}}' "$LOCAL_TAG")"
+          os_name="$(docker inspect --format '{{.Os}}' "$LOCAL_TAG")"
+          test "$revision" = "$SOURCE_COMMIT"
+          test "$version" = "$PACKAGE_VERSION"
+          test "$source" = "https://github.com/MachineWisdomAI/hermes-helmet"
+          test "$os_name/$architecture" = "${{ matrix.platform }}"
+          python3 - "$tar_file" "$image_id" "$revision" "$version" "${{ matrix.platform }}" "$LOCAL_TAG" "$PREVIEW_TAG" <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          tar_path = Path(sys.argv[1])
+          digest = hashlib.sha256(tar_path.read_bytes()).hexdigest()
+          out_dir = tar_path.parent
+          identity = {
+              "source_commit": sys.argv[3],
+              "version": sys.argv[4],
+              "platform": sys.argv[5],
+              "image_repository": os.environ["IMAGE_REPOSITORY"],
+              "preview_tag": sys.argv[7],
+              "local_tag": sys.argv[6],
+              "tar_file": tar_path.name,
+              "tar_sha256": digest,
+              "image_id": sys.argv[2],
+              "base_image": os.environ["HERMES_BASE_IMAGE"],
+              "pushed": False,
+          }
+          (out_dir / "identity.json").write_text(
+              json.dumps(identity, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          sums = out_dir / "SHA256SUMS"
+          lines = []
+          for name in (
+              tar_path.name,
+              "identity.json",
+              "sbom.spdx.json",
+              "delta.json",
+              "trivy-db.sha256",
+          ):
+              payload = (out_dir / name).read_bytes()
+              lines.append(f"{hashlib.sha256(payload).hexdigest()}  {name}")
+          sums.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(json.dumps(identity, indent=2, sort_keys=True))
+          PY
+          rm -f "$OUT_DIR/base.json" "$OUT_DIR/derived.json"
+
+      - name: Upload tested ${{ matrix.platform }} artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: preview-runtime-linux-${{ matrix.arch }}
+          path: dist/preview/${{ matrix.arch }}/
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [resolve-source, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SOURCE_COMMIT: ${{ needs.resolve-source.outputs.source_commit }}
+      PACKAGE_VERSION: ${{ needs.resolve-source.outputs.package_version }}
+      PREVIEW_TAG: ${{ needs.resolve-source.outputs.preview_tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Reconfirm trusted publication context
+        env:
+          DISPATCH_SHA: ${{ github.event.inputs.source_sha }}
+        run: |
+          set -eu
+          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "publish is confined to workflow_dispatch" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "publication dispatch must use the protected main workflow ref" >&2
+            exit 1
+          fi
+          if [ "${GITHUB_REPOSITORY}" != "MachineWisdomAI/hermes-helmet" ]; then
+            echo "publication is confined to MachineWisdomAI/hermes-helmet" >&2
+            exit 1
+          fi
+          test "$SOURCE_COMMIT" = "$DISPATCH_SHA"
+          if ! printf '%s' "$SOURCE_COMMIT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "source commit is not a full SHA" >&2
+            exit 1
+          fi
+          test "$PREVIEW_TAG" = "preview-${SOURCE_COMMIT}"
+          ahead="$(
+            gh api \
+              --header 'Accept: application/vnd.github+json' \
+              "repos/${GITHUB_REPOSITORY}/compare/main...${SOURCE_COMMIT}" \
+              --jq .ahead_by
+          )"
+          if [ "$ahead" != "0" ]; then
+            echo "source_sha is not on protected main (ahead_by=${ahead})" >&2
+            exit 1
+          fi
+
+      - name: Download tested image artifacts from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: preview-runtime-linux-*
+          path: dist/preview
+
+      - name: Verify artifact checksums and source identity
+        run: |
+          set -eu
+          for arch in amd64 arm64; do
+            dir="dist/preview/preview-runtime-linux-${arch}"
+            test -d "$dir"
+            (cd "$dir" && sha256sum --check SHA256SUMS)
+            python3 - "$dir" "$SOURCE_COMMIT" "$PACKAGE_VERSION" "$PREVIEW_TAG" "$arch" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          directory = Path(sys.argv[1])
+          identity = json.loads((directory / "identity.json").read_text(encoding="utf-8"))
+          expected_commit, expected_version, expected_tag, arch = sys.argv[2:6]
+          assert identity["source_commit"] == expected_commit, identity
+          assert identity["version"] == expected_version, identity
+          assert identity["preview_tag"] == expected_tag, identity
+          assert identity["platform"] == f"linux/{arch}", identity
+          assert identity["image_repository"] == "ghcr.io/machinewisdomai/hermes-helmet/runtime", identity
+          assert identity["tar_file"] == f"hermes-helmet-linux-{arch}.tar", identity
+          assert identity["pushed"] is False, identity
+          print(f"{arch}: tar={identity['tar_sha256']} image_id={identity['image_id']}")
+          PY
+          done
+
+      - name: Load tested bytes without rebuilding
+        run: |
+          set -eu
+          docker load -i dist/preview/preview-runtime-linux-amd64/hermes-helmet-linux-amd64.tar
+          docker load -i dist/preview/preview-runtime-linux-arm64/hermes-helmet-linux-arm64.tar
+          for arch in amd64 arm64; do
+            tag="hermes-helmet:preview-linux-${arch}"
+            revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$tag")"
+            version="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$tag")"
+            test "$revision" = "$SOURCE_COMMIT"
+            test "$version" = "$PACKAGE_VERSION"
+            test "$(docker inspect --format '{{.Id}}' "$tag")" = "$(
+              python3 -c 'import json,pathlib,sys; print(json.loads(pathlib.Path(sys.argv[1]).read_text())["image_id"])' \
+                "dist/preview/preview-runtime-linux-${arch}/identity.json"
+            )"
+          done
+
+      - name: Log in to GHCR for trusted publication
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Publish tested bytes and verify the index
+        run: |
+          set -eu
+          amd_ref="${IMAGE_REPOSITORY}:${PREVIEW_TAG}-linux-amd64"
+          arm_ref="${IMAGE_REPOSITORY}:${PREVIEW_TAG}-linux-arm64"
+          index_ref="${IMAGE_REPOSITORY}:${PREVIEW_TAG}"
+          docker tag hermes-helmet:preview-linux-amd64 "$amd_ref"
+          docker tag hermes-helmet:preview-linux-arm64 "$arm_ref"
+          docker push "$amd_ref"
+          docker push "$arm_ref"
+          amd_digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$amd_ref")"
+          arm_digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$arm_ref")"
+          docker buildx imagetools create \
+            --tag "$index_ref" \
+            --annotation "index:org.opencontainers.image.source=https://github.com/MachineWisdomAI/hermes-helmet" \
+            --annotation "index:org.opencontainers.image.revision=${SOURCE_COMMIT}" \
+            --annotation "index:org.opencontainers.image.version=${PACKAGE_VERSION}" \
+            "$amd_digest" \
+            "$arm_digest"
+          docker buildx imagetools inspect "$index_ref" --raw > dist/preview/index.json
+          python3 - "$amd_digest" "$arm_digest" "$SOURCE_COMMIT" "$PACKAGE_VERSION" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          amd_digest, arm_digest, source_commit, version = sys.argv[1:5]
+          index = json.loads(Path("dist/preview/index.json").read_text(encoding="utf-8"))
+          manifests = index.get("manifests") or []
+          platforms = {}
+          for item in manifests:
+              platform = item.get("platform") or {}
+              if platform.get("os") == "unknown":
+                  continue
+              key = f"{platform.get('os')}/{platform.get('architecture')}"
+              platforms[key] = f"{item['digest']}"
+          assert set(platforms) >= {"linux/amd64", "linux/arm64"}, platforms
+          assert amd_digest.endswith(platforms["linux/amd64"]), (amd_digest, platforms)
+          assert arm_digest.endswith(platforms["linux/arm64"]), (arm_digest, platforms)
+          Path("dist/preview/published.json").write_text(
+              json.dumps(
+                  {
+                      "image_repository": "ghcr.io/machinewisdomai/hermes-helmet/runtime",
+                      "preview_tag": f"preview-{source_commit}",
+                      "source_commit": source_commit,
+                      "version": version,
+                      "platforms": {
+                          "linux/amd64": amd_digest,
+                          "linux/arm64": arm_digest,
+                      },
+                  },
+                  indent=2,
+                  sort_keys=True,
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          print(Path("dist/preview/published.json").read_text(encoding="utf-8"))
+          PY
+
+      - name: Write publication summary
+        if: always()
+        run: |
+          set -eu
+          {
+            echo "## Preview runtime image"
+            echo
+            echo "- Source: \`${SOURCE_COMMIT}\`"
+            echo "- Version: \`${PACKAGE_VERSION}\`"
+            echo "- Tag: \`${PREVIEW_TAG}\`"
+            echo "- Repository: \`${IMAGE_REPOSITORY}\`"
+            echo "- Inherited findings: see artifact \`delta.json\` for each platform; wrapper HIGH/CRITICAL additions are rejected."
+            echo "- Owner package-visibility step: the first package is created private. Decide public visibility from this exact candidate. This workflow does not change visibility. Check anonymous digest pull only after that decision."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  summarize:
+    if: always() && needs.resolve-source.result == 'success'
+    needs: [resolve-source, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      SOURCE_COMMIT: ${{ needs.resolve-source.outputs.source_commit }}
+      PACKAGE_VERSION: ${{ needs.resolve-source.outputs.package_version }}
+      PREVIEW_TAG: ${{ needs.resolve-source.outputs.preview_tag }}
+    steps:
+      - name: Download scan summaries
+        if: needs.build.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: preview-runtime-linux-*
+          path: dist/preview
+
+      - name: Write run summary
+        run: |
+          set -eu
+          {
+            echo "## Preview runtime image"
+            echo
+            echo "- Source: \`${SOURCE_COMMIT}\`"
+            echo "- Version: \`${PACKAGE_VERSION}\`"
+            echo "- Tag: \`${PREVIEW_TAG}\`"
+            echo "- Repository: \`${IMAGE_REPOSITORY}\`"
+            echo "- Event: \`${GITHUB_EVENT_NAME}\`"
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "- Publication: trusted dispatch from protected main; tested bytes are pushed without rebuild."
+            else
+              echo "- Publication: not performed on pull_request or push. Manual dispatch from protected main is required."
+            fi
+            echo "- Owner package-visibility step: leave the first package private until the owner decides from this candidate. Do not change visibility from CI. Anonymous digest pull is checked after that decision."
+            echo
+            echo "### Artifact identity and inherited findings"
+            for arch in amd64 arm64; do
+              identity="dist/preview/preview-runtime-linux-${arch}/identity.json"
+              delta="dist/preview/preview-runtime-linux-${arch}/delta.json"
+              echo
+              echo "#### linux/${arch}"
+              if [ -f "$identity" ]; then
+                python3 - "$identity" "$delta" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          identity = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          print(f"- tar_sha256: `{identity['tar_sha256']}`")
+          print(f"- image_id: `{identity['image_id']}`")
+          print(f"- version: `{identity['version']}`")
+          delta_path = Path(sys.argv[2])
+          if delta_path.is_file():
+              delta = json.loads(delta_path.read_text(encoding="utf-8"))
+              inherited = delta.get("base", {}).get("high_or_critical")
+              added = delta.get("delta", {}).get("added_high_or_critical") or []
+              print(f"- inherited HIGH/CRITICAL: {inherited}")
+              print(f"- wrapper-added HIGH/CRITICAL: {len(added)}")
+          PY
+              else
+                echo "- artifacts unavailable (build did not succeed)"
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

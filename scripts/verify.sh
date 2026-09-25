@@ -51,8 +51,12 @@ for required in \
     src/hermes_helmet/jj_toolchain.py \
     tests/test_public_boundary.py \
     tests/test_ci_supply_chain.py \
+    tests/test_preview_runtime_image.py \
+    tests/test_compare_trivy_reports.py \
+    scripts/compare_trivy_reports.py \
     scripts/ci-product-proof.sh \
     .github/workflows/verify.yml \
+    .github/workflows/preview-runtime-image.yml \
     .github/dependabot.yml \
     .github/PULL_REQUEST_TEMPLATE.md \
     .github/ISSUE_TEMPLATE/config.yml \
