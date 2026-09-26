@@ -6,6 +6,13 @@
 
 **Give Hermes the wings to carry your plan through, under its own identity**
 
+<p align="center">
+  <a href="https://machine-wisdom.ai/">
+    <img src="docs/assets/machine-wisdom-ai/MachineWisdomAILogo.png" width="40" height="40" alt=""><br>
+    <strong>By Machine Wisdom AI</strong>
+  </a>
+</p>
+
 Hermes Helmet is an open-source software factory that gives
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) the ability to
 keep going: to take on a body of work, carry it through review
@@ -289,6 +296,7 @@ Build and smoke-test a local development image with
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)
 - [Public preview](docs/public-preview.md) and [changelog](CHANGELOG.md)
+- [Brand attribution and logos](docs/brand.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## License

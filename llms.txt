@@ -39,6 +39,10 @@ The product name in prose is Hermes Helmet. The CLI is `helmet`. You are the Cap
 
 - [Private overlay](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/private-overlay.md): Keep company policy, mounts, and state outside this repository. Optional; not a product prerequisite.
 
+## Brand
+
+- [Brand attribution and logos](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/brand.md): Machine Wisdom AI attribution, reusable company logos, and the Hermes Helmet emblem and tagline.
+
 ## Contribute
 
 - [AGENTS.md](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/AGENTS.md): Instructions for agents changing this repository.
