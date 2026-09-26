@@ -1,0 +1,13 @@
+{
+  "name": "hermes-helmet",
+  "displayName": "Hermes Helmet",
+  "version": "0.1.0rc1",
+  "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, and dependent-issue coordination.",
+  "author": {
+    "name": "Machine Wisdom",
+    "url": "https://machine-wisdom.ai"
+  },
+  "homepage": "https://github.com/MachineWisdomAI/hermes-helmet",
+  "repository": "https://github.com/MachineWisdomAI/hermes-helmet",
+  "license": "Apache-2.0"
+}

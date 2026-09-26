@@ -82,3 +82,7 @@ reported before any setup or GitHub mutation; foreign skill files are left
 untouched. Existing host roots, skill roots, destination directories, and
 `SKILL.md` files are checked component by component before they are read or
 changed; symlink redirects and group/other-writable components fail closed.
+
+Claude Code and Codex can instead load the same root `skills/` tree as a plugin;
+see [first-officer-plugins.md](first-officer-plugins.md). That path does not
+replace `helmet setup` or delete unrelated host skills.

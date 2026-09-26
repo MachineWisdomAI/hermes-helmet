@@ -7,6 +7,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ### Added
 
+- Claude Code and Codex first-officer plugin marketplace at the repository
+  root, packaging the existing `setup-helmet`, `helmet-issue`, and
+  `helmet-epic` skills. See [first-officer-plugins.md](docs/first-officer-plugins.md).
 - Short `helmet` CLI command, with `hermes-helmet` retained as a compatible
   alias.
 - Manual preview publication of verified `linux/amd64` and `linux/arm64`

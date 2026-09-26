@@ -34,6 +34,10 @@ for required in \
     docs/company-skills.md \
     docs/openviking.md \
     docs/model-lanes.md \
+    docs/first-officer-plugins.md \
+    .claude-plugin/plugin.json \
+    .claude-plugin/marketplace.json \
+    .codex-plugin/plugin.json \
     skills/setup-helmet/SKILL.md \
     skills/helmet-issue/SKILL.md \
     skills/helmet-epic/SKILL.md \

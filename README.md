@@ -75,6 +75,10 @@ Hermes does the implementation.
 | [`helmet-issue`](skills/helmet-issue/SKILL.md) | Carry one issue through implementation, review, repairs, and acceptance. |
 | [`helmet-epic`](skills/helmet-epic/SKILL.md) | Coordinate dependent issues and run independent work in parallel. |
 
+Install those skills with `helmet install-skills`, or as a Claude Code / Codex
+plugin; see [First-officer plugin](docs/first-officer-plugins.md). Choosing
+Claude as first officer does not change the worker model.
+
 In configuration and command references, **Captain-side** means the side where
 your first officer operates with your delegated authority. The two GitHub
 identities are `captain_github_login` and `worker_github_login`. See the
@@ -274,6 +278,7 @@ Build and smoke-test a local development image with
 ## Documentation
 
 - [Quickstart](docs/quickstart.md) and [setup diagnostics](docs/setup-helmet.md)
+- [First-officer plugin](docs/first-officer-plugins.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)
