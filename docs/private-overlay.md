@@ -6,12 +6,12 @@ fork the core source, add it as a submodule, or mount a replacement control
 loop over `/opt/hermes-helmet`.
 
 The examples below use ExampleCo names, paths, and the public ExampleCo policy
-fixture. Replace those values. They are illustrations, not a hosted service.
+fixture. Replace those values.
 
 ## What each side owns
 
-The public image owns the worker runtime: Hermes Agent, the Helmet control
-loop under `/opt/hermes-helmet`, the entrypoint
+The public image owns the worker runtime: Hermes Agent, the Hermes Helmet
+control loop under `/opt/hermes-helmet`, the entrypoint
 `/opt/hermes-helmet/runtime-entrypoint.sh`, the `/usr/local/bin/gh` wrapper,
 non-root UID/GID `10000`, and the `/opt/data` state layout.
 
@@ -112,15 +112,15 @@ HERMES_GITHUB_TOKEN=ghp_example_synthetic_token_not_a_secret
 Start it with:
 
 ```sh
-docker pull ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea
+docker compose --env-file .env -f compose.yaml pull hermes
 docker compose --env-file .env -f compose.yaml up -d --no-build
 ```
 
 Compose injects the token only so the entrypoint can write
 `/run/hermes-helmet/github-token` on the tmpfs (UID/GID `10000`, mode `0700`).
-The entrypoint then unsets `GH_TOKEN` and `GITHUB_TOKEN` before upstream
-startup. Supervised processes do not inherit the PAT; `/usr/local/bin/gh`
-reads the file.
+The entrypoint then copies the mounted policy, unsets `GH_TOKEN` and
+`GITHUB_TOKEN`, and only then starts upstream Hermes. Supervised processes do
+not inherit the PAT; `/usr/local/bin/gh` reads the file.
 
 When `HERMES_HELMET_POLICY_SOURCE` points at the read-only mount
 `/opt/hermes-helmet/config/policy.mounted.json`, startup copies it to
@@ -154,13 +154,18 @@ USER 10000:10000
 
 Point Compose `image:` at the tag you build from that file, or keep using the
 public digest when you have nothing to add. Do not replace `ENTRYPOINT`, do not
-run the long-lived process as root, and do not copy Helmet source over the
-image tree.
+run the long-lived process as root, and do not copy Hermes Helmet source over
+the image tree.
 
 ## Worker instructions and approved skills
 
-One version-2 policy is the authority document. From it you can render the
-crew contract that seeds the worker profile:
+One version-2 policy is the authority document.
+`render_crew_contract(policy)` renders the crew contract from that document.
+Printing it does not install it. After you create the assignee profile in the
+worker, copy the reviewed contract (and any other company guidance you accept)
+into that profile's `SOUL.md` at `$HERMES_HOME/profiles/<assignee>/SOUL.md`.
+Hermes Agent loads `SOUL.md` as standing instructions for the profile.
+ExampleCo uses profile `builder` and Compose `HERMES_HOME=/opt/data`.
 
 ```python
 from pathlib import Path
@@ -182,21 +187,12 @@ exact skill directory names in `allowlist`, and let startup call
 `/opt/data`; it does not install Captain skills and cannot grant review or
 merge authority. See [company-skills.md](company-skills.md).
 
-Public helpers you can call instead of forking them:
-
-```python
-from hermes_helmet.authority import load_authority, render_crew_contract
-from hermes_helmet.preflight import StaticIdentityProbe, assert_worker_ready
-
-policy = load_authority(Path("policy.json"))
-assert_worker_ready(policy, StaticIdentityProbe(observed_login))
-```
-
 ## Change the image, keep the work
 
 Follow [runtime-image.md](runtime-image.md#change-the-pin-or-roll-back). Keep
 `exampleco_hermes_helmet_state` so the poller ledger and checkouts survive.
-Pause dispatch and finish or block active issues before you change repository
-slugs or worktree paths. There is no extra platform-management command; intake
-is the dispatch label plus the poller, and rollback is the previous digest
-against the same volume.
+Pause the `github-issue-poller` cron job, leave the worker running, and finish
+or explicitly reconcile active work before you change repository slugs or
+worktree paths. Recording a blocker does not cancel a task. There is no extra
+platform-management command; intake is the dispatch label plus the poller, and
+rollback is the previous digest against the same volume.

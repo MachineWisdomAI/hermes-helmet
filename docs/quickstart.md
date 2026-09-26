@@ -111,7 +111,11 @@ Replace those values before enabling intake. See
 [authority-schema.md](authority-schema.md) and
 [private-overlay.md](private-overlay.md).
 
-Render a crew contract from the same document when seeding a profile:
+`render_crew_contract(policy)` prints the crew contract from that document. It
+does not install instructions. After you create the assignee profile, copy the
+reviewed contract into that profile's `SOUL.md` at
+`$HERMES_HOME/profiles/<assignee>/SOUL.md`. ExampleCo uses profile `builder`
+and Compose `HERMES_HOME=/opt/data`.
 
 ```sh
 PYTHONPATH=src python3 - <<'PY'
@@ -125,12 +129,15 @@ PY
 ## 2. Start
 
 From the repository root, pull the published digest and start Compose without
-building. `deploy/.env` must set `HERMES_HELMET_IMAGE` to that digest; otherwise
-Compose looks for the local development tag `hermes-helmet:local`.
+building. Put that digest in `deploy/.env` as `HERMES_HELMET_IMAGE`. Compose
+interpolates `image:` from that file. A leftover shell export of
+`HERMES_HELMET_IMAGE` overrides `.env`; `docker pull "$HERMES_HELMET_IMAGE"`
+does not read `.env`. If this shell previously exported the variable, unset it
+so `.env` wins, then pull and start through Compose:
 
 ```sh
-export HERMES_HELMET_IMAGE='ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea'
-docker pull "$HERMES_HELMET_IMAGE"
+unset HERMES_HELMET_IMAGE
+docker compose --env-file deploy/.env -f deploy/compose.yaml pull hermes
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --no-build
 ```
 
@@ -142,23 +149,23 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   cat /opt/hermes-helmet/SOURCE_COMMIT
 ```
 
-The digest pins the image bytes. `SOURCE_COMMIT` is the git revision baked into
-those bytes. They match for this preview. The `0.1.0rc1` package label on the
-image is not a new stable release and is not the September 23 wheel.
+The digest identifies the image built from that recorded source SHA.
+`SOURCE_COMMIT` inside the container is that SHA. The `0.1.0rc1` package label
+on the image is not a new stable release and is not the September 23 wheel.
 
 The image entrypoint writes the worker token to its owner-only runtime file,
-removes the raw token variables, copies the mounted policy into
-`/opt/data/github-issue-poller/policy.json`, and only then enters the upstream
-s6 init chain. Supervised dashboard and gateway processes therefore do not
-inherit the PAT, while `/usr/local/bin/gh` can read it for one authorized
-GitHub command.
+copies the mounted policy into `/opt/data/github-issue-poller/policy.json`,
+removes the raw token variables, and only then enters the upstream s6 init
+chain. Supervised dashboard and gateway processes therefore do not inherit the
+PAT, while `/usr/local/bin/gh` can read it for one authorized GitHub command.
 
-To wrap `deploy/Dockerfile` around a local checkout instead, unset
-`HERMES_HELMET_IMAGE` and build:
+To wrap `deploy/Dockerfile` around a local checkout instead, select
+`hermes-helmet:local` explicitly. Unsetting the shell variable is not enough
+when `deploy/.env` still pins the published digest:
 
 ```sh
 export HERMES_HELMET_SOURCE_COMMIT="$(git rev-parse HEAD)"
-unset HERMES_HELMET_IMAGE
+export HERMES_HELMET_IMAGE=hermes-helmet:local
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 ```
 

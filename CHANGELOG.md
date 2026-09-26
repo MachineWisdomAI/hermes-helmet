@@ -16,7 +16,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 ### Changed
 
 - Document the published GHCR preview runtime and a company deployment overlay
-  that mounts policy and state without forking core source.
+  that mounts policy and state without forking core source. Image selection
+  uses `deploy/.env` with `docker compose ... pull hermes`; development builds
+  select `hermes-helmet:local` explicitly. Image replacement pauses the
+  `github-issue-poller` cron job and leaves the worker running.
 - Introduce Hermes Helmet as an open-source software factory for teams using
   coding agents, with a walkthrough of delegation, review, repair, and
   acceptance.
