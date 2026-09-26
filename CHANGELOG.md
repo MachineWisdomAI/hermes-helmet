@@ -15,6 +15,8 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ### Changed
 
+- Document the published GHCR preview runtime and a company deployment overlay
+  that mounts policy and state without forking core source.
 - Introduce Hermes Helmet as an open-source software factory for teams using
   coding agents, with a walkthrough of delegation, review, repair, and
   acceptance.
