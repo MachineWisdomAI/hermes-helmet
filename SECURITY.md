@@ -43,3 +43,12 @@ Public CI scans source dependencies and secrets and publishes a source SBOM for
 each run. The Dockerfile pins the upstream Hermes Agent image and verifies the
 GitHub CLI download by architecture and checksum. Review dependency and base-
 image updates through the normal pull-request workflow before deployment.
+
+Preview runtime images are built for `linux/amd64` and `linux/arm64`, scanned
+against the pinned base, and smoke-tested before publication. Manual publication
+uses an explicit full commit SHA on protected `main` and tags
+`ghcr.io/machinewisdomai/hermes-helmet/runtime:preview-<sha>`. These images are
+not `latest` or `stable` releases. The first package is created private; the
+owner decides public visibility from the exact candidate. Workflows do not
+change package visibility. Anonymous digest pulls are checked only after that
+decision.

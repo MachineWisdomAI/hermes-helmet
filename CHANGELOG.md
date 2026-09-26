@@ -9,6 +9,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 - Short `helmet` CLI command, with `hermes-helmet` retained as a compatible
   alias.
+- Manual preview publication of verified `linux/amd64` and `linux/arm64`
+  runtime images to `ghcr.io/machinewisdomai/hermes-helmet/runtime` using tag
+  `preview-<full-sha>`.
 
 ### Changed
 
