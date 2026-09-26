@@ -20,7 +20,12 @@ and external skill packs are optional. The bundled `setup-helmet`,
   portable `helmet-issue` / `helmet-epic` skills. The preview has been exercised
   through Codex; Claude Code and Hermes have installation and static validation.
 
-The development image defaults pin the official Hermes Agent base
+The published worker image is a separate installation from this CLI. Installing
+`helmet` does not pull GHCR or start Docker. The current preview digest is
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea`,
+built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. See
+[runtime-image.md](runtime-image.md). Development builds still pin the official
+Hermes Agent base
 `nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294`
 (Hermes Agent 0.21.3). Override only with another immutable tag+digest; do not
 use `latest` or `main`.
@@ -93,6 +98,7 @@ The manual minimum-runtime path remains available:
 ```sh
 cp deploy/.env.example deploy/.env
 # set HERMES_GITHUB_TOKEN=
+# uncomment HERMES_HELMET_IMAGE and keep the published digest
 
 cp config/policy.example.json config/policy.json
 # edit company, captain_github_login, worker_github_login, assignee,
@@ -105,7 +111,11 @@ Replace those values before enabling intake. See
 [authority-schema.md](authority-schema.md) and
 [private-overlay.md](private-overlay.md).
 
-Render a crew contract from the same document when seeding a profile:
+`render_crew_contract(policy)` prints the crew contract from that document. It
+does not install instructions. After you create the assignee profile, copy the
+reviewed contract into that profile's `SOUL.md` at
+`$HERMES_HOME/profiles/<assignee>/SOUL.md`. ExampleCo uses profile `builder`
+and Compose `HERMES_HOME=/opt/data`.
 
 ```sh
 PYTHONPATH=src python3 - <<'PY'
@@ -118,24 +128,50 @@ PY
 
 ## 2. Start
 
-From the repository root:
+From the repository root, pull the published digest and start Compose without
+building. Put that digest in `deploy/.env` as `HERMES_HELMET_IMAGE`. Compose
+interpolates `image:` from that file. A leftover shell export of
+`HERMES_HELMET_IMAGE` overrides `.env`; `docker pull "$HERMES_HELMET_IMAGE"`
+does not read `.env`. If this shell previously exported the variable, unset it
+so `.env` wins, then pull and start through Compose:
 
 ```sh
-export HERMES_HELMET_SOURCE_COMMIT="$(git rev-parse HEAD)"
-docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+unset HERMES_HELMET_IMAGE
+docker compose --env-file deploy/.env -f deploy/compose.yaml pull hermes
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --no-build
 ```
 
-Confirm the image recorded its source commit:
+The image was built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. Confirm
+the running container recorded that commit:
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   cat /opt/hermes-helmet/SOURCE_COMMIT
 ```
 
+The digest identifies the image built from that recorded source SHA.
+`SOURCE_COMMIT` inside the container is that SHA. The `0.1.0rc1` package label
+on the image is not a new stable release and is not the September 23 wheel.
+
 The image entrypoint writes the worker token to its owner-only runtime file,
+copies the mounted policy into `/opt/data/github-issue-poller/policy.json`,
 removes the raw token variables, and only then enters the upstream s6 init
 chain. Supervised dashboard and gateway processes therefore do not inherit the
 PAT, while `/usr/local/bin/gh` can read it for one authorized GitHub command.
+
+To wrap `deploy/Dockerfile` around a local checkout instead, select
+`hermes-helmet:local` explicitly. Unsetting the shell variable is not enough
+when `deploy/.env` still pins the published digest:
+
+```sh
+export HERMES_HELMET_SOURCE_COMMIT="$(git rev-parse HEAD)"
+export HERMES_HELMET_IMAGE=hermes-helmet:local
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+```
+
+That development `SOURCE_COMMIT` should match `git rev-parse HEAD`. Keep
+company-specific Compose, policy, and volumes in a
+[private overlay](private-overlay.md).
 
 ## 3. Clone the allowlisted checkout in the worker volume
 

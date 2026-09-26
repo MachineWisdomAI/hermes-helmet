@@ -166,6 +166,6 @@ identities, hosts, paths, or service labels.
 
 ## Private overlay seam
 
-See [private-overlay.md](private-overlay.md). Downstream private products supply
-a concrete version-2 policy document (and optional rendered contract) without
-forking Hermes Helmet source.
+See [private-overlay.md](private-overlay.md). A company repository supplies a
+concrete version-2 policy document (and optional rendered contract) and mounts
+it on the published image without forking Hermes Helmet source.
