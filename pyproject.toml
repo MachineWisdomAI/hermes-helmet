@@ -11,6 +11,11 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Machine Wisdom AI" }]
 
+[project.urls]
+Homepage = "https://github.com/MachineWisdomAI/hermes-helmet"
+Documentation = "https://github.com/MachineWisdomAI/hermes-helmet/blob/main/README.md"
+Issues = "https://github.com/MachineWisdomAI/hermes-helmet/issues"
+
 [project.scripts]
 hermes-helmet-poller = "hermes_helmet.github_issue_poller:main"
 hermes-helmet-install-poller = "hermes_helmet.install_poller:main"

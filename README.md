@@ -282,6 +282,7 @@ Build and smoke-test a local development image with
 
 ## Documentation
 
+- [Agent index](llms.txt) for coding agents discovering this repository
 - [Quickstart](docs/quickstart.md) and [setup diagnostics](docs/setup-helmet.md)
 - [Published worker image](docs/runtime-image.md) and [company overlay](docs/private-overlay.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
