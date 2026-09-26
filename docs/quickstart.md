@@ -300,7 +300,9 @@ On the Captain workstation (not the worker container identity), install the
 bundled skills with `helmet install-skills` as below, or use the
 [first-officer plugin](first-officer-plugins.md) for Claude Code or Codex.
 Plugin installation copies instructions only; it does not provision Docker,
-tokens, or worker access.
+tokens, or worker access. After setup, reuse policy and worker settings across
+sessions with a user-owned env file; see
+[Starting a first-officer session](first-officer-plugins.md#5-starting-a-first-officer-session).
 
 ```sh
 PYTHONPATH=src python3 -m hermes_helmet.cli install-skills --target codex

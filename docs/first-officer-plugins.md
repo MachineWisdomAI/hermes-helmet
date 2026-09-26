@@ -35,7 +35,7 @@ not delete unrelated host skills. The plugin does not migrate or overwrite
 foreign skills automatically.
 
 Canonical skill behavior stays in `skills/` and the delivery docs. This page
-covers installation only.
+covers installation and an optional repeatable session.
 
 ## 3. Install
 
@@ -81,7 +81,60 @@ Chat. Cowork and claude.ai chat may list plugins; they are not a substitute for
 the local CLI or Code-tab SSH workflow that can run `helmet` and `gh` on the
 Captain host. Hermes Helmet does not ship an MCP adapter for this path.
 
-## 5. Unchanged boundaries
+## 5. Starting a first-officer session
+
+After setup, keep non-secret deployment settings in a user-owned shell file
+such as `~/.hermes-helmet/first-officer/env.sh`. Source it before launching
+ordinary `claude` or `codex` so subprocesses inherit the same policy and
+worker connection.
+
+The plugin supplies skills. The environment selects the policy and worker
+connection. Agent login, model, and permissions stay in their usual
+configuration. A launcher adds neither authority nor a transport.
+
+```sh
+# ~/.hermes-helmet/first-officer/env.sh
+export HERMES_HELMET_CONFIG="$HOME/.hermes-helmet/policy.json"
+
+# Optional values from an already-configured deployment. The plugin and
+# setup do not install placeholder adapters.
+# export HERMES_HELMET_HERMES="/usr/local/bin/hermes"  # one executable path
+# export HERMES_HELMET_WORKER_RUNTIME="your-adapter"   # command prefix
+# export HERMES_HELMET_CHECKPOINT_DIR="$HOME/.hermes-helmet/other/checkpoints"
+```
+
+`HERMES_HELMET_CONFIG` is the generated policy path. The worker-transport
+contract (verbs `ledger-root`, `ledger-watch`, `dispatch-root`, `wait`) is in
+[helmet-issue.md](helmet-issue.md#checkpoint); this file only selects an
+already-configured prefix. Credentials stay in existing `gh` and provider
+login stores.
+
+```sh
+. "$HOME/.hermes-helmet/first-officer/env.sh"
+claude
+```
+
+The same source line works with `codex`. An optional local wrapper can source
+the file and `exec claude "$@"` (or Codex). A name such as `helmet-claude` is
+your shortcut; Hermes Helmet does not ship it. Do not change the caller's
+working directory.
+
+On Desktop or SSH, the file must exist on the host that runs the tools.
+Sourcing it in another terminal does not reconfigure an already-running app.
+An agent can source it in the same shell as each `helmet` command:
+
+```sh
+. "$HOME/.hermes-helmet/first-officer/env.sh" && helmet status "$ISSUE_URL"
+```
+
+Check an existing configured issue without dispatching work:
+
+```sh
+gh api user --jq .login   # compare with captain_github_login in the policy
+helmet status https://github.com/example-org/demo-repo/issues/123
+```
+
+## 6. Unchanged boundaries
 
 Setup, issue and epic review, repair, identity separation, and merge authority
 are unchanged. The worker never merges. No private company setup or keys belong
