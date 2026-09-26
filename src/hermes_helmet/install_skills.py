@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Install portable Hermes Helmet Captain skills into host skill directories.
 
-Supported targets (static validation covers all three; runtime dogfood is Codex):
+Supported targets (static validation covers all three):
 
 - codex:   ~/.codex/skills/<name>/SKILL.md
 - claude:  ~/.claude/skills/<name>/SKILL.md

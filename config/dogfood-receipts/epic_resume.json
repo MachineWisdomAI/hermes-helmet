@@ -1,6 +1,0 @@
-{
-  "command": ["hermes-helmet", "epic", "https://github.com/example-org/demo-repo/issues/42"],
-  "exit_code": 0,
-  "observed_at": "2026-09-21T15:07:00+00:00",
-  "output": "epic-resume\n"
-}

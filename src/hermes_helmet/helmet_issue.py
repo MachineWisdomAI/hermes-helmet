@@ -95,8 +95,8 @@ def _resolve_worker_runtime() -> tuple[str, ...]:
     - ``wait ISSUE_URL --timeout-seconds N --json [--cursor TOKEN]`` → blocks
       outside the agent loop and prints one bounded wake result
 
-    MachineWisdom-specific adapters and live dogfood stay in WisdomHelm; this is
-    only the portable configuration seam. Empty means local ledger/Path only.
+    Deployment-specific adapters stay outside this repository; this is only the
+    portable configuration seam. Empty means local ledger/Path only.
     """
 
     raw = (os.environ.get("HERMES_HELMET_WORKER_RUNTIME") or "").strip()

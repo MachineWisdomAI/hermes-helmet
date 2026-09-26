@@ -24,7 +24,8 @@ Edit portable Captain skills only in this repository's `skills/` tree, including
 linked references. The Python build copies those assets into
 `hermes_helmet/bundled_skills/` in the wheel. Source and editable installs use
 `skills/` directly. The source distribution carries that same tree, and the
-release test builds a wheel from it and compares every packaged asset.
+packaging tests build a wheel from the unpacked sdist and compare every packaged
+skill and reference.
 
 An adopter's installer may copy this tree into its host skill directories or
 package it for another client. Those copies are generated distribution artifacts;

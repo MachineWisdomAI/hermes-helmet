@@ -268,9 +268,8 @@ repository checks before submitting a change:
 scripts/verify.sh
 ```
 
-Build a development image with `scripts/build-dev-image.sh`. The build records
-its source and image identity in `dist/image-identity.json`; see
-[container candidate tooling](docs/release-candidate.md).
+Build and smoke-test a local development image with
+`scripts/build-dev-image.sh` and `scripts/smoke-dev-image.sh`.
 
 ## Documentation
 
