@@ -296,7 +296,11 @@ when implementation finishes; task completion alone does not accept or merge it.
 
 ## 7. Captain-side helmet-issue / helmet-epic (optional host)
 
-On the Captain workstation (not the worker container identity):
+On the Captain workstation (not the worker container identity), install the
+bundled skills with `helmet install-skills` as below, or use the
+[first-officer plugin](first-officer-plugins.md) for Claude Code or Codex.
+Plugin installation copies instructions only; it does not provision Docker,
+tokens, or worker access.
 
 ```sh
 PYTHONPATH=src python3 -m hermes_helmet.cli install-skills --target codex

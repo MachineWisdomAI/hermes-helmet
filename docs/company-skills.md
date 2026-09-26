@@ -27,9 +27,10 @@ linked references. The Python build copies those assets into
 packaging tests build a wheel from the unpacked sdist and compare every packaged
 skill and reference.
 
-An adopter's installer may copy this tree into its host skill directories or
-package it for another client. Those copies are generated distribution artifacts;
-changes belong here. A private toolkit is never required to install or use the
+An adopter's installer may copy this tree into its host skill directories,
+install the [first-officer plugin](first-officer-plugins.md), or package it for
+another client. Those copies are generated distribution artifacts; changes
+belong here. A private toolkit is never required to install or use the
 portable skills. Company-specific instructions and deployment runbooks remain in
 the adopter's repository. Captain skills stay outside executor company packs.
 

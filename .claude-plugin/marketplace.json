@@ -1,0 +1,14 @@
+{
+  "name": "hermes-helmet",
+  "description": "Hermes Helmet first-officer plugin for Claude Code and Codex.",
+  "owner": {
+    "name": "Machine Wisdom"
+  },
+  "plugins": [
+    {
+      "name": "hermes-helmet",
+      "source": "./",
+      "description": "Captain-side setup-helmet, helmet-issue, and helmet-epic skills."
+    }
+  ]
+}
