@@ -44,7 +44,12 @@ class FirstOfficerPluginTests(unittest.TestCase):
         self.assertEqual(claude["name"], PLUGIN_NAME)
         self.assertEqual(codex["name"], PLUGIN_NAME)
         self.assertEqual(claude["version"], codex["version"])
-        self.assertIn(f'version = "{claude["version"]}"', pyproject)
+        self.assertRegex(
+            claude["version"],
+            r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
+        )
+        self.assertIn('version = "0.1.0rc1"', pyproject)
+        self.assertNotEqual(claude["version"], "0.1.0rc1")
         self.assertEqual(claude["license"], "Apache-2.0")
         self.assertEqual(codex["license"], "Apache-2.0")
         self.assertEqual(claude["author"]["name"], "Machine Wisdom")
@@ -75,6 +80,28 @@ class FirstOfficerPluginTests(unittest.TestCase):
         self.assertEqual(interface["developerName"], "Machine Wisdom")
         self.assertTrue(interface["shortDescription"].strip())
         self.assertTrue(interface["longDescription"].strip())
+        capabilities = interface["capabilities"]
+        self.assertIsInstance(capabilities, list)
+        self.assertGreaterEqual(len(capabilities), 1)
+        self.assertLessEqual(len(capabilities), 20)
+        for capability in capabilities:
+            self.assertIsInstance(capability, str)
+            self.assertTrue(capability.strip())
+            self.assertNotIn("\n", capability)
+            self.assertLessEqual(len(capability), 120)
+        prompts = interface["defaultPrompt"]
+        self.assertIsInstance(prompts, list)
+        self.assertGreaterEqual(len(prompts), 1)
+        self.assertLessEqual(len(prompts), 3)
+        normalized = []
+        for prompt in prompts:
+            self.assertIsInstance(prompt, str)
+            self.assertTrue(prompt.strip())
+            self.assertNotIn("\n", prompt)
+            self.assertLessEqual(len(prompt), 128)
+            collapsed = " ".join(prompt.split())
+            self.assertNotIn(collapsed, normalized)
+            normalized.append(collapsed)
 
     def test_plugin_root_exposes_canonical_skills_in_cache_layout(self) -> None:
         marketplace = _load_json(".claude-plugin/marketplace.json")
