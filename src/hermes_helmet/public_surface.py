@@ -82,6 +82,7 @@ SCAN_ROOTS = (
     "CODE_OF_CONDUCT.md",
     "AGENTS.md",
     "CLAUDE.md",
+    "llms.txt",
     "pyproject.toml",
 )
 BINARY_SUFFIXES = {

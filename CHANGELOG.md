@@ -12,12 +12,20 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   `helmet-epic` skills. See [first-officer-plugins.md](docs/first-officer-plugins.md).
 - Short `helmet` CLI command, with `hermes-helmet` retained as a compatible
   alias.
+- Agent discovery index (`llms.txt`) with task routing, a README documentation
+  link, and package `[project.urls]` for the public repository, documentation,
+  and issue tracker.
 - Manual preview publication of verified `linux/amd64` and `linux/arm64`
   runtime images to `ghcr.io/machinewisdomai/hermes-helmet/runtime` using tag
   `preview-<full-sha>`.
 
 ### Changed
 
+- Document the published GHCR preview runtime and a company deployment overlay
+  that mounts policy and state without forking core source. Image selection
+  uses `deploy/.env` with `docker compose ... pull hermes`; development builds
+  select `hermes-helmet:local` explicitly. Image replacement pauses the
+  `github-issue-poller` cron job and leaves the worker running.
 - Introduce Hermes Helmet as an open-source software factory for teams using
   coding agents, with a walkthrough of delegation, review, repair, and
   acceptance.

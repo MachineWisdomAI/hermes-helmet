@@ -109,6 +109,9 @@ Use the [quickstart](docs/quickstart.md), or point your coding agent at the
 Python 3.11+, a separate worker GitHub account and token, and access to your
 chosen model provider.
 
+The host CLI and the worker image are separate installations. Installing the
+CLI does not pull GHCR or start the worker.
+
 Install the CLI from the current public source:
 
 ```sh
@@ -120,11 +123,17 @@ python -m pip install .
 helmet --help
 ```
 
-The quickstart configures the worker, builds its runtime on a pinned stable
-release of the official Hermes Agent Docker image, completes provider login,
-and enables issue intake. Install the bundled skills into your coding-agent
-host, then give your first officer one GitHub issue to carry through the
-workflow. For example, after setup:
+Start the worker from the published preview digest
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea`
+(source `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`). The quickstart pulls that
+image and runs Compose with `--no-build`, then completes provider login and
+enables issue intake. Building from `deploy/Dockerfile` remains a development
+option. See the [runtime image notes](docs/runtime-image.md). Keep
+company-specific mounts in a [private overlay](docs/private-overlay.md).
+
+Install the bundled skills into your coding-agent host, then give your first
+officer one GitHub issue to carry through the workflow. For example, after
+setup:
 
 > Use helmet-issue to implement https://github.com/example-org/demo-repo/issues/123.
 > Follow the issue through review, necessary repairs, and acceptance under the
@@ -277,8 +286,10 @@ Build and smoke-test a local development image with
 
 ## Documentation
 
+- [Agent index](llms.txt) for coding agents discovering this repository
 - [Quickstart](docs/quickstart.md) and [setup diagnostics](docs/setup-helmet.md)
 - [First-officer plugin](docs/first-officer-plugins.md)
+- [Published worker image](docs/runtime-image.md) and [company overlay](docs/private-overlay.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)

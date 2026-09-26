@@ -149,8 +149,10 @@ class FirstOfficerPluginTests(unittest.TestCase):
         guide = (ROOT / INSTALL_GUIDE).read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         quickstart = (ROOT / "docs" / "quickstart.md").read_text(encoding="utf-8")
+        llms = (ROOT / "llms.txt").read_text(encoding="utf-8")
         self.assertIn(INSTALL_GUIDE, readme)
         self.assertIn("first-officer-plugins.md", quickstart)
+        self.assertIn("first-officer-plugins.md", llms)
         for command in (
             "claude plugin marketplace add MachineWisdomAI/hermes-helmet",
             "claude plugin install hermes-helmet@hermes-helmet",
