@@ -9,6 +9,10 @@ Use **Hermes Helmet** as the full product name in prose and user-facing text.
 The name evokes the mythical helmet of Hermes. Use `helmet` for the CLI;
 preserve package, module, skill, path, and configuration identifiers.
 
+Attribute Hermes Helmet material to **Machine Wisdom AI**, using the established
+company logo. Follow [the brand guide](docs/brand.md); preserve factual contributor
+credit and published creative editions.
+
 ## Shared Operating Rules
 
 - Read the repo-local `AGENTS.md` first. Tool-specific files are additive and must not contradict it.
