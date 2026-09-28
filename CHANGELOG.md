@@ -12,7 +12,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   `helmet-epic` skills. See [first-officer-plugins.md](docs/first-officer-plugins.md).
 - Optional first-officer env file and local launcher pattern for repeatable
   Claude Code and Codex sessions. See
-  [first-officer-plugins.md](docs/first-officer-plugins.md#5-starting-a-first-officer-session).
+  [first-officer-plugins.md](docs/first-officer-plugins.md#starting-a-first-officer-session).
 - Short `helmet` CLI command, with `hermes-helmet` retained as a compatible
   alias.
 - Agent discovery index (`llms.txt`) with task routing, a README documentation
@@ -24,6 +24,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ### Changed
 
+- Correct the fresh-install sequence, Captain/first-officer/worker wording,
+  first-officer plugin guide, setup-skill order, and `llms.txt` routing.
+  See [quickstart.md](docs/quickstart.md) and
+  [first-officer-plugins.md](docs/first-officer-plugins.md).
 - Document the published GHCR preview runtime and a company deployment overlay
   that mounts policy and state without forking core source. Image selection
   uses `deploy/.env` with `docker compose ... pull hermes`; development builds

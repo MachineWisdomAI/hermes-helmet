@@ -2,8 +2,10 @@
 
 Configure Hermes Helmet for your repositories, worker identity, and model
 provider. The conversational `setup-helmet` skill calls `helmet setup`;
-`helmet doctor` checks the resulting configuration and access. You can run
-the same commands directly. Install the CLI through the [quickstart](quickstart.md).
+`helmet doctor` checks the resulting **host** configuration and access. You can
+run the same commands directly. That wizard writes `~/.hermes-helmet` on this
+machine. It does not start Docker or mount its output into Compose. The
+published worker bootstrap is the [quickstart](quickstart.md).
 
 ## What setup collects
 
