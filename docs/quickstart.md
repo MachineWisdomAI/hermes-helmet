@@ -1,26 +1,37 @@
 # Hermes Helmet quickstart
 
-Start with one bounded GitHub issue. This guide sets up the Hermes worker,
-links the issue to its Kanban assignment, and introduces the Captain commands
-for following the pull request through review and acceptance.
+Start with one bounded GitHub issue. This guide prepares the worker policy,
+starts the published Docker image, clones the worker checkout, and shows the
+first-officer commands that follow the pull request through review and
+acceptance.
 
-The worker runs in Docker. The Captain runs in your coding-agent host with a
-separate GitHub identity. FAVA Trails, OpenViking, private company repositories,
-and external skill packs are optional. The bundled `setup-helmet`,
-`helmet-issue`, and `helmet-epic` skills provide the Captain workflow.
+You remain the Captain. Your coding agent is the first officer: it runs on
+your host with the Captain GitHub identity (`captain_github_login` in the
+policy). Hermes is the worker: it runs in Docker with a separate GitHub
+identity (`worker_github_login`). FAVA Trails, OpenViking, private company
+repositories, and external skill packs are optional. The bundled
+`setup-helmet`, `helmet-issue`, and `helmet-epic` skills are the first-officer
+workflow.
 
 ## Prerequisites
 
 - Docker and Docker Compose v2
 - A GitHub token for the worker identity named in your policy
-  (`worker_github_login` / H1 `github_identity`)
+  (`worker_github_login`)
 - Python 3.11+ for the host CLI and tests
 - Model-provider access for the Hermes worker
-- For Captain orchestration: a separate Captain GitHub identity and the
-  portable `helmet-issue` / `helmet-epic` skills. The preview has been exercised
-  through Codex; Claude Code and Hermes have installation and static validation.
+- For first-officer orchestration: the Captain GitHub identity and the
+  portable `helmet-issue` / `helmet-epic` skills. The preview has been
+  exercised through Codex; Claude Code and Hermes have installation and
+  static validation.
 
-The development image defaults pin the official Hermes Agent base
+The published worker image is a separate installation from this CLI.
+Installing `helmet` does not pull GHCR or start Docker. The current preview
+digest is
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea`,
+built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. See
+[runtime-image.md](runtime-image.md). Development builds still pin the official
+Hermes Agent base
 `nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294`
 (Hermes Agent 0.21.3). Override only with another immutable tag+digest; do not
 use `latest` or `main`.
@@ -38,74 +49,50 @@ python -m pip install .
 helmet --help
 ```
 
-The help output lists the Captain commands. Current source installs `helmet`
+The help output lists the host commands. Current source installs `helmet`
 and its compatible alias `hermes-helmet`; the Python package is named
 `hermes-helmet`. If you installed the September 23 preview wheel, use
 `hermes-helmet` in place of `helmet` in these examples.
 
-## 1. Configure
+## 1. Prepare the worker environment and policy
 
-For a new adopter, start from the secret-free setup questionnaire:
-
-```sh
-cp config/setup.answers.example.json /private/path/setup.answers.json
-# replace every ExampleCo identity, repository, checkout, and provider value
-helmet setup --answers /private/path/setup.answers.json --json
-helmet doctor --config ~/.hermes-helmet/policy.json --home ~ --live --json
-```
-
-Setup-state doctor is a pre-dispatch gate. With `--home` it performs the live
-worker identity, configured work/action allowlist, label, and provider/model checks even if
-`--live` is omitted; failures cannot be reported as skipped-and-green. The
-flag remains in this command to make the operator's intent explicit. The
-legacy doctor path without setup state keeps its offline default.
-
-Setup prompts locally without echo for the worker PAT and provider credential.
-It writes both only under `~/.hermes-helmet/secrets` with owner-only modes. Keep
-the answers file secret-free. OpenViking and FAVA Trails remain disabled until
-their `selected` and `confirmed` values are both true. Matt Pocock skills and
-gstack remain pinned recommendations and are never installed by setup.
-
-The default live model probe supports OpenAI. Another provider must expose an
-OpenAI-compatible endpoint configured as
-`model_lanes.hermes_executor.base_url`; unsupported providers fail before setup
-creates labels or writes state. Hermes Helmet state and secrets directories must be
-owned by the current user with mode `0700`, credential files must be regular
-owner-owned `0600` files, and symlinks are rejected. Pre-dispatch doctor checks
-every existing component of the supplied home, Hermes Helmet state/generated/secret
-paths, and Codex/Claude/Hermes skill roots and destinations is
-current-user-owned, non-symlink, and not group/other writable. It also checks every configured origin fetch and
-push URL against the repository slug, admitting only credential-free canonical
-GitHub HTTPS and supported GitHub SSH forms.
-
-Before prompting for credentials, probing providers, creating labels, or writing
-state, setup preflights every bundled-skill destination. Any foreign skill
-conflict stops setup without changing local or GitHub state.
-If an unexpected skill apply failure occurs after preflight, the atomic skill
-transaction rolls back new destinations and setup records an incomplete,
-resumable skills stage. A destination added after preflight is reported as a
-conflict and never promotes state to complete. After removing the conflict,
-rerunning the same setup reuses the PAT and any labels
-already created, completes skill installation, and marks the state complete.
-
-The manual minimum-runtime path remains available:
+The published Compose stack reads `deploy/.env` and mounts a secret-free
+policy file. Start there. The host setup wizard is a separate later path; it
+does not write these files and does not mount them into the container.
 
 ```sh
 cp deploy/.env.example deploy/.env
-# set HERMES_GITHUB_TOKEN=
+chmod 600 deploy/.env
+# set HERMES_GITHUB_TOKEN= to the worker PAT
+# uncomment HERMES_HELMET_IMAGE and keep the published digest
 
 cp config/policy.example.json config/policy.json
 # edit company, captain_github_login, worker_github_login, assignee,
 # repositories[].slug, repositories[].worktree
 ```
 
-The example policy is the generic ExampleCo authority fixture
-(`example-org/demo-repo`, `example-captain`, `example-agent`, `builder`).
-Replace those values before enabling intake. See
-[authority-schema.md](authority-schema.md) and
-[private-overlay.md](private-overlay.md).
+Keep the token only in `deploy/.env`. Make that file owner-only before entering
+the token. Do not commit it. The policy is secret-free public configuration
+and must stay readable by container UID `10000`.
 
-Render a crew contract from the same document when seeding a profile:
+Compose mounts
+`${HERMES_HELMET_POLICY_HOST_PATH:-../config/policy.json}` read-only at
+`/opt/hermes-helmet/config/policy.mounted.json` and runs as UID/GID `10000`.
+That host file must be readable by that user; the copied example is. At
+startup the entrypoint copies the mount to
+`/opt/data/github-issue-poller/policy.json` on the worker volume. Intake and
+the poller use the copy, not the mount.
+
+The example worktree `/opt/data/repos/demo-repo` is a path inside the worker
+volume. It is created in the next container steps, not on the host. Host
+`helmet doctor --home` inspects the machine that invoked it and will not see
+that checkout.
+
+`render_crew_contract(policy)` prints the crew contract from the policy. It
+does not install instructions. After you create the assignee profile, copy
+the reviewed contract into that profile's `SOUL.md` at
+`$HERMES_HOME/profiles/<assignee>/SOUL.md`. ExampleCo uses profile `builder`
+and Compose `HERMES_HOME=/opt/data`.
 
 ```sh
 PYTHONPATH=src python3 - <<'PY'
@@ -116,26 +103,52 @@ print(render_crew_contract(policy))
 PY
 ```
 
-## 2. Start
+## 2. Start the published worker image
 
-From the repository root:
+From the repository root, pull the published digest and start Compose without
+building. Put that digest in `deploy/.env` as `HERMES_HELMET_IMAGE`. Compose
+interpolates `image:` from that file. A leftover shell export of
+`HERMES_HELMET_IMAGE` overrides `.env`; `docker pull "$HERMES_HELMET_IMAGE"`
+does not read `.env`. If this shell previously exported the variable, unset it
+so `.env` wins, then pull and start through Compose:
 
 ```sh
-export HERMES_HELMET_SOURCE_COMMIT="$(git rev-parse HEAD)"
-docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+unset HERMES_HELMET_IMAGE
+docker compose --env-file deploy/.env -f deploy/compose.yaml pull hermes
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --no-build
 ```
 
-Confirm the image recorded its source commit:
+The image was built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. Confirm
+the running container recorded that commit:
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   cat /opt/hermes-helmet/SOURCE_COMMIT
 ```
 
+The digest identifies the image built from that recorded source SHA.
+`SOURCE_COMMIT` inside the container is that SHA. The `0.1.0rc1` package label
+on the image is not a new stable release and is not the September 23 wheel.
+
 The image entrypoint writes the worker token to its owner-only runtime file,
+copies the mounted policy into `/opt/data/github-issue-poller/policy.json`,
 removes the raw token variables, and only then enters the upstream s6 init
 chain. Supervised dashboard and gateway processes therefore do not inherit the
 PAT, while `/usr/local/bin/gh` can read it for one authorized GitHub command.
+
+To wrap `deploy/Dockerfile` around a local checkout instead, select
+`hermes-helmet:local` explicitly. Unsetting the shell variable is not enough
+when `deploy/.env` still pins the published digest:
+
+```sh
+export HERMES_HELMET_SOURCE_COMMIT="$(git rev-parse HEAD)"
+export HERMES_HELMET_IMAGE=hermes-helmet:local
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+```
+
+That development `SOURCE_COMMIT` should match `git rev-parse HEAD`. Keep
+company-specific Compose, policy, and volumes in a
+[private overlay](private-overlay.md).
 
 ## 3. Clone the allowlisted checkout in the worker volume
 
@@ -146,7 +159,7 @@ as a Git checkout the worker can see. Compose persists that tree on the
 placeholders with your allowlisted repository before enabling intake.
 
 Do this in the worker container, with the worker GitHub identity. Do not clone
-into a Captain checkout or reuse Captain credentials.
+into a first-officer checkout or reuse Captain credentials.
 
 Set the wrapper-backed GitHub credential helper globally before cloning so
 HTTPS clone can authenticate. After the checkout exists, set worker identity
@@ -180,7 +193,8 @@ command, in Git config, in policy, or in source files. The worker Git identity
 is your `worker_github_login` (`example-agent` in the fixture), never
 `example-captain`.
 
-Confirm the path the installer will check:
+Confirm the path the installer will check, after it exists, inside the
+container that holds it:
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
@@ -192,7 +206,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
 Kanban work runs as the policy `assignee` Hermes profile (`builder` in the
 ExampleCo fixture). Create that profile in the worker container, set the
 policy provider and model, then complete that profile's own provider login.
-Keep Captain and worker identities distinct: do not copy Captain host
+Keep Captain and worker identities distinct: do not copy first-officer host
 credentials, sessions, or profiles into the worker.
 
 These `hermes` invocations are the in-container Hermes Agent CLI. They are not
@@ -258,9 +272,15 @@ An eligible issue should now have one linked Kanban root task. Repeating intake
 for that issue reuses the existing task. Follow the worker's linked pull request
 when implementation finishes; task completion alone does not accept or merge it.
 
-## 7. Captain-side helmet-issue / helmet-epic (optional host)
+## 7. First-officer helmet-issue / helmet-epic
 
-On the Captain workstation (not the worker container identity):
+On the Captain host (not the worker container identity), install the bundled
+skills with `helmet install-skills` as below, or use the
+[first-officer plugin](first-officer-plugins.md) for Claude Code or Codex.
+Plugin installation copies instructions only; it does not provision Docker,
+tokens, or worker access. After setup, reuse policy and worker settings across
+sessions with a user-owned env file; see
+[Starting a first-officer session](first-officer-plugins.md#starting-a-first-officer-session).
 
 ```sh
 PYTHONPATH=src python3 -m hermes_helmet.cli install-skills --target codex
@@ -290,6 +310,72 @@ failure.
 
 See [helmet-issue.md](helmet-issue.md) and [helmet-epic.md](helmet-epic.md).
 
+## Host setup wizard (optional)
+
+`helmet setup` configures the **host** that runs first-officer tools. It writes
+`~/.hermes-helmet/policy.json`, owner-only secrets, and bundled skills. It does
+not start Docker, does not write `deploy/.env`, and does not mount its output
+into Compose.
+
+```sh
+cp config/setup.answers.example.json /private/path/setup.answers.json
+# replace every ExampleCo identity, repository, checkout, and provider value
+helmet setup --answers /private/path/setup.answers.json --json
+```
+
+Setup prompts locally without echo for the worker PAT and provider credential.
+It writes both only under `~/.hermes-helmet/secrets` with owner-only modes.
+Keep the answers file secret-free. Put OpenViking and FAVA Trails
+`selected`/`confirmed` (or a decline) in that file before setup; both stay
+disabled unless those values are true when the policy is written. Matt Pocock
+skills and gstack remain pinned recommendations and are never installed by
+setup.
+
+The default live model probe supports OpenAI. Another provider must expose an
+OpenAI-compatible endpoint configured as
+`model_lanes.hermes_executor.base_url`; unsupported providers fail before setup
+creates labels or writes state. Hermes Helmet state and secrets directories must
+be owned by the current user with mode `0700`, credential files must be regular
+owner-owned `0600` files, and symlinks are rejected. Before prompting for
+credentials, probing providers, creating labels, or writing state, setup
+preflights every bundled-skill destination. Any foreign skill conflict stops
+setup without changing local or GitHub state.
+
+The host wizard requires those Git checkout roots, with matching origins, to
+exist on this host before doctor. The Docker bootstrap uses container paths
+and its container checks; host doctor does not see them.
+
+After those host paths exist, diagnose on this host:
+
+```sh
+helmet doctor --config ~/.hermes-helmet/policy.json --home ~ --live --json
+```
+
+Setup-state doctor (`--home`) is a pre-dispatch gate for **this** filesystem. It
+always verifies the live worker identity, configured work/action allowlist,
+labels, and provider/model even if `--live` is omitted. It also checks every
+existing component of the supplied home, Hermes Helmet state/generated/secret
+paths, and Codex/Claude/Hermes skill roots. It checks every configured origin
+fetch and push URL against the repository slug. Missing checkouts fail; doctor
+does not skip them. Worktree paths that exist only inside the worker
+container, such as `/opt/data/repos/demo-repo`, belong to the Docker route.
+
+A shared policy is usable only when those exact worktree paths are valid in
+each environment that consumes them. Otherwise keep the host wizard policy
+and the Compose mount as separate files. Setup writes the generated policy
+mode `0600` for the host user; the container user is `10000` and often cannot
+read that file. A Compose copy must be readable by UID `10000`. Restart
+Compose after changing the mounted file so the entrypoint recopy runs.
+First-officer host commands can keep `HERMES_HELMET_CONFIG` pointed at the
+generated policy; that does not change the worker mount.
+
+If an unexpected skill apply failure occurs after preflight, the atomic skill
+transaction rolls back new destinations and setup records an incomplete,
+resumable skills stage. After removing a conflict, rerunning the same setup
+reuses the PAT and any labels already created.
+
+See [setup-helmet.md](setup-helmet.md).
+
 ## What this runtime does
 
 - Creates one Kanban root task per eligible issue (idempotent by issue URL)
@@ -298,8 +384,8 @@ See [helmet-issue.md](helmet-issue.md) and [helmet-epic.md](helmet-epic.md).
 - Coalesces activity behind an outstanding repair; later activity can succeed it
 - Never merges from the worker and never force-pushes
 - Verifies the live GitHub login is the configured worker (Captain/unknown/mismatch fail closed)
-- Captain `helmet-issue` adopts work, reviews heads, and applies merge gates without a second poller
-- Captain `helmet-epic` validates parent/child graphs and invokes helmet-issue with bounded parallelism
+- First-officer `helmet-issue` adopts work, reviews heads, and applies merge gates without a second poller
+- First-officer `helmet-epic` validates parent/child graphs and invokes helmet-issue with bounded parallelism
 
 Optional services and external skill import are intentionally out of this quickstart.
 See [fava-trails.md](fava-trails.md) when enabling the optional governed company
