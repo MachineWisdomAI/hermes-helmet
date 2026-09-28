@@ -107,15 +107,8 @@ helmet status https://github.com/example-org/demo-repo/issues/123
 
 ## Claude Desktop Code tab
 
-The Claude Desktop **Code** tab supports local sessions and SSH sessions, and
-both can use plugins.
-
-For a remote Captain host, choose or add an SSH connection to a Linux or macOS
-machine such as `captain.example.com`, then install and use the plugin in that
-environment. An SSH session reads plugins and `~/.claude` from the remote host,
-not from your local desktop.
-
-That is not Desktop WSL session mode, not a cloud session, and not ordinary
-Chat. Cowork and claude.ai chat may list plugins; they are not a substitute for
-the local CLI or Code-tab SSH workflow that can run `helmet` and `gh` on the
-Captain host.
+Use the Claude Desktop **Code** tab for a local session on this machine, or an
+SSH session to a Linux or macOS Captain host such as `captain.example.com`.
+Both can use plugins. An SSH session reads plugins, `~/.claude`, and any
+user-owned first-officer env file from the remote host, not from your local
+desktop. Run `helmet` and `gh` on that same host.

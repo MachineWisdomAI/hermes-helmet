@@ -17,8 +17,9 @@ Through the agent (non-secret only):
    `worker_access_scope` (`selected` default, or `broader`) records whether
    extra private token visibility is accepted.
 4. Worker provider/model selection.
-5. OpenViking and FAVA Trails: selected by default, confirmed before any
-   external action, and safe to decline.
+5. OpenViking and FAVA Trails: selected by default, confirmed or declined in
+   the answers file before `helmet setup` writes the policy, and safe to
+   decline. A later conversation cannot enable them.
 6. Optional pinned recommendations (Matt Pocock skills, gstack) — never silent
    installs, never runtime dependencies.
 7. A separate company skill-pack plan that includes `repo-bootstrap`. Private
@@ -64,9 +65,10 @@ worker identity, configured work/action repository allowlist and capabilities,
 labels, and provider/model and fails closed; `--live` makes that pre-dispatch
 intent explicit. Extra public repository visibility is not a failure. Extra
 private visibility requires an explicit `worker_access_scope: broader`
-adopter choice; `selected` remains the default. It also verifies
-that each checkout is a Git worktree whose every `origin` fetch and push URL matches the configured
-repository slug. Remotes must use credential-free canonical GitHub HTTPS,
+adopter choice; `selected` remains the default. It also verifies that each
+checkout is a Git worktree whose every `origin` fetch and push URL matches the
+configured repository slug. Missing checkouts fail; doctor does not skip them.
+Remotes must use credential-free canonical GitHub HTTPS,
 `git@github.com:owner/repo(.git)`, or `ssh://git@github.com/owner/repo(.git)`;
 userinfo, query strings, fragments, custom ports, and other schemes fail.
 Doctor also checks file modes, bundled skills, OpenViking, FAVA Trails, and

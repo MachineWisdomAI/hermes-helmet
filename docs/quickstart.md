@@ -62,6 +62,7 @@ does not write these files and does not mount them into the container.
 
 ```sh
 cp deploy/.env.example deploy/.env
+chmod 600 deploy/.env
 # set HERMES_GITHUB_TOKEN= to the worker PAT
 # uncomment HERMES_HELMET_IMAGE and keep the published digest
 
@@ -70,8 +71,9 @@ cp config/policy.example.json config/policy.json
 # repositories[].slug, repositories[].worktree
 ```
 
-Keep the token only in `deploy/.env`. Do not commit that file. The policy is
-secret-free public configuration.
+Keep the token only in `deploy/.env`. Make that file owner-only before entering
+the token. Do not commit it. The policy is secret-free public configuration
+and must stay readable by container UID `10000`.
 
 Compose mounts
 `${HERMES_HELMET_POLICY_HOST_PATH:-../config/policy.json}` read-only at
@@ -323,9 +325,11 @@ helmet setup --answers /private/path/setup.answers.json --json
 
 Setup prompts locally without echo for the worker PAT and provider credential.
 It writes both only under `~/.hermes-helmet/secrets` with owner-only modes.
-Keep the answers file secret-free. OpenViking and FAVA Trails remain disabled
-until their `selected` and `confirmed` values are both true. Matt Pocock skills
-and gstack remain pinned recommendations and are never installed by setup.
+Keep the answers file secret-free. Put OpenViking and FAVA Trails
+`selected`/`confirmed` (or a decline) in that file before setup; both stay
+disabled unless those values are true when the policy is written. Matt Pocock
+skills and gstack remain pinned recommendations and are never installed by
+setup.
 
 The default live model probe supports OpenAI. Another provider must expose an
 OpenAI-compatible endpoint configured as
@@ -336,6 +340,10 @@ owner-owned `0600` files, and symlinks are rejected. Before prompting for
 credentials, probing providers, creating labels, or writing state, setup
 preflights every bundled-skill destination. Any foreign skill conflict stops
 setup without changing local or GitHub state.
+
+The host wizard requires those Git checkout roots, with matching origins, to
+exist on this host before doctor. The Docker bootstrap uses container paths
+and its container checks; host doctor does not see them.
 
 After those host paths exist, diagnose on this host:
 
@@ -348,18 +356,18 @@ always verifies the live worker identity, configured work/action allowlist,
 labels, and provider/model even if `--live` is omitted. It also checks every
 existing component of the supplied home, Hermes Helmet state/generated/secret
 paths, and Codex/Claude/Hermes skill roots. It checks every configured origin
-fetch and push URL against the repository slug. It will report missing
-checkouts for worktree paths that exist only inside the worker container, such
-as `/opt/data/repos/demo-repo`. Run that clone confirmation in the container
-instead.
+fetch and push URL against the repository slug. Missing checkouts fail; doctor
+does not skip them. Worktree paths that exist only inside the worker
+container, such as `/opt/data/repos/demo-repo`, belong to the Docker route.
 
-To use the generated policy with Compose, copy it to `config/policy.json` or
-set `HERMES_HELMET_POLICY_HOST_PATH` in `deploy/.env`. Setup writes the policy
+A shared policy is usable only when those exact worktree paths are valid in
+each environment that consumes them. Otherwise keep the host wizard policy
+and the Compose mount as separate files. Setup writes the generated policy
 mode `0600` for the host user; the container user is `10000` and often cannot
-read that file. Make a readable copy for the mount. Restart Compose after
-changing the mounted file so the entrypoint recopy runs. First-officer host
-commands can keep `HERMES_HELMET_CONFIG` pointed at the generated policy;
-that does not change the worker mount.
+read that file. A Compose copy must be readable by UID `10000`. Restart
+Compose after changing the mounted file so the entrypoint recopy runs.
+First-officer host commands can keep `HERMES_HELMET_CONFIG` pointed at the
+generated policy; that does not change the worker mount.
 
 If an unexpected skill apply failure occurs after preflight, the atomic skill
 transaction rolls back new destinations and setup records an incomplete,

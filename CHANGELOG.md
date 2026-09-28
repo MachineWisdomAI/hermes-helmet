@@ -24,6 +24,12 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ### Changed
 
+- Collect OpenViking/FAVA answers before `helmet setup` writes policy, require
+  host checkout roots before doctor, keep host and Compose policies separate
+  when worktree paths differ, make `deploy/.env` owner-only before the token,
+  and replace the remaining milestone shorthand with version 1/2 names.
+  See [quickstart.md](docs/quickstart.md) and
+  [setup-helmet.md](docs/setup-helmet.md).
 - Correct the fresh-install sequence, Captain/first-officer/worker wording,
   first-officer plugin guide, setup-skill order, and `llms.txt` routing.
   See [quickstart.md](docs/quickstart.md) and

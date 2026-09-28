@@ -16,8 +16,12 @@ state. Do not reproduce those checks in this skill.
 1. Collect the company display name, human Captain GitHub login
    (`captain_github_login`), distinct worker login (`worker_github_login`),
    exact repository work/action allowlist, ready/dispatch labels, and
-   provider/model in a local JSON answers file. Never put a PAT, API key,
-   password, or credential in it.
+   provider/model in a local JSON answers file. Include OpenViking and FAVA
+   Trails as `selected`/`confirmed`, or decline them. Defaults are selected
+   but not confirmed, which leaves both disabled in the written policy.
+   Confirmation must be in this file before setup; a later conversation
+   cannot enable the integrations. Never put a PAT, API key, password, or
+   credential in the answers file.
 2. Ask the operator to create a separate fine-grained worker PAT with the
    required metadata, contents, pull-request, and issue permissions on the
    selected repositories. Extra public visibility is not a Hermes Helmet
@@ -40,30 +44,36 @@ state. Do not reproduce those checks in this skill.
    records an incomplete, resumable skills stage. A destination conflict
    introduced after preflight also keeps state incomplete. Resolve it, then
    rerun the same answers to reuse the PAT and existing labels.
-5. OpenViking and FAVA Trails are selected by default but remain disabled until
-   the operator explicitly confirms each. Confirmation enables the policy; then
-   use the existing `helmet openviking setup` and `helmet fava setup`
-   commands to collect each service's private configuration. Opting out leaves
-   the core usable.
+5. If answers confirmed OpenViking or FAVA Trails, use the existing
+   `helmet openviking setup` and `helmet fava setup` commands to collect each
+   service's private configuration. Declined integrations leave the core
+   usable.
 6. Present the pinned Matt Pocock skills and gstack entries as recommendations.
    Do not install them. Keep any company skill pack in a separate company-owned
    repository and include a `repo-bootstrap` skill for local initialization rules.
-7. After `~/.hermes-helmet/policy.json` exists, run
+7. After `~/.hermes-helmet/policy.json` exists, confirm every configured
+   repository `worktree` is an existing Git checkout root on this host, with
+   origin URLs matching the configured slug. Then run
    `helmet doctor --config ~/.hermes-helmet/policy.json --home ~ --live`.
    Setup-state doctor is non-mutating. It always verifies the live worker,
    configured work/action allowlist, labels, and provider/model, and fails
    closed. It inspects this host's filesystem: supplied home, Hermes Helmet
-   state/generated/secret paths, skill roots, file modes, and Git worktree
-   origin URLs (credential-free canonical GitHub HTTPS or supported GitHub
-   SSH). It does not see checkouts that exist only inside the worker
-   container. The published Docker bootstrap, including those checkouts, is
-   in `docs/quickstart.md`. The legacy doctor path without `--home` retains
-   its offline default.
+   state/generated/secret paths, skill roots, file modes, and every
+   configured Git worktree origin URL (credential-free canonical GitHub HTTPS
+   or supported GitHub SSH). Missing checkouts fail; doctor does not skip
+   them. It does not see checkouts that exist only inside the worker
+   container. The published Docker bootstrap uses container paths and
+   container checks; see
+   [docs/quickstart.md](https://github.com/MachineWisdomAI/hermes-helmet/blob/main/docs/quickstart.md).
+   The legacy doctor path without `--home` retains its offline default.
 
 Re-running setup with identical answers reuses the existing owner-only PAT and
 produces the same fingerprint. If answers change, show the new policy and crew
 contract to the human Captain before dispatch.
 
-Completion: setup-state is `complete`, doctor is clean for host paths that
-exist, and the operator has a policy file they can copy or mount for Compose.
-This skill does not start Docker.
+Completion: setup-state is `complete`, every configured checkout exists on
+this host with a matching origin, and doctor is clean. Use that generated
+policy with Compose only when those same worktree paths are valid in the
+container; otherwise keep the host and deployment policies and paths
+explicit. This skill does not start Docker. For the published Compose route,
+follow the public quickstart linked above.
