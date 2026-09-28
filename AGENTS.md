@@ -30,7 +30,10 @@ preserve package, module, skill, path, and configuration identifiers.
 - Keep durable non-trivial specs, decisions, status, and handoffs in
   repository-managed artifacts. Optional external skills and memory systems may
   augment that record but are never prerequisites for contributing.
-- Do not build “shared-something” helper identities. Use shared-all or shared-none; give shared artifacts one owner and one documented repair path.
+- Give each shared artifact one owner and one documented repair path. For shared
+  working context, use one explicitly shared identity and namespace for all
+  participating clients; otherwise keep identities and context separate. Keep
+  private operator context outside the shared boundary.
 
 ## Repo Notes
 
