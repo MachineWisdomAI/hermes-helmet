@@ -14,11 +14,13 @@ metadata:
 
 ## Overview
 
-`helmet-epic` is the portable Captain-side orchestration skill for **one**
-GitHub epic: a root/parent issue plus its child-issue dependency graph. The root
-may come from `grill-me → to-spec → to-tickets`, another planning process, or
-hand-authored issues. No document named PRD and no Jira/Linear Epic object is
-required.
+`helmet-epic` is the portable first-officer orchestration skill for **one**
+GitHub epic: a root/parent issue plus its child-issue dependency graph. The
+first officer runs it on the Captain host using `captain_github_login`.
+Hermes implements child work under `worker_github_login` and does not run
+this skill. The root may come from `grill-me → to-spec → to-tickets`, another
+planning process, or hand-authored issues. No document named PRD and no
+Jira/Linear Epic object is required.
 
 Given `EPIC_URL`, one invocation loads and validates the graph, computes the
 ready frontier, and invokes `helmet-issue` for ready children. Default execution
@@ -29,7 +31,7 @@ Default behavior leaves the epic open for human closeout.
 
 ## When to Use
 
-- Operator says `helmet-epic EPIC_URL` or asks to run a multi-issue train
+- Operator says `helmet-epic EPIC_URL` or asks the first officer to run a multi-issue train
 - Reinvocation after interruption (resume epic + child checkpoints; re-read GitHub)
 - Advancing a parent issue whose children declare `Parent` / `Blocked by` links
 
@@ -85,8 +87,9 @@ or issue does not satisfy its unfinished outcome.
 
 ## Hard rules
 
-1. Active GitHub identity MUST be the configured **Captain** and MUST differ from
-   the configured **worker**. Fail closed on mismatch.
+1. Active GitHub identity MUST be the configured **Captain**
+   (`captain_github_login`) and MUST differ from the configured **worker**.
+   Fail closed on mismatch. The first officer uses that Captain identity.
 2. Epic root is never dispatch-labeled and never given a worker root task.
 3. Human-only children are classified `awaiting_human` only when an **operative**
    title/body instruction declares the gate — including short title markers such as

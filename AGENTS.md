@@ -9,6 +9,10 @@ Use **Hermes Helmet** as the full product name in prose and user-facing text.
 The name evokes the mythical helmet of Hermes. Use `helmet` for the CLI;
 preserve package, module, skill, path, and configuration identifiers.
 
+Attribute Hermes Helmet material to **Machine Wisdom AI**, using the established
+company logo. Follow [the brand guide](docs/brand.md); preserve factual contributor
+credit and published creative editions.
+
 ## Shared Operating Rules
 
 - Read the repo-local `AGENTS.md` first. Tool-specific files are additive and must not contradict it.
@@ -30,7 +34,10 @@ preserve package, module, skill, path, and configuration identifiers.
 - Keep durable non-trivial specs, decisions, status, and handoffs in
   repository-managed artifacts. Optional external skills and memory systems may
   augment that record but are never prerequisites for contributing.
-- Do not build “shared-something” helper identities. Use shared-all or shared-none; give shared artifacts one owner and one documented repair path.
+- Give each shared artifact one owner and one documented repair path. For shared
+  working context, use one explicitly shared identity and namespace for all
+  participating clients; otherwise keep identities and context separate. Keep
+  private operator context outside the shared boundary.
 
 ## Repo Notes
 

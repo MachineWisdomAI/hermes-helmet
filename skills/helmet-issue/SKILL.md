@@ -14,12 +14,14 @@ metadata:
 
 ## Overview
 
-`helmet-issue` is the portable Captain-side orchestration skill for **one**
-GitHub issue. Given `ISSUE_URL`, one invocation owns the loop until a truthful
-terminal state. It adopts already-running work, discovers the worker pull
-request without a human nudge, reviews each current head from a separate
-Captain checkout, posts formal GitHub findings, and lets the existing H1 poller
-create same-PR repair work.
+`helmet-issue` is the portable first-officer orchestration skill for **one**
+GitHub issue. The first officer runs it on the Captain host using
+`captain_github_login`. Hermes implements under `worker_github_login` and
+does not run this skill. Given `ISSUE_URL`, one invocation owns the loop
+until a truthful terminal state. It adopts already-running work, discovers
+the worker pull request without a human nudge, reviews each current head
+from a separate first-officer checkout, posts formal GitHub findings, and
+lets the issue poller create same-PR repair work.
 
 It must **not** create a second watcher, webhook, repair relay, queue, or
 worker checkout. GitHub remains authoritative for issues, PRs, checks, reviews,
@@ -27,7 +29,7 @@ heads, and merge state.
 
 ## When to Use
 
-- Operator says `helmet-issue ISSUE_URL` or asks to Captain-orchestrate one issue
+- Operator says `helmet-issue ISSUE_URL` or asks the first officer to orchestrate one issue
 - An already-open worker PR must be discovered and reviewed without a user nudge
 - Reinvocation after interruption (resume from checkpoint + live GitHub)
 
@@ -48,11 +50,13 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 
 ## Hard rules
 
-1. Active GitHub identity MUST be the configured **Captain** and MUST differ from
-   the configured **worker**. Fail closed on mismatch.
-2. Never write the worker worktree or worker branch. Captain review checkout is
-   separate and read-only with respect to the worker branch tip.
-3. Never create Kanban repair tasks. Post formal GitHub review; H1 poller reacts.
+1. Active GitHub identity MUST be the configured **Captain**
+   (`captain_github_login`) and MUST differ from the configured **worker**.
+   Fail closed on mismatch. The first officer uses that Captain identity.
+2. Never write the worker worktree or worker branch. First-officer review
+   checkout is separate and read-only with respect to the worker branch tip.
+3. Never create Kanban repair tasks. Post formal GitHub review; the issue
+   poller (H1 poller) reacts.
 4. Do not create repair from: approval-only reviews, untrusted activity, worker
    self-activity, repeated polling, or CI failure without a verified finding.
 5. A changed PR head invalidates any prior clean result; re-review the new head.
@@ -126,13 +130,14 @@ Completion: checkpoint state is past `PREFLIGHT` or terminal with blocker.
 
 ### 2. DISPATCH / adopt
 
-1. If a root task already exists in the H1 ledger (issue URL key) or Kanban
+1. If a root task already exists in the issue-poller ledger (issue URL key) or Kanban
    idempotency key, **adopt it**. Never create a duplicate root.
 2. If discovery already found a canonical worker PR and no root is recoverable,
    **stop** with `pr_without_recoverable_root` — do not add `dispatch_label` or
    create a second root for work that already has a PR.
 3. Otherwise (no root, no PR) ensure `dispatch_label` is present and let the
-   shared `create_task_once` path create exactly one root (same idempotency as H1).
+   shared `create_task_once` path create exactly one root (same idempotency as
+   the issue poller).
 4. Do not build a second queue.
 
 Completion: `root_task_id` recorded, or terminal/failed with precise missing-root
@@ -140,7 +145,7 @@ reason; no second root for the issue URL.
 
 ### 3. WAIT_PR / discover
 
-1. Discover PR from, in order: H1 ledger watch, Kanban run metadata
+1. Discover PR from, in order: issue-poller ledger watch, Kanban run metadata
    (`published_pr` or legacy `pr_url`; valid but different URLs fail closed),
    GitHub timeline / open PRs mentioning the issue or canonical branch
    `automation/<repo>-<n>`.
@@ -154,7 +159,7 @@ Completion: `pr_url` + head SHA known, or state `WAIT_PR` with truthful status.
 
 ### 4. REVIEW_HEAD (agent work)
 
-1. Fetch latest base and **exact** PR head into a **Captain** checkout that is
+1. Fetch latest base and **exact** PR head into a **first-officer** checkout that is
    not the worker worktree. Do not push the worker branch.
 2. Review the diff against the issue acceptance criteria and repo AGENTS/rules.
    Apply the bundled [review and recovery guidance](references/delivery.md).
@@ -163,7 +168,7 @@ Completion: `pr_url` + head SHA known, or state `WAIT_PR` with truthful status.
    nonblocking and require no owner waiver. For repairs, inspect the new head's
    changes and affected behavior while reusing still-valid evidence.
 3. Outcomes:
-   - **Material defects / unmet required acceptance** → formal GitHub review `REQUEST_CHANGES` as Captain;
+   - **Material defects / unmet required acceptance** → formal GitHub review `REQUEST_CHANGES` as the Captain identity;
      record `--record-review changes_requested`; state becomes `WAIT_REPAIR`.
    - **Genuinely clean** → formal comment or approve only if policy allows;
      record `--record-review clean`; state `READY`. Do not invent defects.
@@ -178,7 +183,7 @@ Completion: checkpoint `reviewed_head` equals the head you reviewed.
 ### 5. REQUEST_REPAIR / WAIT_REPAIR
 
 1. After `changes_requested`, do **not** create a Kanban repair card.
-2. Rely on the existing H1 poller to observe trusted Captain review and create
+2. Rely on the issue poller to observe trusted first-officer review and create
    one dependent same-PR repair.
 3. On reinvocation, if head changed, invalidate clean state and return to
    `REVIEW_HEAD`. If repair outstanding, stay `WAIT_REPAIR`.
@@ -245,13 +250,13 @@ without treating zero model usage as a delivery requirement;
 never copy task bodies, logs, credentials, or review prose into host metadata.
 
 Do not ask the model to sleep, run a shell polling loop, or repeatedly call
-`status`. The single wait process observes the existing H1 ledger and Hermes
+`status`. The single wait process observes the issue-poller ledger and Hermes
 Kanban. It does not dispatch, review, repair, merge, or create a second watcher.
 
 ## Common pitfalls
 
 1. **Running as worker** — orchestration is Captain-only; worker identity fails closed.
-2. **Second repair relay** — posting a Kanban repair from this skill duplicates H1.
+2. **Second repair relay** — posting a Kanban repair from this skill duplicates the issue poller.
 3. **CI-only thrash** — red checks without verified findings do not start repair.
 4. **Stale clean head** — any new SHA clears `clean_head`.
 5. **Silent approval** — prose near `Merge when clean` is not authority; whole-line only.

@@ -35,6 +35,10 @@ REQUIRED_PUBLIC_FILES = (
     "docs/private-overlay.md",
     "docs/quickstart.md",
     "docs/openviking.md",
+    "docs/first-officer-plugins.md",
+    ".claude-plugin/plugin.json",
+    ".claude-plugin/marketplace.json",
+    ".codex-plugin/plugin.json",
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/ISSUE_TEMPLATE/config.yml",
     ".github/ISSUE_TEMPLATE/bug.md",
@@ -293,8 +297,12 @@ class PublicBoundaryTests(unittest.TestCase):
         self.assertIn("AGPL-3.0", texts["docs/openviking.md"])
         self.assertIn("AGPL-3.0", texts["NOTICE"])
         overlay = texts["docs/private-overlay.md"]
-        self.assertIn("WisdomHelm", overlay)
+        self.assertIn("ExampleCo", overlay)
         self.assertIn("private overlay", overlay.casefold())
+        self.assertIn("HERMES_HELMET_POLICY_SOURCE", overlay)
+        self.assertIn("policy.mounted.json", overlay)
+        self.assertIn("render_crew_contract", overlay)
+        self.assertNotIn("WisdomHelm", overlay)
         for name, text in texts.items():
             if name == "docs/private-overlay.md":
                 continue
