@@ -24,6 +24,7 @@ Use these when you are the coding-agent first officer on the Captain host. The i
 
 - Contributor instructions: [AGENTS.md](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/AGENTS.md) and [Contributing](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/CONTRIBUTING.md). Run `scripts/verify.sh`.
 - Reporting a vulnerability: [Security policy](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/SECURITY.md). Do not open a public issue with an exploit or a secret.
+- Publishing material about Hermes Helmet: [Brand attribution and logos](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/brand.md).
 
 ## Operating model
 
