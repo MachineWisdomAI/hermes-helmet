@@ -10,7 +10,7 @@ that leaves a governed trail — never automatic copying.
 
 Hermes Helmet does **not** reimplement FAVA governance. Use the canonical contracts:
 
-| Contract | Pin (H7 inspected baseline) |
+| Contract | Pin (FAVA Trails 0.7.0 inspected baseline) |
 | --- | --- |
 | Installation | https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/README.md |
 | Agent setup | https://github.com/MachineWisdomAI/fava-trails/blob/10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7/AGENTS_SETUP_INSTRUCTIONS.md |
@@ -21,14 +21,10 @@ Inspected baseline: `10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7` (0.7.0, MCP 2.2).
 ## What this integration provides
 
 - Guided setup templates for a company-owned FAVA data repository (no secrets).
-- Ordinary Captain and executor principals with distinct `FAVA_TRAILS_AGENT_ID`
+- Ordinary first-officer and worker principals with distinct `FAVA_TRAILS_AGENT_ID`
   values and one shared company scope.
 - Owner-only principal config files (mode `0600`) that never embed API keys.
-- `helmet doctor` offline checks (and optional live `fava-trails doctor`).
-- A hermetic governed lifecycle demo on the **accepted FAVA engine**: draft
-  isolation, proposal, Trust Gate approve/reject, frozen approved content,
-  supersession/provenance, approved shared recall, and explicit OpenViking→FAVA
-  promotion (TrustResult injected; no network / no private credentials).
+- `helmet doctor` after those files exist (optional live `fava-trails doctor`).
 
 
 ## Complementary responsibilities

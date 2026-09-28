@@ -1,0 +1,31 @@
+{
+  "name": "hermes-helmet",
+  "version": "0.1.0-rc.1",
+  "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, and dependent-issue coordination.",
+  "author": {
+    "name": "Machine Wisdom",
+    "url": "https://machine-wisdom.ai"
+  },
+  "homepage": "https://github.com/MachineWisdomAI/hermes-helmet",
+  "repository": "https://github.com/MachineWisdomAI/hermes-helmet",
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Hermes Helmet",
+    "shortDescription": "First-officer skills for delegated GitHub delivery with Hermes Helmet.",
+    "longDescription": "Packages the Captain-side setup-helmet, helmet-issue, and helmet-epic skills from this repository. You remain Captain. Claude Code or Codex runs on the Captain host with the Captain GitHub identity. The published Docker image still runs Hermes under a separate worker identity. Installing the plugin copies instructions only; helmet, gh, model login, authority policy, and worker access still come from the existing setup.",
+    "developerName": "Machine Wisdom",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Captain-side Hermes Helmet setup",
+      "Single-issue GitHub delivery",
+      "Dependent-issue coordination"
+    ],
+    "websiteURL": "https://github.com/MachineWisdomAI/hermes-helmet",
+    "defaultPrompt": [
+      "Set up Hermes Helmet first-officer skills on this Captain host.",
+      "Coordinate a single GitHub issue through helmet-issue.",
+      "Coordinate dependent GitHub issues with helmet-epic."
+    ]
+  }
+}

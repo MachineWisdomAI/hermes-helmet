@@ -24,8 +24,8 @@ The runtime handles intake and repair in five parts:
    identity are ignored.
 5. **Same-PR repair** — dependent Kanban tasks reuse the root worktree and
    branch; the repair contract requires fetching current review comments,
-   checks, and mergeability. No merge. No force-push. H1 root and repair tasks
-   default to a GitHub PR completion contract (`OWNER/REPO`). Adopters on a
+   checks, and mergeability. No merge. No force-push. Poller root and repair
+   tasks default to a GitHub PR completion contract (`OWNER/REPO`). Adopters on a
    private plan that cannot call the branch-rules API may set
    `worker_completion_contract: local-only`; workers still pass
    `metadata.published_pr`, and Captain merge gates stay independent of that
@@ -37,7 +37,7 @@ watcher:
 6. **helmet-issue** — portable skill + `helmet` CLI helpers that
    preflight Captain identity, adopt existing root tasks/PRs, wait for the
    worker PR, review each head, post formal GitHub findings, and apply the
-   merge gate. Repair Kanban tasks remain owned exclusively by the H1 poller.
+   merge gate. Repair Kanban tasks remain owned exclusively by the issue poller.
    See [helmet-issue.md](helmet-issue.md).
 7. **helmet-epic** — portable skill + `helmet epic` helpers that load a
    parent/child dependency graph (native sub-issues when available, else
@@ -45,7 +45,7 @@ watcher:
    and invoke helmet-issue with bounded parallelism. The epic root is never
    dispatch-labeled. See [helmet-epic.md](helmet-epic.md).
 
-Adopter configuration is one versioned authority policy (H1 version 1 or H2
+Adopter configuration is one versioned authority policy (version 1 or
 version 2). See `config/policy.example.json`, `docs/authority-schema.md`, and
 `docs/private-overlay.md`. Machine Wisdom deployment values stay outside this
 repository.
