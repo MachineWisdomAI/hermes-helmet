@@ -194,7 +194,7 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
     def test_actions_are_pinned_consistently_with_verify(self) -> None:
         verify = VERIFY.read_text(encoding="utf-8")
         for action in (
-            "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435",
             "docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83",
             "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
@@ -207,7 +207,7 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
             spec = match.group(1)
             _name, digest = spec.rsplit("@", 1)
             self.assertRegex(digest, PINNED_SHA_RE.pattern)
-        self.assertIn("actions/checkout@11d5960a326750d5838078e36cf38b85af677262", verify)
+        self.assertIn("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", verify)
         self.assertIn("aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25", verify)
 
     def test_run_instructions_cover_owner_visibility_and_inherited_findings(self) -> None:
