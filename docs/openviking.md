@@ -145,54 +145,52 @@ path, not a fourth Hermes Helmet peer type.
 
 ## Doctor
 
+After the three client files exist, verify them. If `integrations.openviking`
+is `false`, doctor reports OpenViking skipped and the minimum runtime stays
+healthy.
+
 ```sh
 PYTHONPATH=src python3 -m hermes_helmet.cli doctor --config config/policy.json
-```
-
-When `integrations.openviking` is `false`, doctor reports OpenViking as skipped
-and remains successful so the minimum runtime stays healthy.
-
-When enabled, provide the three owner-only client paths:
-
-```sh
 PYTHONPATH=src python3 -m hermes_helmet.cli doctor --config config/policy.json \
   --openviking-root ~/.hermes-helmet/openviking
-```
-
-Without `--live`, doctor is an **offline configuration check** only
-(`verification_mode=offline`). It validates owner-only files, shared
-account/user/URL and one shared USER key across the fixed client types
-**and against the selected company template** (`company.template.json` under
-`--openviking-root`, an explicit expected template, otherwise the policy
-template), pairwise-distinct peer IDs, Hermes effective-setting consistency
-(agent, endpoint, and credential aliases), and explicit ChatGPT operator-gate
-settings in the ChatGPT client file (`connectivity=loopback_or_private_only`,
-`intentional_tool_selection=true`, `transcript_capture=false`,
-`operator_gates_required=true`). Keys are compared for equality without
-printing them; mixed old/new keys fail closed. It does **not** authenticate
-credentials and must not be read as proof that keys are safe or USER-scoped
-on the wire. Three client files that agree with each other on the wrong
-namespace fail closed offline. Legitimate explicit custom templates remain
-accepted.
-
-```sh
-# Authenticate credentials in addition to the configuration-only namespace check
 PYTHONPATH=src python3 -m hermes_helmet.cli doctor --config config/policy.json \
   --openviking-root ~/.hermes-helmet/openviking --live
 ```
 
+Expected result: skipped when declined; otherwise owner-only client files
+agree on one USER key and namespace. Next action: only then run shared-proof
+or live writes.
+
+Without `--live`, doctor is an offline configuration check
+(`verification_mode=offline`). It does **not** authenticate credentials.
 `--live` additionally authenticates each client key as USER in the selected
 company-template namespace. It does not replace the configuration-only
 account/user/service URL comparison.
 
+### Doctor checks (reference)
+
+Offline mode validates owner-only files, shared account/user/URL and one
+shared USER key across the fixed client types **and against the selected
+company template** (`company.template.json` under `--openviking-root`, an
+explicit expected template, otherwise the policy template), pairwise-distinct
+peer IDs, Hermes effective-setting consistency (agent, endpoint, and
+credential aliases), and explicit ChatGPT operator-gate settings in the
+ChatGPT client file (`connectivity=loopback_or_private_only`,
+`intentional_tool_selection=true`, `transcript_capture=false`,
+`operator_gates_required=true`). Keys are compared for equality without
+printing them; mixed old/new keys fail closed. Three client files that agree
+with each other on the wrong namespace fail closed offline. Legitimate
+explicit custom templates remain accepted.
+
 Doctor fails closed (without printing credentials) on blank, duplicate,
 wrong-account, wrong-user, root-key, world-readable, credential-bearing URLs
-(including unknown query names that embed the known key), Hermes peer/endpoint/
-credential contradictions, non-private ChatGPT endpoints (loopback or private IP
-only — DNS names are not certified private from spelling), and mismatched-client
-configurations. Live mode redacts known keys even when a server error detail
-echoes them (including independent percent-escape hex letter case per token),
-and refuses credential-bearing cross-origin redirects.
+(including unknown query names that embed the known key), Hermes
+peer/endpoint/credential contradictions, non-private ChatGPT endpoints
+(loopback or private IP only — DNS names are not certified private from
+spelling), and mismatched-client configurations. Live mode redacts known keys
+even when a server error detail echoes them (including independent
+percent-escape hex letter case per token), and refuses credential-bearing
+cross-origin redirects.
 
 ### Wire contract (OpenViking 0.4.19)
 

@@ -53,6 +53,12 @@ release contains the `0.1.0rc1` Python package. Its original console command is
 `hermes-helmet`; current source keeps that name as a compatible alias and adds
 the shorter `helmet` command.
 
+A later worker-image preview is published to GHCR from
+`c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. Pin it by digest as described in
+[runtime-image.md](runtime-image.md). That image also carries the `0.1.0rc1`
+package label from its source commit; it is not this September 23 wheel and it
+is not a stable release.
+
 ## What you provide
 
 - Docker Compose and Python 3.11 or later.
@@ -70,7 +76,8 @@ runtime.
 
 The core issue-to-merge workflow does not require a particular project tracker,
 memory service, or company skill pack. Keep company-specific configuration in a
-[private overlay](private-overlay.md). Add [OpenViking](openviking.md),
+[private overlay](private-overlay.md). Run the worker from the
+[published image](runtime-image.md). Add [OpenViking](openviking.md),
 [FAVA Trails](fava-trails.md), [company skills](company-skills.md), or separate
 [model lanes](model-lanes.md) when they serve your deployment.
 
