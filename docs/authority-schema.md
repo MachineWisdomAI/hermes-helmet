@@ -1,14 +1,14 @@
 # Authority policy schema
 
 Hermes Helmet uses **one** adopter-owned JSON policy document as the authority
-configuration. H2 extends the H1 poller policy; it does not introduce a second
-configuration system.
+configuration. Version 2 extends the version 1 poller policy; it does not
+introduce a second configuration system.
 
 ## Versions
 
 | Version | Role |
 | --- | --- |
-| `1` | H1 control-loop policy. Still loadable by the poller for compatibility. |
+| `1` | Version 1 poller policy. Still loadable by the poller for compatibility. |
 | `2` | Full Hermes Helmet authority document. Required for crew-contract render, private overlays, and preflight that enforces Captain/worker separation. |
 
 Load helpers:
@@ -87,12 +87,12 @@ Optional executor company pack (omit for minimum startup):
   Legacy trailing hyphens (including consecutive hyphens) are accepted so real
   historical accounts load; empty, leading-hyphen, underscore/dot, and overlong
   values are rejected. Captain and worker must differ case-insensitively.
-- `worker_github_login` is the executor identity. H1's `github_identity` remains
-  accepted as an alias. When both are present they must match; conflicting
-  aliases are rejected.
-- `dispatch_label` is the intake trigger. H1's `required_label` remains accepted
-  as an alias and is exposed on `Policy.required_label`. When both are present
-  they must match exactly.
+- `worker_github_login` is the executor identity. Version 1's `github_identity`
+  remains accepted as an alias. When both are present they must match;
+  conflicting aliases are rejected.
+- `dispatch_label` is the intake trigger. Version 1's `required_label` remains
+  accepted as an alias and is exposed on `Policy.required_label`. When both
+  are present they must match exactly.
 - `ready_label` is the triage label used by later orchestration stages. It must
   differ from `dispatch_label` case-insensitively so the specified→dispatched
   frontier cannot collapse.
@@ -121,7 +121,7 @@ Optional executor company pack (omit for minimum startup):
   visibility is not a setup failure. Extra private visibility fails unless the
   adopter explicitly selects `broader`. The effective choice is reported.
 - Optional `worker_completion_contract` is `github-pr` (default) or
-  `local-only`. Default H1 root and repair tasks bind Hermes
+  `local-only`. Default poller root and repair tasks bind Hermes
   `--completion-contract` to the repository slug. `local-only` is the
   private-plan fallback when that hook cannot call the branch-rules API; workers
   still complete with `metadata.published_pr`. Captain live PR identity,

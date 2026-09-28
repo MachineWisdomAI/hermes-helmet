@@ -71,6 +71,8 @@ SCAN_ROOTS = (
     "skills",
     "scripts",
     ".github",
+    ".claude-plugin",
+    ".codex-plugin",
     "README.md",
     "LICENSE",
     "NOTICE",

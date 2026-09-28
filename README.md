@@ -6,6 +6,13 @@
 
 **Give Hermes the wings to carry your plan through, under its own identity**
 
+<p align="center">
+  <a href="https://machine-wisdom.ai/">
+    <img src="docs/assets/machine-wisdom-ai/MachineWisdomAILogo.png" width="40" height="40" alt=""><br>
+    <strong>By Machine Wisdom AI</strong>
+  </a>
+</p>
+
 Hermes Helmet is an open-source software factory that gives
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) the ability to
 keep going: to take on a body of work, carry it through review
@@ -74,6 +81,10 @@ Hermes does the implementation.
 | [`setup-helmet`](skills/setup-helmet/SKILL.md) | Configure identities, repositories, model access, and the worker runtime. |
 | [`helmet-issue`](skills/helmet-issue/SKILL.md) | Carry one issue through implementation, review, repairs, and acceptance. |
 | [`helmet-epic`](skills/helmet-epic/SKILL.md) | Coordinate dependent issues and run independent work in parallel. |
+
+Install those skills with `helmet install-skills`, or as a Claude Code / Codex
+plugin; see [First-officer plugin](docs/first-officer-plugins.md). Choosing
+Claude as first officer does not change the worker model.
 
 In configuration and command references, **Captain-side** means the side where
 your first officer operates with your delegated authority. The two GitHub
@@ -284,11 +295,13 @@ Build and smoke-test a local development image with
 
 - [Agent index](llms.txt) for coding agents discovering this repository
 - [Quickstart](docs/quickstart.md) and [setup diagnostics](docs/setup-helmet.md)
+- [First-officer plugin](docs/first-officer-plugins.md)
 - [Published worker image](docs/runtime-image.md) and [company overlay](docs/private-overlay.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)
 - [Public preview](docs/public-preview.md) and [changelog](CHANGELOG.md)
+- [Brand attribution and logos](docs/brand.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 
 ## License
