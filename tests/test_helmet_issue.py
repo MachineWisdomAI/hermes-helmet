@@ -22,6 +22,18 @@ from hermes_helmet import install_skills as skills  # noqa: E402
 from hermes_helmet import cli as helmet_cli  # noqa: E402
 
 
+_WORKER_RUNTIME_PATCHER = mock.patch.object(hi, "DEFAULT_WORKER_RUNTIME", ())
+
+
+def setUpModule() -> None:
+    """Keep unit tests independent of an installed Captain worker bridge."""
+    _WORKER_RUNTIME_PATCHER.start()
+
+
+def tearDownModule() -> None:
+    _WORKER_RUNTIME_PATCHER.stop()
+
+
 FIXTURE_ORG = "example-org"
 FIXTURE_REPO = "demo-repo"
 FIXTURE_SLUG = f"{FIXTURE_ORG}/{FIXTURE_REPO}"
@@ -1442,7 +1454,7 @@ class OrchestrationPassTests(unittest.TestCase):
             self.assertEqual(changed.merge_mode, "explicit_captain_approval")
             self.assertEqual(changed.merge_mode_source, "authority")
 
-    def test_child_yes_can_override_inherited_epic_no(self) -> None:
+    def test_child_yes_can_override_epic_no_when_run_choice_permits(self) -> None:
         policy = _policy()
         class ParentFallbackRunner(FakeRunner):
             def run(self, command: list[str]) -> str:
@@ -1474,12 +1486,76 @@ class OrchestrationPassTests(unittest.TestCase):
                 epic_body="Epic\n\nMerge when clean: no\n",
                 parent_epic_url=parent_url,
                 merge_mode_choice="explicit_captain_approval",
-                merge_mode_source="epic",
+                merge_mode_source="epic:authority",
             )
             self.assertFalse(checkpoint.merge_choice_required)
             self.assertEqual(checkpoint.merge_mode_choice, "unattended_when_clean")
-            self.assertEqual(checkpoint.merge_mode_source, "epic")
+            self.assertEqual(checkpoint.merge_mode_source, "epic:authority")
             self.assertEqual(checkpoint.merge_mode, "unattended_when_clean")
+
+    def test_child_yes_cannot_override_manual_explicit_epic_choice(self) -> None:
+        policy = _policy()
+
+        class ParentFallbackRunner(FakeRunner):
+            def run(self, command: list[str]) -> str:
+                if command[-1] == f"repos/{FIXTURE_SLUG}/issues/2/parent":
+                    raise hi.HelmetIssueError("err:command_failed:http404")
+                return super().run(command)
+
+        runner = ParentFallbackRunner()
+        runner.issue = dict(runner.issue)
+        parent_url = f"https://github.com/{FIXTURE_SLUG}/issues/42"
+        runner.issue["body"] = (
+            f"Ship it.\n\n## Parent\n\n- {parent_url}\n\n"
+            "Merge when clean: yes\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            _ledger_with_root(ledger)
+            checkpoint, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="session",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+                merge_mode_choice="explicit_captain_approval",
+                merge_mode_source="epic:cli",
+            )
+            self.assertFalse(checkpoint.merge_choice_required)
+            self.assertEqual(
+                checkpoint.merge_mode_choice, "explicit_captain_approval"
+            )
+            self.assertEqual(checkpoint.merge_mode_source, "epic:cli")
+            self.assertEqual(checkpoint.merge_mode, "explicit_captain_approval")
+
+            runner.issue = dict(runner.issue)
+            runner.issue["body"] += "\nAuthority fingerprint change.\n"
+            resumed, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="scheduled",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+            )
+            self.assertEqual(
+                resumed.merge_mode_choice, "explicit_captain_approval"
+            )
+            self.assertEqual(resumed.merge_mode_source, "epic:cli")
+            self.assertEqual(resumed.merge_mode, "explicit_captain_approval")
 
     def test_preflight_rejects_worker_identity(self) -> None:
         policy = _policy()

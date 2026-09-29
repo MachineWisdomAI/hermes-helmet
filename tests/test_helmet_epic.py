@@ -630,8 +630,42 @@ class FrontierAndPassTests(unittest.TestCase):
             self.assertFalse(resumed_report.details["merge_choice_required"])
             self.assertEqual(
                 propagated,
-                [("unattended_when_clean", "epic")],
+                [("unattended_when_clean", "epic:cli")],
             )
+
+    def test_epic_marker_propagates_authority_provenance_to_child(self) -> None:
+        propagated: list[tuple[str | None, str]] = []
+        self.runner.issues[42]["body"] = "Epic\n\nMerge when clean: no\n"
+        self.runner.issues[100]["body"] = (
+            f"## Parent\n\n- {EPIC_URL}\n\nMerge when clean: yes\n"
+        )
+
+        def invoker(policy, child_url, **kwargs):
+            propagated.append(
+                (kwargs.get("merge_mode_choice"), kwargs.get("merge_mode_source"))
+            )
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            he.run_epic_pass(
+                self.policy,
+                EPIC_URL,
+                checkpoint_dir=Path(tmp),
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                host_continuation="scheduled",
+                accept_graph=True,
+            )
+
+        self.assertEqual(
+            propagated,
+            [("explicit_captain_approval", "epic:authority")],
+        )
 
     def test_ready_frontier_caps_at_two_and_skips_blocked(self) -> None:
         buckets = {

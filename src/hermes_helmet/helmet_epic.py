@@ -2014,7 +2014,11 @@ def run_epic_pass(
                     apply_dispatch=apply_dispatch,
                     worker_runtime=runtime,
                     merge_mode_choice=checkpoint.merge_mode_choice,
-                    merge_mode_source="epic",
+                    merge_mode_source=(
+                        checkpoint.merge_mode_source
+                        if checkpoint.merge_mode_source.startswith("epic:")
+                        else f"epic:{checkpoint.merge_mode_source}"
+                    ),
                 )
                 checkpoint.child_invocations += 1
                 status_obj = result.get("status") if isinstance(result, dict) else None

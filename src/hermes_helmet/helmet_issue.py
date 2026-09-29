@@ -2314,9 +2314,10 @@ def run_preflight_and_adopt(
             checkpoint.merge_authority_fingerprint
             and checkpoint.merge_authority_fingerprint != authority_fingerprint
         )
+        merge_source_origin = checkpoint.merge_mode_source.removeprefix("epic:")
         manual_explicit_ceiling = (
             checkpoint.merge_mode_choice == EXPLICIT_CAPTAIN_APPROVAL_MODE
-            and checkpoint.merge_mode_source in {"interactive", "cli", "legacy"}
+            and merge_source_origin in {"interactive", "cli", "legacy"}
         )
         if fingerprint_changed and not manual_explicit_ceiling:
             checkpoint.merge_mode_choice = None
@@ -2329,9 +2330,18 @@ def run_preflight_and_adopt(
         if merge_mode_choice is not None:
             if merge_mode_choice not in ALLOWED_MERGE_MODES:
                 raise HelmetIssueError(checkpoint_note("err", "merge_mode_invalid"))
-            effective_choice = (
-                base_mode if merge_mode_source == "epic" else merge_mode_choice
-            )
+            effective_choice = merge_mode_choice
+            incoming_source_origin = merge_mode_source.removeprefix("epic:")
+            if (
+                merge_mode_source.startswith("epic:")
+                and incoming_source_origin
+                not in {"interactive", "cli", "legacy"}
+            ):
+                # Inherited epic markers and defaults establish the child's
+                # baseline, but the child's own marker has higher precedence.
+                # Manual epic choices retain their provenance and remain a hard
+                # run-level ceiling when they narrowed authority.
+                effective_choice = base_mode
             if not (
                 manual_explicit_ceiling
                 and effective_choice == UNATTENDED_MERGE_MODE
