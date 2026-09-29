@@ -130,7 +130,7 @@ or issue does not satisfy its unfinished outcome.
     epic delegation authorizes every in-scope child task and review to use the
     configured Hermes executor. Do not ask again per child, model, or provider,
     including for configured OpenRouter/open-weight routes. With false or
-    omitted, honor explicit task-specific consent or obtain it before external
+    omitted, honor explicit consent for this task or obtain it before external
     model use. The flag never authorizes
     secrets, scope expansion, credential/billing changes, or an unconfigured
     provider.
