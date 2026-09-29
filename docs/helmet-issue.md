@@ -12,6 +12,15 @@ under `worker_github_login`. The human Captain's policy determines whether a
 clean result may be merged. After an interruption, the first officer resumes
 from its checkpoint and current GitHub state.
 
+The two identities are two roles, not interchangeable credential profiles.
+Hermes writes and repairs as the worker; the first officer independently reviews
+the exact head as the Captain. The Captain host stores only the Captain `gh`
+profile; preflight fails if it finds the worker login there. A run never
+switches tokens, sessions, profiles, or browser state to manufacture the other
+identity's approval. A PR authored by anyone other than the configured worker
+makes the run terminally failed and is not adopted. Resume requires a compliant
+worker-authored PR after conflicting external state is resolved.
+
 ```sh
 helmet issue ISSUE_URL --config /path/to/policy.json
 helmet status ISSUE_URL --config /path/to/policy.json
@@ -35,9 +44,16 @@ exists without a recoverable root, treats an explicit blocked review as a hard
 merge stop (clears clean authority), reviews each head from a separate
 first-officer checkout, and posts formal GitHub review findings. The issue
 poller (`github-issue-poller`) creates same-PR repair work. The worker never
-merges. Default merge mode stops for explicit Captain approval. Only a
-whole-line `Merge when clean: yes` on the issue (or an inheriting parent epic)
-permits an unattended merge of that exact clean head.
+merges. Default merge mode permits the Captain to merge that exact clean head
+without another prompt. A whole-line `Merge when clean: no` on the issue (or an
+inheriting parent epic) requires separate explicit approval.
+
+Interactive session hosts ask once before dispatch when no valid persisted
+choice exists. `helmet issue --merge-mode …` stores the choice, source, and
+authority fingerprint; resumes do not ask again until an authority input
+changes. Scheduled runs honor a valid persisted choice and otherwise use the
+policy default without asking. An installation configured for explicit Captain
+approval cannot be widened.
 
 Canonical implementation selection requires repository + issue association
 before DONE: the issue's canonical branch, a GitHub closing keyword aimed at
@@ -68,7 +84,8 @@ issue links remain discovery leads only — not ownership.
 Non-secret JSON under `~/.hermes-helmet/checkpoints/` by default (override with
 `HERMES_HELMET_CHECKPOINT_DIR` or `--checkpoint-dir`), keyed by issue URL digest.
 Stores state, root task id, PR URL, reviewed/clean head SHAs, repair round count,
-merge mode, and structured blocker/operation codes. Never stores tokens, raw
+effective merge mode, persisted choice/source, authority fingerprint,
+`merge_choice_required`, and structured blocker/operation codes. Never stores tokens, raw
 command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,

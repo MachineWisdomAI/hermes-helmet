@@ -22,6 +22,18 @@ from hermes_helmet import install_skills as skills  # noqa: E402
 from hermes_helmet import cli as helmet_cli  # noqa: E402
 
 
+_WORKER_RUNTIME_PATCHER = mock.patch.object(hi, "DEFAULT_WORKER_RUNTIME", ())
+
+
+def setUpModule() -> None:
+    """Keep unit tests independent of an installed Captain worker bridge."""
+    _WORKER_RUNTIME_PATCHER.start()
+
+
+def tearDownModule() -> None:
+    _WORKER_RUNTIME_PATCHER.stop()
+
+
 FIXTURE_ORG = "example-org"
 FIXTURE_REPO = "demo-repo"
 FIXTURE_SLUG = f"{FIXTURE_ORG}/{FIXTURE_REPO}"
@@ -49,7 +61,7 @@ def _policy_dict(**overrides: object) -> dict[str, object]:
         "github_owners": [FIXTURE_ORG],
         "trusted_review_bots": ["github-code-quality[bot]"],
         "merge": {
-            "default_mode": "explicit_captain_approval",
+            "default_mode": "unattended_when_clean",
             "unattended_marker": "Merge when clean: yes",
             "narrow_marker": "Merge when clean: no",
         },
@@ -69,6 +81,7 @@ def _policy(**overrides: object):
 class FakeRunner:
     def __init__(self) -> None:
         self.identity = CAPTAIN
+        self.auth_profiles = [CAPTAIN]
         self.issue = {
             "number": 2,
             "title": "H1 extract",
@@ -118,6 +131,22 @@ class FakeRunner:
 
     def run(self, command: list[str]) -> str:
         self.calls.append(command)
+        if len(command) == 5 and command[0].endswith("gh") and command[1:] == [
+            "auth",
+            "status",
+            "--json",
+            "hosts",
+        ]:
+            return json.dumps(
+                {
+                    "hosts": {
+                        "github.com": [
+                            {"login": login, "active": login == self.identity}
+                            for login in self.auth_profiles
+                        ]
+                    }
+                }
+            )
         if command[:3] == ["gh", "api", "user"] or (
             len(command) >= 3 and command[0].endswith("gh") and command[1] == "api" and command[2] == "user"
         ):
@@ -236,6 +265,49 @@ class CaptainIdentityTests(unittest.TestCase):
         with self.assertRaises(AuthorityError):
             verify_captain_identity(_policy(), "someone-else")
 
+    def test_preflight_rejects_worker_profile_on_captain_host(self) -> None:
+        runner = FakeRunner()
+        runner.auth_profiles.append(WORKER)
+        with self.assertRaisesRegex(
+            hi.HelmetIssueError,
+            "worker GitHub login is stored on the Captain host",
+        ):
+            hi.preflight(_policy(), ISSUE_URL, runner)
+
+    def test_preflight_accepts_captain_only_profile(self) -> None:
+        runner = FakeRunner()
+        issue, observed, _merge_mode = hi.preflight(_policy(), ISSUE_URL, runner)
+        self.assertEqual(issue.url, ISSUE_URL)
+        self.assertEqual(observed, CAPTAIN)
+        self.assertTrue(
+            any(
+                command[0].endswith("gh")
+                and command[1:] == ["auth", "status", "--json", "hosts"]
+                for command in runner.calls
+            )
+        )
+
+    def test_production_issue_flow_stays_failed_with_stored_worker_profile(self) -> None:
+        runner = FakeRunner()
+        runner.auth_profiles.append(WORKER)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoints = Path(directory) / "checkpoints"
+            ledger = Path(directory) / "ledger.sqlite3"
+            for _attempt in range(3):
+                checkpoint, _report = hi.run_preflight_and_adopt(
+                    _policy(),
+                    ISSUE_URL,
+                    ledger=ledger,
+                    checkpoint_dir=checkpoints,
+                    runner=runner,
+                    apply_dispatch=False,
+                )
+                self.assertEqual(checkpoint.state, "FAILED")
+                self.assertEqual(
+                    checkpoint.last_blocker,
+                    "err:worker_profile_on_captain_host",
+                )
+
 
 class CheckpointTests(unittest.TestCase):
     def test_round_trip(self) -> None:
@@ -247,6 +319,58 @@ class CheckpointTests(unittest.TestCase):
             assert loaded is not None
             self.assertEqual(loaded.state, "WAIT_PR")
             self.assertEqual(loaded.issue_url, ISSUE_URL)
+
+    def test_choice_fields_round_trip_and_legacy_mode_is_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = hi.checkpoint_path(Path(tmp), ISSUE_URL)
+            cp = hi.Checkpoint(
+                version=1,
+                issue_url=ISSUE_URL,
+                state="WAIT_PR",
+                merge_mode="unattended_when_clean",
+                merge_mode_choice="unattended_when_clean",
+                merge_mode_source="interactive",
+                merge_authority_fingerprint="abc123",
+            )
+            hi.save_checkpoint(path, cp)
+            loaded = hi.load_checkpoint(path)
+            assert loaded is not None
+            self.assertEqual(loaded.merge_mode_choice, "unattended_when_clean")
+            self.assertEqual(loaded.merge_mode_source, "interactive")
+            raw = loaded.to_public_dict()
+            for key in (
+                "merge_mode_choice",
+                "merge_mode_source",
+                "merge_authority_fingerprint",
+                "merge_choice_required",
+            ):
+                raw.pop(key)
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            legacy = hi.load_checkpoint(path)
+            assert legacy is not None
+            self.assertEqual(legacy.merge_mode_choice, "unattended_when_clean")
+            self.assertEqual(legacy.merge_mode_source, "legacy")
+
+    def test_invalid_merge_source_is_rejected_on_save_and_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = hi.checkpoint_path(Path(tmp), ISSUE_URL)
+            invalid = hi.Checkpoint(
+                version=1,
+                issue_url=ISSUE_URL,
+                state="WAIT_PR",
+                merge_mode_choice="explicit_captain_approval",
+                merge_mode_source="forged-source",
+            )
+            with self.assertRaises(hi.HelmetIssueError):
+                hi.save_checkpoint(path, invalid)
+
+            valid = hi.Checkpoint(version=1, issue_url=ISSUE_URL, state="WAIT_PR")
+            hi.save_checkpoint(path, valid)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["merge_mode_source"] = "forged-source"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaises(hi.HelmetIssueError):
+                hi.load_checkpoint(path)
 
 
 class RepairPolicyTests(unittest.TestCase):
@@ -909,7 +1033,7 @@ class HeadAndMergeTests(unittest.TestCase):
         self.assertEqual(cp.clean_head, "newsha")
         self.assertEqual(cp.state, "READY")
 
-    def test_default_merge_stops_for_approval(self) -> None:
+    def test_default_merge_allows_clean_reviewed_head(self) -> None:
         policy = _policy()
         issue = hi.IssueRef(
             repository=policy.repositories[0],
@@ -944,8 +1068,78 @@ class HeadAndMergeTests(unittest.TestCase):
             required_checks_green=True,
             mergeable=True,
         )
+        self.assertEqual(decision, "merge_allowed")
+        self.assertIsNone(blocker)
+
+    def test_merge_choice_required_blocks_direct_gate_evaluation(self) -> None:
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="No merge directive here.\n",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        pull = hi.PullRequestRef(
+            FIXTURE_SLUG,
+            10,
+            PR_URL,
+            "abc",
+            "automation/demo-repo-2",
+            "main",
+            WORKER,
+            "open",
+            False,
+            "clean",
+            False,
+        )
+        checkpoint = hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="READY",
+            clean_head="abc",
+            merge_choice_required=True,
+        )
+        decision, blocker = hi.evaluate_merge_gate(
+            policy,
+            issue,
+            pull,
+            checkpoint,
+            required_checks_green=True,
+            mergeable=True,
+        )
         self.assertEqual(decision, "stop_for_approval")
-        self.assertIsNotNone(blocker)
+        self.assertIn("merge_choice_required", blocker or "")
+
+    def test_explicit_installation_policy_is_hard_ceiling(self) -> None:
+        raw = _policy_dict()
+        raw["merge"] = {
+            "default_mode": "explicit_captain_approval",
+            "unattended_marker": "Merge when clean: yes",
+            "narrow_marker": "Merge when clean: no",
+        }
+        policy = policy_from_mapping(raw)
+        issue = hi.IssueRef(
+            repository=policy.repositories[0], number=2, title="x",
+            body="Merge when clean: yes\n", state="open",
+            labels=("ready-for-agent",), html_url=ISSUE_URL,
+        )
+        pull = hi.PullRequestRef(
+            FIXTURE_SLUG, 10, PR_URL, "abc", "automation/demo-repo-2", "main",
+            WORKER, "open", False, "clean", False,
+        )
+        cp = hi.Checkpoint(
+            version=1, issue_url=ISSUE_URL, state="READY", clean_head="abc",
+            merge_mode_choice="unattended_when_clean",
+        )
+        decision, blocker = hi.evaluate_merge_gate(
+            policy, issue, pull, cp,
+            required_checks_green=True, mergeable=True,
+        )
+        self.assertEqual(decision, "stop_for_approval")
+        self.assertIn("explicit_captain_approval_required", blocker or "")
 
     def test_merge_when_clean_allows_captain_merge(self) -> None:
         policy = _policy()
@@ -1249,6 +1443,276 @@ class HeadAndMergeTests(unittest.TestCase):
 
 
 class OrchestrationPassTests(unittest.TestCase):
+    def test_legacy_effective_mode_revalidates_against_current_authority(self) -> None:
+        def write_legacy(checkpoint_dir: Path) -> None:
+            path = hi.checkpoint_path(checkpoint_dir, ISSUE_URL)
+            checkpoint = hi.Checkpoint(
+                version=1,
+                issue_url=ISSUE_URL,
+                state="WAIT_PR",
+                merge_mode="explicit_captain_approval",
+            )
+            hi.save_checkpoint(path, checkpoint)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            for key in (
+                "merge_mode_choice",
+                "merge_mode_source",
+                "merge_authority_fingerprint",
+                "merge_choice_required",
+            ):
+                raw.pop(key)
+            path.write_text(json.dumps(raw), encoding="utf-8")
+
+        cases = (
+            ("scheduled", _policy(), "unattended_when_clean", "policy", False),
+            ("session", _policy(), None, "required", True),
+            (
+                "explicit-policy",
+                _policy(
+                    merge={
+                        "default_mode": "explicit_captain_approval",
+                        "unattended_marker": "Merge when clean: yes",
+                        "narrow_marker": "Merge when clean: no",
+                    }
+                ),
+                "explicit_captain_approval",
+                "authority",
+                False,
+            ),
+        )
+        for name, policy, expected_choice, expected_source, expected_required in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                ledger = Path(tmp) / "ledger.sqlite3"
+                checkpoints = Path(tmp) / "cp"
+                _ledger_with_root(ledger)
+                write_legacy(checkpoints)
+                checkpoint, _ = hi.run_preflight_and_adopt(
+                    policy,
+                    ISSUE_URL,
+                    ledger=ledger,
+                    checkpoint_dir=checkpoints,
+                    runner=FakeRunner(),
+                    gh="gh",
+                    hermes="hermes",
+                    host_continuation=("session" if name == "session" else "cron"),
+                    apply_dispatch=False,
+                    worker_runtime=(),
+                )
+                self.assertEqual(checkpoint.merge_mode_choice, expected_choice)
+                self.assertEqual(checkpoint.merge_mode_source, expected_source)
+                self.assertEqual(
+                    checkpoint.merge_choice_required,
+                    expected_required,
+                )
+
+    def test_session_asks_once_then_persists_choice(self) -> None:
+        policy = _policy()
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            checkpoints = Path(tmp) / "cp"
+            _ledger_with_root(ledger)
+            first, first_status = hi.run_preflight_and_adopt(
+                policy, ISSUE_URL, ledger=ledger, checkpoint_dir=checkpoints,
+                runner=runner, gh="gh", hermes="hermes",
+                host_continuation="session", apply_dispatch=False,
+                worker_runtime=(),
+            )
+            self.assertTrue(first.merge_choice_required)
+            self.assertIsNone(first.merge_mode_choice)
+            self.assertTrue(first_status.details["merge_choice_required"])
+
+            chosen, _ = hi.run_preflight_and_adopt(
+                policy, ISSUE_URL, ledger=ledger, checkpoint_dir=checkpoints,
+                runner=runner, gh="gh", hermes="hermes",
+                host_continuation="session", apply_dispatch=False,
+                worker_runtime=(), merge_mode_choice="unattended_when_clean",
+            )
+            self.assertEqual(chosen.merge_mode_source, "interactive")
+            resumed, status = hi.run_preflight_and_adopt(
+                policy, ISSUE_URL, ledger=ledger, checkpoint_dir=checkpoints,
+                runner=runner, gh="gh", hermes="hermes",
+                host_continuation="session", apply_dispatch=False,
+                worker_runtime=(),
+            )
+            self.assertFalse(resumed.merge_choice_required)
+            self.assertEqual(resumed.merge_mode_choice, "unattended_when_clean")
+            self.assertFalse(status.details["merge_choice_required"])
+
+    def test_scheduled_run_uses_policy_default_without_prompt(self) -> None:
+        policy = _policy()
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            _ledger_with_root(ledger)
+            checkpoint, _ = hi.run_preflight_and_adopt(
+                policy, ISSUE_URL, ledger=ledger, checkpoint_dir=Path(tmp) / "cp",
+                runner=runner, gh="gh", hermes="hermes",
+                host_continuation="cron", apply_dispatch=False,
+                worker_runtime=(),
+            )
+            self.assertFalse(checkpoint.merge_choice_required)
+            self.assertEqual(checkpoint.merge_mode_choice, "unattended_when_clean")
+            self.assertEqual(checkpoint.merge_mode_source, "policy")
+
+    def test_marker_change_invalidates_unattended_choice(self) -> None:
+        policy = _policy()
+        runner = FakeRunner()
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            checkpoints = Path(tmp) / "cp"
+            _ledger_with_root(ledger)
+            hi.run_preflight_and_adopt(
+                policy, ISSUE_URL, ledger=ledger, checkpoint_dir=checkpoints,
+                runner=runner, gh="gh", hermes="hermes",
+                host_continuation="session", apply_dispatch=False,
+                worker_runtime=(), merge_mode_choice="unattended_when_clean",
+            )
+            runner.issue = dict(runner.issue)
+            runner.issue["body"] = "Ship it.\n\nMerge when clean: no\n"
+            changed, _ = hi.run_preflight_and_adopt(
+                policy, ISSUE_URL, ledger=ledger, checkpoint_dir=checkpoints,
+                runner=runner, gh="gh", hermes="hermes",
+                host_continuation="session", apply_dispatch=False,
+                worker_runtime=(),
+            )
+            self.assertEqual(changed.merge_mode, "explicit_captain_approval")
+            self.assertEqual(changed.merge_mode_source, "authority")
+
+    def test_child_yes_can_override_epic_no_when_run_choice_permits(self) -> None:
+        policy = _policy()
+        class ParentFallbackRunner(FakeRunner):
+            def run(self, command: list[str]) -> str:
+                if command[-1] == f"repos/{FIXTURE_SLUG}/issues/2/parent":
+                    raise hi.HelmetIssueError("err:command_failed:http404")
+                return super().run(command)
+
+        runner = ParentFallbackRunner()
+        runner.issue = dict(runner.issue)
+        parent_url = f"https://github.com/{FIXTURE_SLUG}/issues/42"
+        runner.issue["body"] = (
+            f"Ship it.\n\n## Parent\n\n- {parent_url}\n\n"
+            "Merge when clean: yes\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            _ledger_with_root(ledger)
+            checkpoint, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="session",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+                merge_mode_choice="explicit_captain_approval",
+                merge_mode_source="epic:authority",
+            )
+            self.assertFalse(checkpoint.merge_choice_required)
+            self.assertEqual(checkpoint.merge_mode_choice, "unattended_when_clean")
+            self.assertEqual(checkpoint.merge_mode_source, "epic:authority")
+            self.assertEqual(checkpoint.merge_mode, "unattended_when_clean")
+
+    def test_child_yes_cannot_override_manual_explicit_epic_choice(self) -> None:
+        policy = _policy()
+
+        class ParentFallbackRunner(FakeRunner):
+            def run(self, command: list[str]) -> str:
+                if command[-1] == f"repos/{FIXTURE_SLUG}/issues/2/parent":
+                    raise hi.HelmetIssueError("err:command_failed:http404")
+                return super().run(command)
+
+        runner = ParentFallbackRunner()
+        runner.issue = dict(runner.issue)
+        parent_url = f"https://github.com/{FIXTURE_SLUG}/issues/42"
+        runner.issue["body"] = (
+            f"Ship it.\n\n## Parent\n\n- {parent_url}\n\n"
+            "Merge when clean: yes\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            _ledger_with_root(ledger)
+            checkpoint, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="session",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+                merge_mode_choice="explicit_captain_approval",
+                merge_mode_source="epic:cli",
+            )
+            self.assertFalse(checkpoint.merge_choice_required)
+            self.assertEqual(
+                checkpoint.merge_mode_choice, "explicit_captain_approval"
+            )
+            self.assertEqual(checkpoint.merge_mode_source, "epic:cli")
+            self.assertEqual(checkpoint.merge_mode, "explicit_captain_approval")
+
+            runner.issue = dict(runner.issue)
+            runner.issue["body"] += "\nAuthority fingerprint change.\n"
+            resumed, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="scheduled",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+            )
+            self.assertEqual(
+                resumed.merge_mode_choice, "explicit_captain_approval"
+            )
+            self.assertEqual(resumed.merge_mode_source, "epic:cli")
+            self.assertEqual(resumed.merge_mode, "explicit_captain_approval")
+
+            checkpoint_path = hi.checkpoint_path(Path(tmp) / "cp", ISSUE_URL)
+            compatibility = hi.load_checkpoint(checkpoint_path)
+            assert compatibility is not None
+            compatibility.merge_mode_source = "epic"
+            hi.save_checkpoint(checkpoint_path, compatibility)
+            runner.issue = dict(runner.issue)
+            runner.issue["body"] += "\nSecond fingerprint change.\n"
+            legacy_resumed, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="scheduled",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+            )
+            self.assertEqual(
+                legacy_resumed.merge_mode_choice,
+                "explicit_captain_approval",
+            )
+            self.assertEqual(legacy_resumed.merge_mode_source, "epic")
+            self.assertEqual(
+                legacy_resumed.merge_mode,
+                "explicit_captain_approval",
+            )
+
     def test_preflight_rejects_worker_identity(self) -> None:
         policy = _policy()
         runner = FakeRunner()
@@ -1833,6 +2297,15 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("second watcher", text.casefold())
         self.assertIn("H1 poller", text)
 
+    def test_skill_requires_role_separated_authorship_and_review(self) -> None:
+        text = (ROOT / "skills/helmet-issue/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Identity separation is role separation", text)
+        self.assertIn("worker authors and repairs", text)
+        self.assertIn("Never switch", text)
+        self.assertIn("manufacture approval", text)
+        self.assertIn("terminally `FAILED`", text)
+        self.assertIn("worker login is stored", text)
+
 
 class ResidualReviewRegressionTests(unittest.TestCase):
     """Captain residual findings against ebbe5c1 (PR #19 review 5134469606)."""
@@ -2176,7 +2649,12 @@ class ResidualReviewRegressionTests(unittest.TestCase):
                     report.merge_gate.split(":")[-1]
                     if ":" in (report.merge_gate or "")
                     else report.merge_gate,
-                    {"explicit_captain_approval", "not_ready", "awaiting"},
+                {
+                    "unattended_when_clean",
+                    "explicit_captain_approval",
+                    "not_ready",
+                    "awaiting",
+                },
                 )
             # Budget must not false-exhaust from re-recording the same formal outcome.
             self.assertIsNone(hi.budget_exhausted(cp, policy))

@@ -146,7 +146,7 @@ setup:
 > Follow the issue through review, necessary repairs, and acceptance under the
 > agreed merge authority.
 
-The [September 23, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
+The [September 29, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-29)
 provides packaged artifacts. Its CLI command is `hermes-helmet`; current source
 also installs the shorter `helmet` command used here. See the
 [preview notes](docs/public-preview.md) for that release's details.
@@ -198,11 +198,16 @@ reviewed head, an effective approval, passing required checks, and a mergeable
 state. The merge request includes the head SHA, and Hermes Helmet reads back
 GitHub's merge state afterward.
 
-You choose the merge authority. By default, the first officer asks for your
-approval. An explicit whole-line `Merge when clean: yes` directive on an issue
-or its parent epic authorizes it to merge once those conditions pass. A child
-can narrow inherited authority with `Merge when clean: no`. Implementation and
-repair stay with the worker; merging stays on the Captain side.
+By default, the first officer merges after it has reviewed the exact current
+head, required checks pass, and GitHub reports the pull request mergeable. An
+explicit whole-line `Merge when clean: no` directive on an issue or parent epic
+requires a separate Captain approval instead. A child can explicitly re-enable
+autonomous merge with `Merge when clean: yes`. Implementation and repair stay
+with the worker; merging stays on the Captain side.
+An installation deliberately configured for explicit Captain approval remains
+a hard ceiling. Interactive runs ask once before dispatch and persist that
+choice across waits and restarts. Scheduled runs honor a valid persisted choice
+and otherwise use the policy default without asking.
 
 ### Resume from the existing record
 

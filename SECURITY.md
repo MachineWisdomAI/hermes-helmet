@@ -30,9 +30,9 @@ only the access required for its repositories and responsibilities.
 
 ## Review and merge authority
 
-The worker never merges and never force-pushes. Merge defaults to explicit
-Captain approval. `Merge when clean: yes` grants unattended merge only after
-the reviewed head, required checks, and mergeability are verified again.
+The worker never merges and never force-pushes. The Captain merges autonomously
+only after the reviewed head, required checks, and mergeability are verified
+again. `Merge when clean: no` requires a separate explicit approval.
 
 Separate identities make implementation and acceptance attributable. They do
 not replace code review, required checks, or ordinary repository protections.

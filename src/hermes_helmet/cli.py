@@ -159,6 +159,13 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"clean_head:     {report.clean_head or '-'}")
         print(f"repair_state:   {report.repair_state}")
         print(f"merge_gate:     {report.merge_gate}")
+        print(f"merge_choice:   {report.details.get('merge_mode_choice') or '-'}")
+        print(f"merge_source:   {report.details.get('merge_mode_source') or '-'}")
+        print(
+            "merge_authority_fingerprint: "
+            f"{report.details.get('merge_authority_fingerprint') or '-'}"
+        )
+        print(f"merge_choice_required: {bool(report.details.get('merge_choice_required'))}")
         print(f"blocker:        {report.blocker or '-'}")
         print(f"terminal:       {report.terminal}")
     return 0
@@ -220,6 +227,8 @@ def cmd_issue(args: argparse.Namespace) -> int:
             apply_dispatch=not args.no_dispatch,
             worker_runtime=args.worker_runtime,
             parent_epic_url=args.parent_epic_url or None,
+            merge_mode_choice=args.merge_mode,
+            merge_mode_source="cli",
         )
     except HelmetIssueError as exc:
         print(f"helmet issue failed: {exc}", file=sys.stderr)
@@ -254,6 +263,7 @@ def cmd_epic(args: argparse.Namespace) -> int:
             max_parallelism=args.max_parallelism,
             extra_child_urls=args.child or (),
             worker_runtime=args.worker_runtime,
+            merge_mode_choice=args.merge_mode,
         )
     except (HelmetEpicError, HelmetIssueError) as exc:
         print(f"helmet epic failed: {exc}", file=sys.stderr)
@@ -318,6 +328,13 @@ def cmd_epic_status(args: argparse.Namespace) -> int:
         print(f"blocked:        {len(report.blocked)}")
         print(f"failed:         {len(report.failed)}")
         print(f"awaiting_human: {len(report.awaiting_human)}")
+        print(f"merge_choice:   {report.details.get('merge_mode_choice') or '-'}")
+        print(f"merge_source:   {report.details.get('merge_mode_source') or '-'}")
+        print(
+            "merge_authority_fingerprint: "
+            f"{report.details.get('merge_authority_fingerprint') or '-'}"
+        )
+        print(f"merge_choice_required: {bool(report.details.get('merge_choice_required'))}")
         print(f"blocker:        {report.blocker or '-'}")
         print(f"terminal:       {report.terminal}")
         for label, urls in (
@@ -1128,6 +1145,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Validated epic root URL for merge-authority inheritance on resume",
     )
+    issue_p.add_argument(
+        "--merge-mode",
+        choices=("unattended_when_clean", "explicit_captain_approval"),
+        default=None,
+        help="Persist one merge choice for this issue until authority changes",
+    )
     issue_p.set_defaults(func=cmd_issue)
 
     epic_p = sub.add_parser(
@@ -1172,6 +1195,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="Optional explicit child issue URL (repeatable; still requires Parent link)",
+    )
+    epic_p.add_argument(
+        "--merge-mode",
+        choices=("unattended_when_clean", "explicit_captain_approval"),
+        default=None,
+        help="Persist one merge choice for this epic and propagate it to children",
     )
     epic_p.set_defaults(func=cmd_epic)
 

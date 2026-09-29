@@ -289,6 +289,8 @@ def _write_fake_gh(path: Path, issue_url: str) -> None:
         "import json, sys\n"
         f"ISSUE = {issue_json!r}\n"
         "args = sys.argv[1:]\n"
+        "if args == ['auth', 'status', '--json', 'hosts']:\n"
+        "    print(json.dumps({'hosts': {'github.com': [{'login': 'example-captain', 'active': True}]}})); sys.exit(0)\n"
         "if not args or args[0] != 'api':\n"
         "    sys.exit(2)\n"
         "endpoint = args[-1]\n"
@@ -358,7 +360,7 @@ class PackagedReleaseProofTests(unittest.TestCase):
         cls._tmp.cleanup()
 
     def test_wheel_from_sdist_contains_every_skill_and_reference(self) -> None:
-        self.assertIn("0.1.0rc1", self.wheel.name)
+        self.assertIn("0.1.0rc2", self.wheel.name)
         missing, extra, mismatched = asset_diff(self.expected, wheel_skill_assets(self.wheel))
         self.assertEqual(missing, [], msg="wheel omitted bundled skill assets")
         self.assertEqual(extra, [], msg="wheel added unexpected bundled skill assets")

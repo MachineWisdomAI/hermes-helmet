@@ -48,7 +48,7 @@ def _policy_dict(**overrides: object) -> dict[str, object]:
         "github_owners": [FIXTURE_ORG],
         "trusted_review_bots": ["github-code-quality[bot]"],
         "merge": {
-            "default_mode": "explicit_captain_approval",
+            "default_mode": "unattended_when_clean",
             "unattended_marker": "Merge when clean: yes",
             "narrow_marker": "Merge when clean: no",
         },
@@ -91,6 +91,7 @@ def _issue_payload(
 class FakeEpicRunner:
     def __init__(self) -> None:
         self.identity = CAPTAIN
+        self.auth_profiles = [CAPTAIN]
         self.issues: dict[int, dict[str, object]] = {}
         self.sub_issues: dict[int, object] = {}
         self.blocked_by: dict[int, object] = {}
@@ -112,6 +113,22 @@ class FakeEpicRunner:
 
     def run(self, command: list[str]) -> str:
         self.calls.append(list(command))
+        if len(command) == 5 and command[0].endswith("gh") and command[1:] == [
+            "auth",
+            "status",
+            "--json",
+            "hosts",
+        ]:
+            return json.dumps(
+                {
+                    "hosts": {
+                        "github.com": [
+                            {"login": login, "active": login == self.identity}
+                            for login in self.auth_profiles
+                        ]
+                    }
+                }
+            )
         if command[0].endswith("gh") and command[1] == "api":
             if "--method" in command and "labels" in "".join(command):
                 self.labels_posted.append(" ".join(command))
@@ -305,6 +322,30 @@ class GraphValidationTests(unittest.TestCase):
                 labels=["ready-for-agent"],
             )
         )
+
+    def test_epic_checkpoint_rejects_invalid_authority_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = he.epic_checkpoint_path(Path(tmp), EPIC_URL)
+            valid = he.EpicCheckpoint(
+                version=1,
+                epic_url=EPIC_URL,
+                state="PREFLIGHT",
+            )
+            he.save_epic_checkpoint(path, valid)
+            original = json.loads(path.read_text(encoding="utf-8"))
+            cases = (
+                ("epic_merge_mode", "invalid-mode"),
+                ("merge_mode_choice", "invalid-choice"),
+                ("merge_mode_source", "forged-source"),
+                ("merge_mode_source", "epic:cli"),
+            )
+            for key, value in cases:
+                with self.subTest(key=key):
+                    raw = dict(original)
+                    raw[key] = value
+                    path.write_text(json.dumps(raw), encoding="utf-8")
+                    with self.assertRaises(he.HelmetEpicError):
+                        he.load_epic_checkpoint(path)
 
     def test_body_fallback_linear_and_parallel_graph(self) -> None:
         graph = he.build_epic_graph(
@@ -570,6 +611,86 @@ class FrontierAndPassTests(unittest.TestCase):
         with self.assertRaises(he.HelmetEpicError):
             he.preflight_epic(self.policy, EPIC_URL, self.runner)
 
+    def test_session_epic_asks_once_and_propagates_choice(self) -> None:
+        propagated: list[tuple[str | None, str]] = []
+
+        def invoker(policy, child_url, **kwargs):
+            propagated.append(
+                (kwargs.get("merge_mode_choice"), kwargs.get("merge_mode_source"))
+            )
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint, report, _ = he.run_epic_pass(
+                self.policy,
+                EPIC_URL,
+                checkpoint_dir=Path(tmp),
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                host_continuation="session",
+                accept_graph=True,
+            )
+            self.assertTrue(checkpoint.merge_choice_required)
+            self.assertTrue(report.details["merge_choice_required"])
+            self.assertEqual(propagated, [])
+
+            resumed, resumed_report, _ = he.run_epic_pass(
+                self.policy,
+                EPIC_URL,
+                checkpoint_dir=Path(tmp),
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                host_continuation="session",
+                accept_graph=True,
+                merge_mode_choice="unattended_when_clean",
+            )
+            self.assertFalse(resumed.merge_choice_required)
+            self.assertFalse(resumed_report.details["merge_choice_required"])
+            self.assertEqual(
+                propagated,
+                [("unattended_when_clean", "epic:cli")],
+            )
+
+    def test_epic_marker_propagates_authority_provenance_to_child(self) -> None:
+        propagated: list[tuple[str | None, str]] = []
+        self.runner.issues[42]["body"] = "Epic\n\nMerge when clean: no\n"
+        self.runner.issues[100]["body"] = (
+            f"## Parent\n\n- {EPIC_URL}\n\nMerge when clean: yes\n"
+        )
+
+        def invoker(policy, child_url, **kwargs):
+            propagated.append(
+                (kwargs.get("merge_mode_choice"), kwargs.get("merge_mode_source"))
+            )
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            he.run_epic_pass(
+                self.policy,
+                EPIC_URL,
+                checkpoint_dir=Path(tmp),
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                host_continuation="scheduled",
+                accept_graph=True,
+            )
+
+        self.assertEqual(
+            propagated,
+            [("explicit_captain_approval", "epic:authority")],
+        )
+
     def test_ready_frontier_caps_at_two_and_skips_blocked(self) -> None:
         buckets = {
             "completed": [],
@@ -664,6 +785,8 @@ class FrontierAndPassTests(unittest.TestCase):
                 child_invoker=invoker,
                 accept_graph=True,
                 apply_dispatch=False,
+                host_continuation="session",
+                merge_mode_choice="unattended_when_clean",
             )
             first_fp = he.load_epic_checkpoint(
                 he.epic_checkpoint_path(ck, EPIC_URL)
@@ -683,8 +806,10 @@ class FrontierAndPassTests(unittest.TestCase):
             self.assertEqual(checkpoint.state, "GRAPH_CHANGED")
             self.assertEqual(invoked, [])
             self.assertIn("graph_changed", report.blocker or "")
-            # Accept refresh allows dispatch again.
-            checkpoint2, _, _ = he.run_epic_pass(
+            self.assertFalse(checkpoint.merge_choice_required)
+            self.assertEqual(checkpoint.merge_mode_choice, "unattended_when_clean")
+            # Accepting the changed graph invalidates the prior choice and asks once.
+            checkpoint2, report2, _ = he.run_epic_pass(
                 self.policy,
                 EPIC_URL,
                 checkpoint_dir=ck,
@@ -693,8 +818,26 @@ class FrontierAndPassTests(unittest.TestCase):
                 child_invoker=invoker,
                 accept_graph=True,
                 apply_dispatch=True,
+                host_continuation="session",
             )
             self.assertNotEqual(checkpoint2.accepted_fingerprint, first_fp)
+            self.assertTrue(checkpoint2.merge_choice_required)
+            self.assertTrue(report2.details["merge_choice_required"])
+            self.assertEqual(invoked, [])
+            # The one renewed choice resumes dispatch without another graph prompt.
+            checkpoint3, _, _ = he.run_epic_pass(
+                self.policy,
+                EPIC_URL,
+                checkpoint_dir=ck,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A, CHILD_C, CHILD_B],
+                child_invoker=invoker,
+                accept_graph=False,
+                apply_dispatch=True,
+                host_continuation="session",
+                merge_mode_choice="unattended_when_clean",
+            )
+            self.assertFalse(checkpoint3.merge_choice_required)
             self.assertTrue(invoked)
 
     def test_resume_does_not_duplicate_without_reinvoke_when_active(self) -> None:
@@ -1185,7 +1328,7 @@ class CaptainReview5135755754RegressionTests(unittest.TestCase):
         mode = merge_authority_for(
             self.policy, issue_body="child without marker", epic_body=body
         )
-        self.assertEqual(mode, "explicit_captain_approval")
+        self.assertEqual(mode, "unattended_when_clean")
 
     def test_parent_removed_drops_inheritance(self) -> None:
         self.runner.issues[100]["body"] = "no parent anymore\n"
@@ -1443,7 +1586,7 @@ class CaptainReview5135755754RegressionTests(unittest.TestCase):
         mode = merge_authority_for(
             self.policy, issue_body=self.runner.issues[100]["body"], epic_body=body
         )
-        self.assertEqual(mode, "explicit_captain_approval")
+        self.assertEqual(mode, "unattended_when_clean")
 
         # Actual merge gate with runner must not return merge_allowed on stale #42.
         issue = hi.IssueRef(
@@ -1522,10 +1665,10 @@ class CaptainReview5135755754RegressionTests(unittest.TestCase):
             gh="gh",
             epic_body="Epic\n\nMerge when clean: yes\n",
         )
-        self.assertEqual(decision, "stop_for_approval")
-        self.assertIn("explicit_captain_approval_required", blocker or "")
+        self.assertEqual(decision, "merge_allowed")
+        self.assertIsNone(blocker)
         self.assertEqual(cp.parent_epic_url, other)
-        self.assertEqual(cp.merge_mode, "explicit_captain_approval")
+        self.assertEqual(cp.merge_mode, "unattended_when_clean")
         # Native parent endpoint was consulted during the gate.
         parent_calls = [
             c
@@ -1606,6 +1749,9 @@ class CliAndInstallTests(unittest.TestCase):
         text = (source / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("name: helmet-epic", text)
         self.assertIn("hermes-helmet", text)
+        self.assertIn("Identity separation is role separation", text)
+        self.assertIn("manufacture approval", text)
+        self.assertIn("terminally `FAILED`", text)
 
     def test_no_force_push_in_epic_module(self) -> None:
         source = (ROOT / "src/hermes_helmet/helmet_epic.py").read_text(encoding="utf-8")
@@ -1616,6 +1762,18 @@ class CliAndInstallTests(unittest.TestCase):
             "gh pr merge",
         ):
             self.assertNotIn(needle, source)
+
+    def test_epic_preflight_rejects_worker_profile_on_captain_host(self) -> None:
+        runner = FakeEpicRunner()
+        runner.auth_profiles.append(WORKER)
+        runner.add_issue(
+            _issue_payload(42, title="Epic", body="Plan", labels=["ready-for-agent"])
+        )
+        with self.assertRaisesRegex(
+            he.HelmetEpicError,
+            "worker_profile_on_captain_host",
+        ):
+            he.preflight_epic(_policy(), EPIC_URL, runner)
 
 
 class IncidentalCompletionEpicTests(unittest.TestCase):
