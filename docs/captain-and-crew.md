@@ -66,8 +66,16 @@ fail closed when the live login is missing, is the Captain, or does not match
 the configured executor. The Captain-side `helmet-issue` path fails closed if it
 is running as the worker.
 
-The worker never falls back to the Captain's credentials, sessions, checkouts,
-browser state, or memory.
+Identity separation is also workflow separation. Hermes authors and repairs the
+pull request as the worker; the first officer reviews the exact head as the
+Captain. The Captain host stores only the Captain's `gh` profile; the worker
+credential stays in the worker runtime. Captain preflight fails when the worker
+login is present in the host `gh` credential store. Neither side switches
+profiles, tokens, sessions, browser state, or credentials to impersonate the
+other or manufacture an approval. A non-worker-authored pull request makes the
+run terminally failed; it is neither adopted nor made acceptable through
+credential switching. The accepted issue resumes only after conflicting state
+is resolved and a compliant worker-authored pull request exists.
 
 ## One authority document
 
@@ -93,7 +101,8 @@ secret values.
 2. The poller creates one Kanban root task for that issue URL.
 3. The executor opens a tested pull request as the configured worker and
    records `metadata.published_pr`.
-4. Trusted review on that pull request can create one dependent same-PR repair.
+4. The Captain independently reviews the exact head; trusted review on that
+   pull request can create one dependent same-PR repair.
 5. Captain `helmet-issue` reviews each head and applies the merge gate.
 6. Captain `helmet-epic` runs independent children with bounded parallelism.
    The epic root is never dispatch-labeled.

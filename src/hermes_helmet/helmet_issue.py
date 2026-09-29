@@ -1299,6 +1299,37 @@ def _validate_worker_pr(policy: Policy, issue: IssueRef, pull: PullRequestRef) -
         raise HelmetIssueError("pull request author is not the configured worker")
 
 
+def captain_github_profiles(runner: Runner, *, gh: str = DEFAULT_GH) -> set[str]:
+    """Return logins stored by gh on the Captain host, failing closed on drift."""
+
+    try:
+        raw = runner.run([gh, "auth", "status", "--json", "hosts"])
+        payload = json.loads(raw)
+    except (HelmetIssueError, json.JSONDecodeError) as exc:
+        raise HelmetIssueError(
+            "captain credential isolation: could not inspect gh credential profiles"
+        ) from exc
+    hosts = payload.get("hosts") if isinstance(payload, dict) else None
+    if not isinstance(hosts, dict):
+        raise HelmetIssueError(
+            "captain credential isolation: gh auth status returned an invalid profile set"
+        )
+    logins: set[str] = set()
+    for accounts in hosts.values():
+        if not isinstance(accounts, list):
+            raise HelmetIssueError(
+                "captain credential isolation: gh auth status returned invalid accounts"
+            )
+        for account in accounts:
+            login = account.get("login") if isinstance(account, dict) else None
+            if not isinstance(login, str) or not login.strip():
+                raise HelmetIssueError(
+                    "captain credential isolation: gh auth status returned an invalid login"
+                )
+            logins.add(login.strip().casefold())
+    return logins
+
+
 def preflight(
     policy: Policy,
     issue_url: str,
@@ -1323,6 +1354,11 @@ def preflight(
         verify_captain_identity(policy, observed)
     except AuthorityError as exc:
         raise HelmetIssueError(str(exc)) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetIssueError(
+            "captain credential isolation: worker GitHub login is stored on the Captain host"
+        )
 
     issue = load_issue(policy, issue_url, runner, gh=gh)
     if issue.state != "open":
@@ -1989,12 +2025,12 @@ def set_blocker(checkpoint: Checkpoint, reason: str, *, fatal: bool = False) -> 
     else:
         checkpoint.last_blocker = reason
         checkpoint.identical_blocker_count = 1
-    if checkpoint.identical_blocker_count >= 3:
-        checkpoint.state = "BLOCKED"
-        checkpoint.notes.append(checkpoint_note("op", "repeated_blocker", reason))
-    elif fatal:
+    if fatal:
         checkpoint.state = "FAILED"
         checkpoint.notes.append(reason)
+    elif checkpoint.identical_blocker_count >= 3:
+        checkpoint.state = "BLOCKED"
+        checkpoint.notes.append(checkpoint_note("op", "repeated_blocker", reason))
     else:
         checkpoint.state = "BLOCKED"
         checkpoint.notes.append(reason)
@@ -2239,6 +2275,11 @@ def run_preflight_and_adopt(
             verify_captain_identity(policy, observed)
         except AuthorityError as exc:
             raise HelmetIssueError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+        profiles = captain_github_profiles(runner, gh=gh)
+        if policy.github_identity.casefold() in profiles:
+            raise HelmetIssueError(
+                checkpoint_note("err", "worker_profile_on_captain_host")
+            )
         if policy.version < 2:
             raise HelmetIssueError(checkpoint_note("err", "policy_version_unsupported"))
         if not policy.captain_github_login or not policy.github_identity:
@@ -2837,6 +2878,11 @@ def apply_review_outcome(
         verify_captain_identity(policy, observed)
     except AuthorityError as exc:
         raise HelmetIssueError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetIssueError(
+            checkpoint_note("err", "worker_profile_on_captain_host")
+        )
 
     issue = load_issue(policy, issue_url, runner, gh=gh)
     _root, pull, _repair = discover_progress(

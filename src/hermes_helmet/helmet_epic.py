@@ -45,6 +45,7 @@ from hermes_helmet.helmet_issue import (
     Runner,
     SubprocessRunner,
     checkpoint_note,
+    captain_github_profiles,
     load_issue,
     load_policy_for_issue,
     observed_github_login,
@@ -1625,6 +1626,9 @@ def preflight_epic(
         verify_captain_identity(policy, observed)
     except AuthorityError as exc:
         raise HelmetEpicError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetEpicError(checkpoint_note("err", "worker_profile_on_captain_host"))
 
     root = load_issue_node(policy, epic_url, runner, gh=gh, is_root=True, source="root")
     if root.state != "open":

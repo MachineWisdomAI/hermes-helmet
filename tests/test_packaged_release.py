@@ -289,6 +289,8 @@ def _write_fake_gh(path: Path, issue_url: str) -> None:
         "import json, sys\n"
         f"ISSUE = {issue_json!r}\n"
         "args = sys.argv[1:]\n"
+        "if args == ['auth', 'status', '--json', 'hosts']:\n"
+        "    print(json.dumps({'hosts': {'github.com': [{'login': 'example-captain', 'active': True}]}})); sys.exit(0)\n"
         "if not args or args[0] != 'api':\n"
         "    sys.exit(2)\n"
         "endpoint = args[-1]\n"

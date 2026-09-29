@@ -53,14 +53,23 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 1. Active GitHub identity MUST be the configured **Captain**
    (`captain_github_login`) and MUST differ from the configured **worker**.
    Fail closed on mismatch. The first officer uses that Captain identity.
-2. Never write the worker worktree or worker branch. First-officer review
+2. Identity separation is role separation: the worker authors and repairs the
+   pull request; the Captain independently reviews its exact head. Never switch
+   profiles, tokens, sessions, or authenticated browser state to act as the
+   other identity or manufacture approval. Captain preflight fails if the
+   worker login is stored in the host `gh` credential profiles; the worker
+   credential belongs only in the worker runtime. A pull request not authored
+   by the configured worker makes the run terminally `FAILED`; do not adopt or
+   approve it. Resume only after the accepted issue has a compliant
+   worker-authored pull request and conflicting external state is resolved.
+3. Never write the worker worktree or worker branch. First-officer review
    checkout is separate and read-only with respect to the worker branch tip.
-3. Never create Kanban repair tasks. Post formal GitHub review; the issue
+4. Never create Kanban repair tasks. Post formal GitHub review; the issue
    poller (H1 poller) reacts.
-4. Do not create repair from: approval-only reviews, untrusted activity, worker
+5. Do not create repair from: approval-only reviews, untrusted activity, worker
    self-activity, repeated polling, or CI failure without a verified finding.
-5. A changed PR head invalidates any prior clean result; re-review the new head.
-6. Default merge mode permits Captain-side merge after current-head clean
+6. A changed PR head invalidates any prior clean result; re-review the new head.
+7. Default merge mode permits Captain-side merge after current-head clean
    review, required checks, and mergeability. An unambiguous whole-line
    `Merge when clean: no` on the issue (or a live parent epic that still lists
    this child via **live native parent** association preferred, else body
@@ -72,9 +81,9 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
    moves).
    An installation configured `explicit_captain_approval` is a hard ceiling and
    cannot be widened by markers or a run choice.
-7. Merge failure re-queries authoritative GitHub state. Never blind-retry.
-8. No secrets in checkpoints, status, review bodies, or skill notes.
-9. If the host cannot continue out of session, perform **one truthful pass**,
+8. Merge failure re-queries authoritative GitHub state. Never blind-retry.
+9. No secrets in checkpoints, status, review bodies, or skill notes.
+10. If the host cannot continue out of session, perform **one truthful pass**,
    record `one_pass_only`, report the limitation, and stop. Do not spawn an
    unmanaged daemon.
 

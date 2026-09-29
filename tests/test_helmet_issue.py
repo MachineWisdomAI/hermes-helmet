@@ -69,6 +69,7 @@ def _policy(**overrides: object):
 class FakeRunner:
     def __init__(self) -> None:
         self.identity = CAPTAIN
+        self.auth_profiles = [CAPTAIN]
         self.issue = {
             "number": 2,
             "title": "H1 extract",
@@ -118,6 +119,22 @@ class FakeRunner:
 
     def run(self, command: list[str]) -> str:
         self.calls.append(command)
+        if len(command) == 5 and command[0].endswith("gh") and command[1:] == [
+            "auth",
+            "status",
+            "--json",
+            "hosts",
+        ]:
+            return json.dumps(
+                {
+                    "hosts": {
+                        "github.com": [
+                            {"login": login, "active": login == self.identity}
+                            for login in self.auth_profiles
+                        ]
+                    }
+                }
+            )
         if command[:3] == ["gh", "api", "user"] or (
             len(command) >= 3 and command[0].endswith("gh") and command[1] == "api" and command[2] == "user"
         ):
@@ -235,6 +252,49 @@ class CaptainIdentityTests(unittest.TestCase):
     def test_unknown_rejected(self) -> None:
         with self.assertRaises(AuthorityError):
             verify_captain_identity(_policy(), "someone-else")
+
+    def test_preflight_rejects_worker_profile_on_captain_host(self) -> None:
+        runner = FakeRunner()
+        runner.auth_profiles.append(WORKER)
+        with self.assertRaisesRegex(
+            hi.HelmetIssueError,
+            "worker GitHub login is stored on the Captain host",
+        ):
+            hi.preflight(_policy(), ISSUE_URL, runner)
+
+    def test_preflight_accepts_captain_only_profile(self) -> None:
+        runner = FakeRunner()
+        issue, observed, _merge_mode = hi.preflight(_policy(), ISSUE_URL, runner)
+        self.assertEqual(issue.url, ISSUE_URL)
+        self.assertEqual(observed, CAPTAIN)
+        self.assertTrue(
+            any(
+                command[0].endswith("gh")
+                and command[1:] == ["auth", "status", "--json", "hosts"]
+                for command in runner.calls
+            )
+        )
+
+    def test_production_issue_flow_stays_failed_with_stored_worker_profile(self) -> None:
+        runner = FakeRunner()
+        runner.auth_profiles.append(WORKER)
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoints = Path(directory) / "checkpoints"
+            ledger = Path(directory) / "ledger.sqlite3"
+            for _attempt in range(3):
+                checkpoint, _report = hi.run_preflight_and_adopt(
+                    _policy(),
+                    ISSUE_URL,
+                    ledger=ledger,
+                    checkpoint_dir=checkpoints,
+                    runner=runner,
+                    apply_dispatch=False,
+                )
+                self.assertEqual(checkpoint.state, "FAILED")
+                self.assertEqual(
+                    checkpoint.last_blocker,
+                    "err:worker_profile_on_captain_host",
+                )
 
 
 class CheckpointTests(unittest.TestCase):
@@ -2004,6 +2064,15 @@ class SourceGuardTests(unittest.TestCase):
         text = (ROOT / "skills/helmet-issue/SKILL.md").read_text(encoding="utf-8")
         self.assertIn("second watcher", text.casefold())
         self.assertIn("H1 poller", text)
+
+    def test_skill_requires_role_separated_authorship_and_review(self) -> None:
+        text = (ROOT / "skills/helmet-issue/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Identity separation is role separation", text)
+        self.assertIn("worker authors and repairs", text)
+        self.assertIn("Never switch", text)
+        self.assertIn("manufacture approval", text)
+        self.assertIn("terminally `FAILED`", text)
+        self.assertIn("worker login is stored", text)
 
 
 class ResidualReviewRegressionTests(unittest.TestCase):

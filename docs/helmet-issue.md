@@ -12,6 +12,15 @@ under `worker_github_login`. The human Captain's policy determines whether a
 clean result may be merged. After an interruption, the first officer resumes
 from its checkpoint and current GitHub state.
 
+The two identities are two roles, not interchangeable credential profiles.
+Hermes writes and repairs as the worker; the first officer independently reviews
+the exact head as the Captain. The Captain host stores only the Captain `gh`
+profile; preflight fails if it finds the worker login there. A run never
+switches tokens, sessions, profiles, or browser state to manufacture the other
+identity's approval. A PR authored by anyone other than the configured worker
+makes the run terminally failed and is not adopted. Resume requires a compliant
+worker-authored PR after conflicting external state is resolved.
+
 ```sh
 helmet issue ISSUE_URL --config /path/to/policy.json
 helmet status ISSUE_URL --config /path/to/policy.json

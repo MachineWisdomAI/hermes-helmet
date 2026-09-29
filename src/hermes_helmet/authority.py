@@ -1017,6 +1017,11 @@ occurred when it has not.
   `{policy.ready_label}`.
 - Trusted human review is limited to repository associations: {humans}.
 - Trusted automation is limited to exact bot logins: {bots}.
+- Implement and repair pull requests as `{worker}`. Never approve your own head
+  or switch profiles, tokens, sessions, or browser state to manufacture the
+  Captain's independent review. The Captain reviews the exact worker-authored
+  head through the Helmet issue workflow. The worker credential stays in this
+  worker runtime and must not be stored as a `gh` profile on the Captain host.
 {merge_authority_text}
 - Optional integrations selected by policy: {integration_text}.
 - When publishing a pull request, complete the Kanban task with

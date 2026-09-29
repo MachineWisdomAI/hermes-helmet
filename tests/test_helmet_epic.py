@@ -91,6 +91,7 @@ def _issue_payload(
 class FakeEpicRunner:
     def __init__(self) -> None:
         self.identity = CAPTAIN
+        self.auth_profiles = [CAPTAIN]
         self.issues: dict[int, dict[str, object]] = {}
         self.sub_issues: dict[int, object] = {}
         self.blocked_by: dict[int, object] = {}
@@ -112,6 +113,22 @@ class FakeEpicRunner:
 
     def run(self, command: list[str]) -> str:
         self.calls.append(list(command))
+        if len(command) == 5 and command[0].endswith("gh") and command[1:] == [
+            "auth",
+            "status",
+            "--json",
+            "hosts",
+        ]:
+            return json.dumps(
+                {
+                    "hosts": {
+                        "github.com": [
+                            {"login": login, "active": login == self.identity}
+                            for login in self.auth_profiles
+                        ]
+                    }
+                }
+            )
         if command[0].endswith("gh") and command[1] == "api":
             if "--method" in command and "labels" in "".join(command):
                 self.labels_posted.append(" ".join(command))
@@ -1674,6 +1691,9 @@ class CliAndInstallTests(unittest.TestCase):
         text = (source / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("name: helmet-epic", text)
         self.assertIn("hermes-helmet", text)
+        self.assertIn("Identity separation is role separation", text)
+        self.assertIn("manufacture approval", text)
+        self.assertIn("terminally `FAILED`", text)
 
     def test_no_force_push_in_epic_module(self) -> None:
         source = (ROOT / "src/hermes_helmet/helmet_epic.py").read_text(encoding="utf-8")
@@ -1684,6 +1704,18 @@ class CliAndInstallTests(unittest.TestCase):
             "gh pr merge",
         ):
             self.assertNotIn(needle, source)
+
+    def test_epic_preflight_rejects_worker_profile_on_captain_host(self) -> None:
+        runner = FakeEpicRunner()
+        runner.auth_profiles.append(WORKER)
+        runner.add_issue(
+            _issue_payload(42, title="Epic", body="Plan", labels=["ready-for-agent"])
+        )
+        with self.assertRaisesRegex(
+            he.HelmetEpicError,
+            "worker_profile_on_captain_host",
+        ):
+            he.preflight_epic(_policy(), EPIC_URL, runner)
 
 
 class IncidentalCompletionEpicTests(unittest.TestCase):
