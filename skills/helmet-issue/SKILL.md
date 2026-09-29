@@ -138,8 +138,9 @@ helmet install-skills --target hermes
 2. On an interactive session, if status reports `merge_choice_required: true`,
    ask the Captain once before dispatch and rerun with `--merge-mode`. Persisted
    choices survive restarts; do not ask again unless the authority fingerprint
-   changes. Scheduled/non-interactive runs use the policy default without a
-   question. An explicit manual choice cannot later be widened.
+   changes. Scheduled/non-interactive runs honor a valid persisted choice and
+   otherwise use the policy default without a question. An explicit manual
+   choice cannot later be widened.
 3. At startup, report the effective merge mode and continuation mechanism. For
    a session host, keep exactly one bounded `helmet wait ISSUE_URL
    --timeout-seconds 1800` handle and reconcile after meaningful wakes or

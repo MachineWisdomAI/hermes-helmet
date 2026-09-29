@@ -323,6 +323,30 @@ class GraphValidationTests(unittest.TestCase):
             )
         )
 
+    def test_epic_checkpoint_rejects_invalid_authority_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = he.epic_checkpoint_path(Path(tmp), EPIC_URL)
+            valid = he.EpicCheckpoint(
+                version=1,
+                epic_url=EPIC_URL,
+                state="PREFLIGHT",
+            )
+            he.save_epic_checkpoint(path, valid)
+            original = json.loads(path.read_text(encoding="utf-8"))
+            cases = (
+                ("epic_merge_mode", "invalid-mode"),
+                ("merge_mode_choice", "invalid-choice"),
+                ("merge_mode_source", "forged-source"),
+                ("merge_mode_source", "epic:cli"),
+            )
+            for key, value in cases:
+                with self.subTest(key=key):
+                    raw = dict(original)
+                    raw[key] = value
+                    path.write_text(json.dumps(raw), encoding="utf-8")
+                    with self.assertRaises(he.HelmetEpicError):
+                        he.load_epic_checkpoint(path)
+
     def test_body_fallback_linear_and_parallel_graph(self) -> None:
         graph = he.build_epic_graph(
             self.policy,

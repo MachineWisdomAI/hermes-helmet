@@ -30,6 +30,7 @@ from hermes_helmet.authority import (
     UNATTENDED_MERGE_MODE,
     merge_authority_fingerprint,
     merge_authority_for,
+    merge_mode_source_is_valid,
     verify_captain_identity,
 )
 from hermes_helmet.github_issue_poller import ISSUE_URL_RE
@@ -345,6 +346,35 @@ def load_epic_checkpoint(
         notes = raw.get("notes") or []
         if not isinstance(notes, list):
             raise TypeError("notes")
+        loaded_epic_merge_mode = str(
+            raw.get("epic_merge_mode") or default_merge_mode
+        )
+        loaded_merge_choice = (
+            str(raw.get("merge_mode_choice"))
+            if raw.get("merge_mode_choice") is not None
+            else (
+                str(raw.get("epic_merge_mode"))
+                if raw.get("epic_merge_mode") in ALLOWED_MERGE_MODES
+                else None
+            )
+        )
+        if loaded_epic_merge_mode not in ALLOWED_MERGE_MODES:
+            raise HelmetEpicError("epic checkpoint merge mode is invalid")
+        if (
+            loaded_merge_choice is not None
+            and loaded_merge_choice not in ALLOWED_MERGE_MODES
+        ):
+            raise HelmetEpicError("epic checkpoint merge mode choice is invalid")
+        loaded_merge_source = str(
+            raw.get("merge_mode_source")
+            or (
+                "legacy"
+                if raw.get("epic_merge_mode") in ALLOWED_MERGE_MODES
+                else "policy"
+            )
+        )
+        if not merge_mode_source_is_valid(loaded_merge_source):
+            raise HelmetEpicError("epic checkpoint merge mode source is invalid")
         return EpicCheckpoint(
             version=version,
             epic_url=epic_url,
@@ -378,22 +408,9 @@ def load_epic_checkpoint(
             notes=[sanitize_public_text(str(item), max_len=400) for item in notes],
             host_continuation=str(raw.get("host_continuation") or "unknown"),
             one_pass_only=bool(raw.get("one_pass_only", False)),
-            epic_merge_mode=str(
-                raw.get("epic_merge_mode") or default_merge_mode
-            ),
-            merge_mode_choice=(
-                str(raw.get("merge_mode_choice"))
-                if raw.get("merge_mode_choice") is not None
-                else (
-                    str(raw.get("epic_merge_mode"))
-                    if raw.get("epic_merge_mode") in ALLOWED_MERGE_MODES
-                    else None
-                )
-            ),
-            merge_mode_source=str(
-                raw.get("merge_mode_source")
-                or ("legacy" if raw.get("epic_merge_mode") in ALLOWED_MERGE_MODES else "policy")
-            ),
+            epic_merge_mode=loaded_epic_merge_mode,
+            merge_mode_choice=loaded_merge_choice,
+            merge_mode_source=loaded_merge_source,
             merge_authority_fingerprint=str(raw.get("merge_authority_fingerprint") or ""),
             merge_choice_required=bool(raw.get("merge_choice_required", False)),
             child_invocations=max(0, int(raw.get("child_invocations") or 0)),
@@ -418,6 +435,8 @@ def save_epic_checkpoint(path: Path, checkpoint: EpicCheckpoint) -> None:
         raise HelmetEpicError("refusing to persist invalid epic merge mode")
     if checkpoint.merge_mode_choice is not None and checkpoint.merge_mode_choice not in ALLOWED_MERGE_MODES:
         raise HelmetEpicError("refusing to persist invalid epic merge mode choice")
+    if not merge_mode_source_is_valid(checkpoint.merge_mode_source):
+        raise HelmetEpicError("refusing to persist invalid epic merge mode source")
     checkpoint.last_blocker = (
         None
         if checkpoint.last_blocker is None

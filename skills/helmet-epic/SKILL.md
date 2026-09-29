@@ -173,8 +173,9 @@ helmet install-skills --target hermes
 2. On an interactive session, if status reports `merge_choice_required: true`,
    ask once before dispatch, rerun with `--merge-mode`, and propagate that
    persisted choice to every child. Do not ask again unless policy, authority
-   markers, validated parent, or the accepted graph changes. Scheduled runs use
-   the policy default without a question.
+   markers, validated parent, or the accepted graph changes. Scheduled runs
+   honor a valid persisted choice and otherwise use the policy default without
+   a question.
 3. Report the effective merge mode and continuation mechanism at startup.
 4. Verify observed GitHub login is Captain and differs from worker.
 5. Load epic root: must be open; must **not** carry `dispatch_label`.

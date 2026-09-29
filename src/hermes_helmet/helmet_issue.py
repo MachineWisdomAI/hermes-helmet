@@ -39,6 +39,7 @@ from hermes_helmet.authority import (
     load_authority,
     merge_authority_fingerprint,
     merge_authority_for,
+    merge_mode_source_is_valid,
     verify_captain_identity,
 )
 from hermes_helmet.github_issue_poller import (
@@ -519,6 +520,16 @@ def load_checkpoint(
             raise HelmetIssueError("checkpoint merge_mode is invalid")
         if loaded_merge_choice is not None and loaded_merge_choice not in ALLOWED_MERGE_MODES:
             raise HelmetIssueError("checkpoint merge_mode_choice is invalid")
+        loaded_merge_source = str(
+            raw.get("merge_mode_source")
+            or (
+                "legacy"
+                if raw.get("merge_mode") in ALLOWED_MERGE_MODES
+                else "policy"
+            )
+        )
+        if not merge_mode_source_is_valid(loaded_merge_source, allow_epic=True):
+            raise HelmetIssueError("checkpoint merge mode source is invalid")
         return Checkpoint(
             version=version,
             issue_url=issue_url,
@@ -532,10 +543,7 @@ def load_checkpoint(
             repair_rounds=repair_rounds,
             merge_mode=loaded_merge_mode,
             merge_mode_choice=loaded_merge_choice,
-            merge_mode_source=str(
-                raw.get("merge_mode_source")
-                or ("legacy" if raw.get("merge_mode") in ALLOWED_MERGE_MODES else "policy")
-            ),
+            merge_mode_source=loaded_merge_source,
             merge_authority_fingerprint=str(raw.get("merge_authority_fingerprint") or ""),
             merge_choice_required=bool(raw.get("merge_choice_required", False)),
             merge_attempted_head=(
@@ -576,6 +584,10 @@ def save_checkpoint(path: Path, checkpoint: Checkpoint) -> None:
         raise HelmetIssueError("refusing to persist invalid merge mode")
     if checkpoint.merge_mode_choice is not None and checkpoint.merge_mode_choice not in ALLOWED_MERGE_MODES:
         raise HelmetIssueError("refusing to persist invalid merge mode choice")
+    if not merge_mode_source_is_valid(
+        checkpoint.merge_mode_source, allow_epic=True
+    ):
+        raise HelmetIssueError("refusing to persist invalid merge mode source")
     checkpoint.last_blocker = (
         None if checkpoint.last_blocker is None else sanitize_public_text(str(checkpoint.last_blocker))
     )
@@ -2317,7 +2329,10 @@ def run_preflight_and_adopt(
         merge_source_origin = checkpoint.merge_mode_source.removeprefix("epic:")
         manual_explicit_ceiling = (
             checkpoint.merge_mode_choice == EXPLICIT_CAPTAIN_APPROVAL_MODE
-            and merge_source_origin in {"interactive", "cli", "legacy"}
+            and (
+                merge_source_origin in {"interactive", "cli", "legacy"}
+                or checkpoint.merge_mode_source == "epic"
+            )
         )
         if fingerprint_changed and not manual_explicit_ceiling:
             checkpoint.merge_mode_choice = None
@@ -2330,6 +2345,10 @@ def run_preflight_and_adopt(
         if merge_mode_choice is not None:
             if merge_mode_choice not in ALLOWED_MERGE_MODES:
                 raise HelmetIssueError(checkpoint_note("err", "merge_mode_invalid"))
+            if not merge_mode_source_is_valid(merge_mode_source, allow_epic=True):
+                raise HelmetIssueError(
+                    checkpoint_note("err", "merge_mode_source_invalid")
+                )
             effective_choice = merge_mode_choice
             incoming_source_origin = merge_mode_source.removeprefix("epic:")
             if (

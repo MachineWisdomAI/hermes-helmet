@@ -206,7 +206,8 @@ autonomous merge with `Merge when clean: yes`. Implementation and repair stay
 with the worker; merging stays on the Captain side.
 An installation deliberately configured for explicit Captain approval remains
 a hard ceiling. Interactive runs ask once before dispatch and persist that
-choice across waits and restarts; scheduled runs use the policy default.
+choice across waits and restarts. Scheduled runs honor a valid persisted choice
+and otherwise use the policy default without asking.
 
 ### Resume from the existing record
 

@@ -496,6 +496,12 @@ class AuthorityTests(unittest.TestCase):
             ),
             "explicit_captain_approval",
         )
+        self.assertFalse(
+            authority.unattended_merge_allowed(
+                policy,
+                requested_mode="explicit_captain_approval",
+            )
+        )
         raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
         raw["merge"]["default_mode"] = "explicit_captain_approval"
         explicit = authority.policy_from_mapping(raw)

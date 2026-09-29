@@ -351,6 +351,27 @@ class CheckpointTests(unittest.TestCase):
             self.assertEqual(legacy.merge_mode_choice, "unattended_when_clean")
             self.assertEqual(legacy.merge_mode_source, "legacy")
 
+    def test_invalid_merge_source_is_rejected_on_save_and_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = hi.checkpoint_path(Path(tmp), ISSUE_URL)
+            invalid = hi.Checkpoint(
+                version=1,
+                issue_url=ISSUE_URL,
+                state="WAIT_PR",
+                merge_mode_choice="explicit_captain_approval",
+                merge_mode_source="forged-source",
+            )
+            with self.assertRaises(hi.HelmetIssueError):
+                hi.save_checkpoint(path, invalid)
+
+            valid = hi.Checkpoint(version=1, issue_url=ISSUE_URL, state="WAIT_PR")
+            hi.save_checkpoint(path, valid)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["merge_mode_source"] = "forged-source"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            with self.assertRaises(hi.HelmetIssueError):
+                hi.load_checkpoint(path)
+
 
 class RepairPolicyTests(unittest.TestCase):
     def test_never_create_repair_from_non_actionable(self) -> None:
@@ -1556,6 +1577,37 @@ class OrchestrationPassTests(unittest.TestCase):
             )
             self.assertEqual(resumed.merge_mode_source, "epic:cli")
             self.assertEqual(resumed.merge_mode, "explicit_captain_approval")
+
+            checkpoint_path = hi.checkpoint_path(Path(tmp) / "cp", ISSUE_URL)
+            compatibility = hi.load_checkpoint(checkpoint_path)
+            assert compatibility is not None
+            compatibility.merge_mode_source = "epic"
+            hi.save_checkpoint(checkpoint_path, compatibility)
+            runner.issue = dict(runner.issue)
+            runner.issue["body"] += "\nSecond fingerprint change.\n"
+            legacy_resumed, _ = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                host_continuation="scheduled",
+                apply_dispatch=False,
+                worker_runtime=(),
+                epic_body="Epic\n\nMerge when clean: no\n",
+                parent_epic_url=parent_url,
+            )
+            self.assertEqual(
+                legacy_resumed.merge_mode_choice,
+                "explicit_captain_approval",
+            )
+            self.assertEqual(legacy_resumed.merge_mode_source, "epic")
+            self.assertEqual(
+                legacy_resumed.merge_mode,
+                "explicit_captain_approval",
+            )
 
     def test_preflight_rejects_worker_identity(self) -> None:
         policy = _policy()

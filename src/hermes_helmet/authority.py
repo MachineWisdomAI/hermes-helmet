@@ -30,6 +30,9 @@ DEFAULT_MERGE_MODE = UNATTENDED_MERGE_MODE
 ALLOWED_MERGE_MODES = frozenset(
     {UNATTENDED_MERGE_MODE, EXPLICIT_CAPTAIN_APPROVAL_MODE}
 )
+MERGE_MODE_SOURCES = frozenset(
+    {"policy", "authority", "required", "interactive", "cli", "legacy"}
+)
 DEFAULT_UNATTENDED_MARKER = "Merge when clean: yes"
 DEFAULT_NARROW_MARKER = "Merge when clean: no"
 DEFAULT_WORKER_ACCESS_SCOPE = "selected"
@@ -68,6 +71,21 @@ _SECRET_KEY_PARTS = frozenset(
         "secretkey",
     }
 )
+
+
+def merge_mode_source_is_valid(source: str, *, allow_epic: bool = False) -> bool:
+    """Validate checkpoint provenance for an epic root or child issue."""
+
+    if source in MERGE_MODE_SOURCES:
+        return True
+    if not allow_epic:
+        return False
+    if source == "epic":
+        return True
+    prefix, separator, origin = source.partition(":")
+    return prefix == "epic" and bool(separator) and origin in MERGE_MODE_SOURCES
+
+
 _SECRET_COMPACT_KEYS = frozenset(
     {
         "token",
@@ -954,10 +972,14 @@ def unattended_merge_allowed(
     *,
     issue_body: str = "",
     epic_body: str | None = None,
+    requested_mode: str | None = None,
 ) -> bool:
-    return merge_authority_for(policy, issue_body=issue_body, epic_body=epic_body) == (
-        UNATTENDED_MERGE_MODE
-    )
+    return merge_authority_for(
+        policy,
+        issue_body=issue_body,
+        epic_body=epic_body,
+        requested_mode=requested_mode,
+    ) == UNATTENDED_MERGE_MODE
 
 
 def render_crew_contract(policy: Policy) -> str:

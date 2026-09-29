@@ -51,8 +51,9 @@ inheriting parent epic) requires separate explicit approval.
 Interactive session hosts ask once before dispatch when no valid persisted
 choice exists. `helmet issue --merge-mode …` stores the choice, source, and
 authority fingerprint; resumes do not ask again until an authority input
-changes. Scheduled runs use the policy default. An installation configured for
-explicit Captain approval cannot be widened.
+changes. Scheduled runs honor a valid persisted choice and otherwise use the
+policy default without asking. An installation configured for explicit Captain
+approval cannot be widened.
 
 Canonical implementation selection requires repository + issue association
 before DONE: the issue's canonical branch, a GitHub closing keyword aimed at
