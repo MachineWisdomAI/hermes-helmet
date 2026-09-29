@@ -1,13 +1,24 @@
 # helmet-epic
 
-Captain-side multi-issue (epic) orchestration for Hermes Helmet.
+First-officer multi-issue (epic) orchestration for Hermes Helmet.
 
 ## Coordinate dependent issues
 
-Use an epic when a body of work spans several issues. The Captain identifies
-which issues are ready, runs independent work within the configured limit,
-and follows each child's implementation, review, and acceptance through
-`helmet-issue`. You retain the final closeout of the parent issue.
+Use an epic when a body of work spans several issues. The first officer
+identifies which issues are ready, runs independent work within the
+configured limit, and follows each child's implementation, review, and
+acceptance through `helmet-issue`. You, the human Captain, retain the final
+closeout of the parent issue.
+
+```sh
+helmet epic EPIC_URL --config /path/to/policy.json --accept-graph
+helmet epic-status EPIC_URL --config /path/to/policy.json
+```
+
+Expected result: a validated graph fingerprint, a ready frontier, and
+in-flight or completed children. Next action: wait on active children, then
+rerun the epic pass. Leave the parent issue open unless you close it
+yourself.
 
 `helmet-epic` takes one GitHub epic/parent issue URL and drives:
 
@@ -15,8 +26,7 @@ and follows each child's implementation, review, and acceptance through
 
 It invokes `helmet-issue` for each ready child with bounded parallelism
 (`max_epic_parallelism`, default 2), continues independent branches when another
-child blocks, and never dispatch-labels the epic root. The epic remains open by
-default for human closeout.
+child blocks, and never dispatch-labels the epic root.
 
 ## Graph model
 

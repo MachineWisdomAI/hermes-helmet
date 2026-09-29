@@ -72,7 +72,7 @@ jobs:
           fi
 
       - name: Check out selected source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.source_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -139,7 +139,7 @@ jobs:
           df -h /
 
       - name: Check out recorded source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.SOURCE_COMMIT }}
           persist-credentials: false
