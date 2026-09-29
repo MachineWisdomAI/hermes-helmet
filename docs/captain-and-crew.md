@@ -66,8 +66,16 @@ fail closed when the live login is missing, is the Captain, or does not match
 the configured executor. The Captain-side `helmet-issue` path fails closed if it
 is running as the worker.
 
-The worker never falls back to the Captain's credentials, sessions, checkouts,
-browser state, or memory.
+Identity separation is also workflow separation. Hermes authors and repairs the
+pull request as the worker; the first officer reviews the exact head as the
+Captain. The Captain host stores only the Captain's `gh` profile; the worker
+credential stays in the worker runtime. Captain preflight fails when the worker
+login is present in the host `gh` credential store. Neither side switches
+profiles, tokens, sessions, browser state, or credentials to impersonate the
+other or manufacture an approval. A non-worker-authored pull request makes the
+run terminally failed; it is neither adopted nor made acceptable through
+credential switching. The accepted issue resumes only after conflicting state
+is resolved and a compliant worker-authored pull request exists.
 
 ## One authority document
 
@@ -93,16 +101,17 @@ secret values.
 2. The poller creates one Kanban root task for that issue URL.
 3. The executor opens a tested pull request as the configured worker and
    records `metadata.published_pr`.
-4. Trusted review on that pull request can create one dependent same-PR repair.
+4. The Captain independently reviews the exact head; trusted review on that
+   pull request can create one dependent same-PR repair.
 5. Captain `helmet-issue` reviews each head and applies the merge gate.
 6. Captain `helmet-epic` runs independent children with bounded parallelism.
    The epic root is never dispatch-labeled.
 
-The worker never merges and never force-pushes. Merge defaults to explicit
-Captain approval. Silence is not approval. An unambiguous `Merge when clean: yes`
-directive on an issue or epic root grants unattended merge only after current-head
-review, required checks, and mergeability pass. Private-plan `local-only` worker
-completion does not treat GitHub `mergeable_state=clean` as those required checks.
+The worker never merges and never force-pushes. The Captain merges by default
+only after current-head review, required checks, and mergeability pass. An
+unambiguous `Merge when clean: no` directive on an issue or epic root requires a
+separate explicit approval. Private-plan `local-only` worker completion does not
+treat GitHub `mergeable_state=clean` as those required checks.
 
 GitHub remains authoritative for issues, pull requests, checks, reviews, heads,
 and merge state. Hermes Helmet does not copy review prose into Kanban and does not

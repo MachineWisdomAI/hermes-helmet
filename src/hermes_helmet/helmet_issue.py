@@ -29,13 +29,17 @@ from typing import Protocol, Sequence
 from urllib.parse import urlencode
 
 from hermes_helmet.authority import (
+    ALLOWED_MERGE_MODES,
     AuthorityError,
+    EXPLICIT_CAPTAIN_APPROVAL_MODE,
     LOCAL_ONLY_COMPLETION_CONTRACT,
     Policy,
     Repository,
+    UNATTENDED_MERGE_MODE,
     load_authority,
+    merge_authority_fingerprint,
     merge_authority_for,
-    unattended_merge_allowed,
+    merge_mode_source_is_valid,
     verify_captain_identity,
 )
 from hermes_helmet.github_issue_poller import (
@@ -383,7 +387,11 @@ class Checkpoint:
     clean_head: str | None = None
     pending_repair: bool = False
     repair_rounds: int = 0
-    merge_mode: str = "explicit_captain_approval"
+    merge_mode: str = "unattended_when_clean"
+    merge_mode_choice: str | None = None
+    merge_mode_source: str = "policy"
+    merge_authority_fingerprint: str = ""
+    merge_choice_required: bool = False
     merge_attempted_head: str | None = None
     last_blocker: str | None = None
     identical_blocker_count: int = 0
@@ -464,6 +472,7 @@ def load_checkpoint(
     path: Path,
     *,
     expected_issue_url: str | None = None,
+    default_merge_mode: str = EXPLICIT_CAPTAIN_APPROVAL_MODE,
 ) -> Checkpoint | None:
     if not path.is_file():
         return None
@@ -497,6 +506,30 @@ def load_checkpoint(
             pr_number = int(pr_number)
             if pr_number < 1:
                 raise HelmetIssueError("checkpoint pr_number must be positive")
+        loaded_merge_mode = str(raw.get("merge_mode", default_merge_mode))
+        loaded_merge_choice = (
+            str(raw.get("merge_mode_choice"))
+            if raw.get("merge_mode_choice") is not None
+            else (
+                str(raw.get("merge_mode"))
+                if raw.get("merge_mode") in ALLOWED_MERGE_MODES
+                else None
+            )
+        )
+        if loaded_merge_mode not in ALLOWED_MERGE_MODES:
+            raise HelmetIssueError("checkpoint merge_mode is invalid")
+        if loaded_merge_choice is not None and loaded_merge_choice not in ALLOWED_MERGE_MODES:
+            raise HelmetIssueError("checkpoint merge_mode_choice is invalid")
+        loaded_merge_source = str(
+            raw.get("merge_mode_source")
+            or (
+                "legacy"
+                if raw.get("merge_mode") in ALLOWED_MERGE_MODES
+                else "policy"
+            )
+        )
+        if not merge_mode_source_is_valid(loaded_merge_source, allow_epic=True):
+            raise HelmetIssueError("checkpoint merge mode source is invalid")
         return Checkpoint(
             version=version,
             issue_url=issue_url,
@@ -508,7 +541,11 @@ def load_checkpoint(
             clean_head=raw.get("clean_head") if raw.get("clean_head") is None else str(raw.get("clean_head")),
             pending_repair=bool(raw.get("pending_repair", False)),
             repair_rounds=repair_rounds,
-            merge_mode=str(raw.get("merge_mode", "explicit_captain_approval")),
+            merge_mode=loaded_merge_mode,
+            merge_mode_choice=loaded_merge_choice,
+            merge_mode_source=loaded_merge_source,
+            merge_authority_fingerprint=str(raw.get("merge_authority_fingerprint") or ""),
+            merge_choice_required=bool(raw.get("merge_choice_required", False)),
             merge_attempted_head=(
                 None
                 if raw.get("merge_attempted_head") is None
@@ -543,6 +580,14 @@ def save_checkpoint(path: Path, checkpoint: Checkpoint) -> None:
         raise HelmetIssueError(f"refusing to persist unknown checkpoint state: {checkpoint.state}")
     if checkpoint.repair_rounds < 0 or checkpoint.identical_blocker_count < 0:
         raise HelmetIssueError("refusing to persist negative checkpoint counters")
+    if checkpoint.merge_mode not in ALLOWED_MERGE_MODES:
+        raise HelmetIssueError("refusing to persist invalid merge mode")
+    if checkpoint.merge_mode_choice is not None and checkpoint.merge_mode_choice not in ALLOWED_MERGE_MODES:
+        raise HelmetIssueError("refusing to persist invalid merge mode choice")
+    if not merge_mode_source_is_valid(
+        checkpoint.merge_mode_source, allow_epic=True
+    ):
+        raise HelmetIssueError("refusing to persist invalid merge mode source")
     checkpoint.last_blocker = (
         None if checkpoint.last_blocker is None else sanitize_public_text(str(checkpoint.last_blocker))
     )
@@ -1266,6 +1311,37 @@ def _validate_worker_pr(policy: Policy, issue: IssueRef, pull: PullRequestRef) -
         raise HelmetIssueError("pull request author is not the configured worker")
 
 
+def captain_github_profiles(runner: Runner, *, gh: str = DEFAULT_GH) -> set[str]:
+    """Return logins stored by gh on the Captain host, failing closed on drift."""
+
+    try:
+        raw = runner.run([gh, "auth", "status", "--json", "hosts"])
+        payload = json.loads(raw)
+    except (HelmetIssueError, json.JSONDecodeError) as exc:
+        raise HelmetIssueError(
+            "captain credential isolation: could not inspect gh credential profiles"
+        ) from exc
+    hosts = payload.get("hosts") if isinstance(payload, dict) else None
+    if not isinstance(hosts, dict):
+        raise HelmetIssueError(
+            "captain credential isolation: gh auth status returned an invalid profile set"
+        )
+    logins: set[str] = set()
+    for accounts in hosts.values():
+        if not isinstance(accounts, list):
+            raise HelmetIssueError(
+                "captain credential isolation: gh auth status returned invalid accounts"
+            )
+        for account in accounts:
+            login = account.get("login") if isinstance(account, dict) else None
+            if not isinstance(login, str) or not login.strip():
+                raise HelmetIssueError(
+                    "captain credential isolation: gh auth status returned an invalid login"
+                )
+            logins.add(login.strip().casefold())
+    return logins
+
+
 def preflight(
     policy: Policy,
     issue_url: str,
@@ -1290,6 +1366,11 @@ def preflight(
         verify_captain_identity(policy, observed)
     except AuthorityError as exc:
         raise HelmetIssueError(str(exc)) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetIssueError(
+            "captain credential isolation: worker GitHub login is stored on the Captain host"
+        )
 
     issue = load_issue(policy, issue_url, runner, gh=gh)
     if issue.state != "open":
@@ -1799,6 +1880,10 @@ def evaluate_merge_gate(
     from checkless ``clean``; explicit Captain approval remains available.
     """
 
+    if checkpoint.merge_choice_required:
+        return "stop_for_approval", checkpoint_note(
+            "err", "merge_choice_required"
+        )
     if checkpoint.state == "BLOCKED":
         return (
             "not_ready",
@@ -1875,12 +1960,13 @@ def evaluate_merge_gate(
         # Live Parent no longer matches saved association — clear stale link.
         checkpoint.parent_epic_url = None
     mode = merge_authority_for(
-        policy, issue_body=issue.body, epic_body=resolved_body
+        policy,
+        issue_body=issue.body,
+        epic_body=resolved_body,
+        requested_mode=checkpoint.merge_mode_choice,
     )
     checkpoint.merge_mode = mode
-    if mode == "unattended_when_clean" or unattended_merge_allowed(
-        policy, issue_body=issue.body, epic_body=resolved_body
-    ):
+    if mode == UNATTENDED_MERGE_MODE:
         if required_checks_green is True:
             return "merge_allowed", None
         return "stop_for_approval", checkpoint_note(
@@ -1955,12 +2041,12 @@ def set_blocker(checkpoint: Checkpoint, reason: str, *, fatal: bool = False) -> 
     else:
         checkpoint.last_blocker = reason
         checkpoint.identical_blocker_count = 1
-    if checkpoint.identical_blocker_count >= 3:
-        checkpoint.state = "BLOCKED"
-        checkpoint.notes.append(checkpoint_note("op", "repeated_blocker", reason))
-    elif fatal:
+    if fatal:
         checkpoint.state = "FAILED"
         checkpoint.notes.append(reason)
+    elif checkpoint.identical_blocker_count >= 3:
+        checkpoint.state = "BLOCKED"
+        checkpoint.notes.append(checkpoint_note("op", "repeated_blocker", reason))
     else:
         checkpoint.state = "BLOCKED"
         checkpoint.notes.append(reason)
@@ -2073,6 +2159,10 @@ def build_status(
             ),
             "live_error": live_error,
             "head_needs_review": head_needs_review,
+            "merge_mode_choice": checkpoint.merge_mode_choice if checkpoint else None,
+            "merge_mode_source": checkpoint.merge_mode_source if checkpoint else "policy",
+            "merge_authority_fingerprint": checkpoint.merge_authority_fingerprint if checkpoint else "",
+            "merge_choice_required": checkpoint.merge_choice_required if checkpoint else False,
         },
     )
 
@@ -2093,7 +2183,11 @@ def status_issue(
     runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
     path = checkpoint_path(checkpoint_dir, issue_url)
-    checkpoint = load_checkpoint(path, expected_issue_url=issue_url)
+    checkpoint = load_checkpoint(
+        path,
+        expected_issue_url=issue_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
     # Best-effort live discovery; failures become report details, not writes.
     root_task_id = None
     pull = None
@@ -2131,6 +2225,7 @@ def status_issue(
                 ),
                 state="UNKNOWN",
                 last_blocker=live_error,
+                merge_mode=policy.merge_default_mode,
             )
             if not ISSUE_URL_RE.fullmatch(issue_url or ""):
                 checkpoint.issue_url = "https://github.com/invalid/invalid/issues/0"
@@ -2161,15 +2256,26 @@ def run_preflight_and_adopt(
     worker_runtime: Sequence[str] = (),
     epic_body: str | None = None,
     parent_epic_url: str | None = None,
+    merge_mode_choice: str | None = None,
+    merge_mode_source: str = "interactive",
 ) -> tuple[Checkpoint, StatusReport]:
     """One safe orchestration pass through discovery (no review body generation)."""
 
     runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
     path = checkpoint_path(checkpoint_dir, issue_url)
-    checkpoint = load_checkpoint(path, expected_issue_url=issue_url)
+    checkpoint = load_checkpoint(
+        path,
+        expected_issue_url=issue_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
     if checkpoint is None:
-        checkpoint = Checkpoint(version=CHECKPOINT_VERSION, issue_url=issue_url, state="PREFLIGHT")
+        checkpoint = Checkpoint(
+            version=CHECKPOINT_VERSION,
+            issue_url=issue_url,
+            state="PREFLIGHT",
+            merge_mode=policy.merge_default_mode,
+        )
     checkpoint.host_continuation = host_continuation
     checkpoint.one_pass_only = one_pass_only
     continuation_limited = one_pass_only or host_continuation in {"none", "unknown"}
@@ -2185,6 +2291,11 @@ def run_preflight_and_adopt(
             verify_captain_identity(policy, observed)
         except AuthorityError as exc:
             raise HelmetIssueError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+        profiles = captain_github_profiles(runner, gh=gh)
+        if policy.github_identity.casefold() in profiles:
+            raise HelmetIssueError(
+                checkpoint_note("err", "worker_profile_on_captain_host")
+            )
         if policy.version < 2:
             raise HelmetIssueError(checkpoint_note("err", "policy_version_unsupported"))
         if not policy.captain_github_login or not policy.github_identity:
@@ -2209,12 +2320,94 @@ def run_preflight_and_adopt(
             checkpoint.parent_epic_url = resolved_parent
         else:
             checkpoint.parent_epic_url = None
-        merge_mode = merge_authority_for(
+        authority_fingerprint = merge_authority_fingerprint(
+            policy,
+            issue_body=issue.body,
+            epic_body=resolved_epic_body,
+            parent_epic_url=resolved_parent,
+        )
+        fingerprint_changed = bool(
+            checkpoint.merge_authority_fingerprint
+            and checkpoint.merge_authority_fingerprint != authority_fingerprint
+        )
+        if checkpoint.merge_mode_source == "legacy":
+            checkpoint.merge_mode_choice = None
+            checkpoint.merge_mode_source = "policy"
+            checkpoint.merge_choice_required = False
+            checkpoint.notes.append(checkpoint_note("op", "legacy_merge_revalidated"))
+        merge_source_origin = checkpoint.merge_mode_source.removeprefix("epic:")
+        manual_explicit_ceiling = (
+            checkpoint.merge_mode_choice == EXPLICIT_CAPTAIN_APPROVAL_MODE
+            and (
+                merge_source_origin in {"interactive", "cli"}
+                or checkpoint.merge_mode_source == "epic"
+                or checkpoint.merge_mode_source == "epic:legacy"
+            )
+        )
+        if fingerprint_changed and not manual_explicit_ceiling:
+            checkpoint.merge_mode_choice = None
+            checkpoint.merge_mode_source = "policy"
+            checkpoint.merge_choice_required = False
+            checkpoint.notes.append(checkpoint_note("op", "merge_authority_changed"))
+        base_mode = merge_authority_for(
             policy, issue_body=issue.body, epic_body=resolved_epic_body
         )
-        checkpoint.merge_mode = merge_mode
+        if merge_mode_choice is not None:
+            if merge_mode_choice not in ALLOWED_MERGE_MODES:
+                raise HelmetIssueError(checkpoint_note("err", "merge_mode_invalid"))
+            if not merge_mode_source_is_valid(merge_mode_source, allow_epic=True):
+                raise HelmetIssueError(
+                    checkpoint_note("err", "merge_mode_source_invalid")
+                )
+            effective_choice = merge_mode_choice
+            incoming_source_origin = merge_mode_source.removeprefix("epic:")
+            if (
+                merge_mode_source.startswith("epic:")
+                and incoming_source_origin
+                not in {"interactive", "cli", "legacy"}
+            ):
+                # Inherited epic markers and defaults establish the child's
+                # baseline, but the child's own marker has higher precedence.
+                # Manual epic choices retain their provenance and remain a hard
+                # run-level ceiling when they narrowed authority.
+                effective_choice = base_mode
+            if not (
+                manual_explicit_ceiling
+                and effective_choice == UNATTENDED_MERGE_MODE
+            ):
+                checkpoint.merge_mode_choice = effective_choice
+                checkpoint.merge_mode_source = merge_mode_source
+            checkpoint.merge_choice_required = False
+
+        if checkpoint.merge_mode_choice is None:
+            if base_mode == EXPLICIT_CAPTAIN_APPROVAL_MODE:
+                checkpoint.merge_mode_choice = EXPLICIT_CAPTAIN_APPROVAL_MODE
+                checkpoint.merge_mode_source = "authority"
+                checkpoint.merge_choice_required = False
+            elif host_continuation == "session":
+                checkpoint.merge_mode_source = "required"
+                checkpoint.merge_choice_required = True
+            else:
+                checkpoint.merge_mode_choice = policy.merge_default_mode
+                checkpoint.merge_mode_source = "policy"
+                checkpoint.merge_choice_required = False
+
+        checkpoint.merge_authority_fingerprint = authority_fingerprint
+        checkpoint.merge_mode = merge_authority_for(
+            policy,
+            issue_body=issue.body,
+            epic_body=resolved_epic_body,
+            requested_mode=checkpoint.merge_mode_choice,
+        )
         if not checkpoint.started_at:
             checkpoint.started_at = _utc_now()
+
+        if checkpoint.merge_choice_required:
+            note = checkpoint_note("op", "merge_choice_required")
+            if note not in checkpoint.notes:
+                checkpoint.notes.append(note)
+            save_checkpoint(path, checkpoint)
+            return checkpoint, build_status(policy, issue_url, checkpoint)
 
         # Budgets before any dispatch mutation.
         exhausted = budget_exhausted(checkpoint, policy)
@@ -2703,15 +2896,19 @@ def apply_review_outcome(
     # summary intentionally unused for persistence (GitHub holds prose).
     del summary
 
-    path = checkpoint_path(checkpoint_dir, issue_url)
-    checkpoint = load_checkpoint(path, expected_issue_url=issue_url)
-    if checkpoint is None:
-        raise HelmetIssueError(checkpoint_note("err", "no_checkpoint"))
-
     if policy is None:
         if config is None:
             raise HelmetIssueError(checkpoint_note("err", "policy_or_config_required"))
         policy = load_policy_for_issue(config)
+
+    path = checkpoint_path(checkpoint_dir, issue_url)
+    checkpoint = load_checkpoint(
+        path,
+        expected_issue_url=issue_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
+    if checkpoint is None:
+        raise HelmetIssueError(checkpoint_note("err", "no_checkpoint"))
 
     runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
@@ -2720,6 +2917,11 @@ def apply_review_outcome(
         verify_captain_identity(policy, observed)
     except AuthorityError as exc:
         raise HelmetIssueError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetIssueError(
+            checkpoint_note("err", "worker_profile_on_captain_host")
+        )
 
     issue = load_issue(policy, issue_url, runner, gh=gh)
     _root, pull, _repair = discover_progress(

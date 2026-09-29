@@ -3,6 +3,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 for required in \
     README.md \
@@ -78,7 +79,7 @@ done
 # Canonical public FAVA pin links are allowed as tokens only: strip those
 # references, then re-check remaining content so a legitimate citation cannot
 # conceal a private default on the same line.
-PYTHONPATH=src python3 - <<'PY'
+PYTHONPATH=src "$PYTHON_BIN" - <<'PY'
 from pathlib import Path
 import sys
 from hermes_helmet.public_surface import FAVA_PIN, has_forbidden_public_marker, scan_public_surface
@@ -111,7 +112,6 @@ done
 
 # Ensure accepted FAVA Trails pin is importable for protocol-backed lifecycle checks.
 FAVA_PIN="10f689f7455c0c5c5898f2a2e6bc8cf4fe84a6d7"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
 if ! "$PYTHON_BIN" -c 'import fava_trails, yaml' 2>/dev/null; then
     if command -v uv >/dev/null 2>&1; then
         VERIFY_VENV="${ROOT}/.venv-verify"

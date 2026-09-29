@@ -41,7 +41,7 @@ Load helpers:
   "trusted_review_bots": ["github-code-quality[bot]"],
   "trusted_human_associations": ["OWNER", "MEMBER", "COLLABORATOR"],
   "merge": {
-    "default_mode": "explicit_captain_approval",
+    "default_mode": "unattended_when_clean",
     "unattended_marker": "Merge when clean: yes",
     "narrow_marker": "Merge when clean: no"
   },
@@ -99,13 +99,19 @@ Optional executor company pack (omit for minimum startup):
 - `trusted_human_associations` is limited to GitHub repository roles
   `OWNER`, `MEMBER`, and `COLLABORATOR`.
 - `trusted_review_bots` is an exact-login allowlist (case-insensitive uniqueness).
-- `merge.default_mode` is always `explicit_captain_approval`. Silence is never
-  approval. Only an unambiguous whole-line directive equal to
-  `Merge when clean: yes` (optional single markdown list prefix) grants
-  unattended merge after review/checks/mergeability. Explanatory, negated,
-  quoted, backticked, and near-match prose do not. The same directive on an
-  epic root is inherited by children unless a child narrows with an unambiguous
-  `Merge when clean: no`.
+- `merge.default_mode` defaults to `unattended_when_clean`: after the Captain
+  reviews the exact head and required checks and mergeability pass, Helmet
+  merges without another human prompt. `explicit_captain_approval` remains a
+  supported installation-wide opt-out. An unambiguous whole-line
+  `Merge when clean: no` (optional single markdown list prefix) narrows an issue
+  or epic to explicit approval; a child may explicitly re-enable autonomous
+  merge with `Merge when clean: yes`. Explanatory, negated, quoted, backticked,
+  and near-match prose do not change authority.
+  An explicitly configured `explicit_captain_approval` default is a hard
+  installation-wide ceiling: markers and run choices cannot widen it.
+  Interactive runs persist one choice plus an authority fingerprint. Scheduled
+  runs honor a valid persisted choice and otherwise use the policy default
+  without asking.
 - `openviking_peers` entries must be objects with a single `id` field. Bare
   strings and undocumented aliases such as `peer_id` are rejected. Peer `id`
   values must be unique case-insensitively. Defaults in the ExampleCo fixture

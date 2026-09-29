@@ -48,7 +48,7 @@ class FirstOfficerPluginTests(unittest.TestCase):
             claude["version"],
             r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
         )
-        self.assertIn('version = "0.1.0rc1"', pyproject)
+        self.assertIn('version = "0.1.0rc2"', pyproject)
         self.assertNotEqual(claude["version"], "0.1.0rc1")
         self.assertEqual(claude["license"], "Apache-2.0")
         self.assertEqual(codex["license"], "Apache-2.0")

@@ -90,32 +90,41 @@ or issue does not satisfy its unfinished outcome.
 1. Active GitHub identity MUST be the configured **Captain**
    (`captain_github_login`) and MUST differ from the configured **worker**.
    Fail closed on mismatch. The first officer uses that Captain identity.
-2. Epic root is never dispatch-labeled and never given a worker root task.
-3. Human-only children are classified `awaiting_human` only when an **operative**
+2. Identity separation is role separation for every child: the worker authors
+   and repairs; the Captain independently reviews the exact head. Never switch
+   profiles, tokens, sessions, or authenticated browser state to impersonate
+   the other side or manufacture approval. Captain preflight rejects a stored
+   worker `gh` profile; the worker credential belongs only in the worker
+   runtime. Use each child's `helmet-issue` path; a non-worker-authored PR makes
+   that child run terminally `FAILED` until conflicting external state is
+   resolved and the accepted issue has a compliant worker-authored PR.
+3. Epic root is never dispatch-labeled and never given a worker root task.
+4. Human-only children are classified `awaiting_human` only when an **operative**
    title/body instruction declares the gate — including short title markers such as
    `(human only)` / `human-only`, a `## Human-only …` section heading, or a whole-line
    `never dispatch` instruction — not when ordinary issues merely discuss those gates.
-4. Validation rejects cycles, self-edges, missing or closed-as-incomplete blockers
+5. Validation rejects cycles, self-edges, missing or closed-as-incomplete blockers
    (`state_reason=not_planned` / `duplicate`), non-allowlisted repositories,
    duplicate explicit child seeds, ambiguous multi-Parent sets, and malformed
    operative Parent/Blocked-by tokens.
-5. Any change to children or blocking edges pauses **new** dispatch until the
+6. Any change to children or blocking edges pauses **new** dispatch until the
    Captain passes `--accept-graph` for the refreshed fingerprint.
-6. Reinvocation resumes existing epic and **active** child runs (including
+7. Reinvocation resumes existing epic and **active** child runs (including
    `WAIT_REPAIR`) before allocating new ready slots; recovered live roots count
    toward parallelism. Do not create duplicate roots (helmet-issue adopt path).
-7. Parent-level whole-line `Merge when clean: yes` propagates to children unless
-   a child narrows with whole-line `Merge when clean: no`. Child checkpoints store
-   `parent_epic_url` so resume/merge re-reads live parent authority **after**
+8. Autonomous merge-after-clean-review is the default. Parent-level whole-line
+   `Merge when clean: no` propagates explicit-approval mode to children unless a
+   child re-enables autonomy with whole-line `Merge when clean: yes`. Child
+   checkpoints store `parent_epic_url` so resume/merge re-reads live parent authority **after**
    revalidating membership: live native parent (`GET …/issues/{n}/parent`) is
    authoritative when present; body `Parent` is the empty-native fallback;
    parent-side sub-issue lists still confirm native-only children. A matching
-   saved/body Parent must not bypass a different current native parent. Default
-   merge mode still stops each child merge for explicit Captain approval when no marker.
+   saved/body Parent must not bypass a different current native parent.
    Unattended merge-gate status (`unattended_when_clean:awaiting`) is active progress,
    not `awaiting_human`.
-8. No secrets in checkpoints, status, or skill notes.
-9. If the host cannot continue out of session, one truthful pass with
+   An installation configured `explicit_captain_approval` is a hard ceiling.
+9. No secrets in checkpoints, status, or skill notes.
+10. If the host cannot continue out of session, one truthful pass with
    `--one-pass-only`, then stop.
 
 ## Commands
@@ -127,6 +136,7 @@ Prefer the installed **`helmet`** console script.
 helmet epic EPIC_URL \
   --config /path/to/policy.json \
   --accept-graph \
+  --merge-mode unattended_when_clean|explicit_captain_approval \
   --host-continuation cron|session|none|unknown
 
 # Graph/status only (no child dispatch)
@@ -160,9 +170,16 @@ helmet install-skills --target hermes
 
 1. Load authority policy version 2 (Captain/worker, allowlists, labels, budgets,
    `max_epic_parallelism`).
-2. Verify observed GitHub login is Captain and differs from worker.
-3. Load epic root: must be open; must **not** carry `dispatch_label`.
-4. Stop on authority mismatch, closed root, missing label config, or bad budgets.
+2. On an interactive session, if status reports `merge_choice_required: true`,
+   ask once before dispatch, rerun with `--merge-mode`, and propagate that
+   persisted choice to every child. Do not ask again unless policy, authority
+   markers, validated parent, or the accepted graph changes. Scheduled runs
+   honor a valid persisted choice and otherwise use the policy default without
+   a question.
+3. Report the effective merge mode and continuation mechanism at startup.
+4. Verify observed GitHub login is Captain and differs from worker.
+5. Load epic root: must be open; must **not** carry `dispatch_label`.
+6. Stop on authority mismatch, closed root, missing label config, or bad budgets.
 
 ### 2. LOAD + VALIDATE GRAPH
 
@@ -234,6 +251,9 @@ to watch the waiter. Do not use model-managed sleeps or a shell polling loop.
 4. **Running as worker** — Captain-only; worker identity fails closed.
 5. **Human-only children** — e.g. public-launch issues stay awaiting_human.
 6. **Duplicate child roots** — helmet-issue adopt path; do not force re-create.
+7. **Switching identities for approval** — keep worker authorship and Captain
+   review separate; a second credential profile is not a substitute for the
+   Helmet issue workflow.
 
 ## Verification checklist
 

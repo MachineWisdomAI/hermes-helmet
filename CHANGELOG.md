@@ -5,6 +5,19 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+## 0.1.0rc2 — 2026-09-29
+
+### Fixed
+
+- Ask interactive Captains for merge mode once per issue or epic, persist the
+  answer with an authority fingerprint, and reuse it across managed waits and
+  restarts instead of repeatedly blocking for merge approval.
+- Default new and omitted policies to unattended merge after exact-head Captain
+  approval, required checks, and live mergeability, while preserving an
+  explicitly configured approval policy as an installation-wide ceiling.
+- Propagate epic choices to children, expose choice state in status output, and
+  use policy defaults without prompting in scheduled or non-interactive runs.
+
 ### Added
 
 - Claude Code and Codex first-officer plugin marketplace at the repository

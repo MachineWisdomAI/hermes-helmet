@@ -27,7 +27,7 @@
     "COLLABORATOR"
   ],
   "merge": {
-    "default_mode": "explicit_captain_approval",
+    "default_mode": "unattended_when_clean",
     "unattended_marker": "Merge when clean: yes",
     "narrow_marker": "Merge when clean: no"
   },

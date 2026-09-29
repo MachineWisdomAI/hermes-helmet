@@ -53,24 +53,37 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 1. Active GitHub identity MUST be the configured **Captain**
    (`captain_github_login`) and MUST differ from the configured **worker**.
    Fail closed on mismatch. The first officer uses that Captain identity.
-2. Never write the worker worktree or worker branch. First-officer review
+2. Identity separation is role separation: the worker authors and repairs the
+   pull request; the Captain independently reviews its exact head. Never switch
+   profiles, tokens, sessions, or authenticated browser state to act as the
+   other identity or manufacture approval. Captain preflight fails if the
+   worker login is stored in the host `gh` credential profiles; the worker
+   credential belongs only in the worker runtime. A pull request not authored
+   by the configured worker makes the run terminally `FAILED`; do not adopt or
+   approve it. Resume only after the accepted issue has a compliant
+   worker-authored pull request and conflicting external state is resolved.
+3. Never write the worker worktree or worker branch. First-officer review
    checkout is separate and read-only with respect to the worker branch tip.
-3. Never create Kanban repair tasks. Post formal GitHub review; the issue
+4. Never create Kanban repair tasks. Post formal GitHub review; the issue
    poller (H1 poller) reacts.
-4. Do not create repair from: approval-only reviews, untrusted activity, worker
+5. Do not create repair from: approval-only reviews, untrusted activity, worker
    self-activity, repeated polling, or CI failure without a verified finding.
-5. A changed PR head invalidates any prior clean result; re-review the new head.
-6. Default merge mode stops for explicit Captain approval. Only an unambiguous
-   whole-line `Merge when clean: yes` on the issue (or a live parent epic that
-   still lists this child via **live native parent** association preferred, else
-   body `Parent` / parent-side sub-issue membership, and carries the marker)
-   permits Captain-side merge after current-head clean review, required checks,
-   and mergeability. Saved `parent_epic_url` is revalidated at resume and the
-   merge gate; a different live native parent or moved/removed body Parent drops
-   stale inheritance (matching body/saved links must not bypass native moves).
-7. Merge failure re-queries authoritative GitHub state. Never blind-retry.
-8. No secrets in checkpoints, status, review bodies, or skill notes.
-9. If the host cannot continue out of session, perform **one truthful pass**,
+6. A changed PR head invalidates any prior clean result; re-review the new head.
+7. Default merge mode permits Captain-side merge after current-head clean
+   review, required checks, and mergeability. An unambiguous whole-line
+   `Merge when clean: no` on the issue (or a live parent epic that still lists
+   this child via **live native parent** association preferred, else body
+   `Parent` / parent-side sub-issue membership) narrows authority to a separate
+   explicit approval. A child may re-enable autonomous merge with whole-line
+   `Merge when clean: yes`. Saved `parent_epic_url` is revalidated at resume and
+   the merge gate; a different live native parent or moved/removed body Parent
+   drops stale inheritance (matching body/saved links must not bypass native
+   moves).
+   An installation configured `explicit_captain_approval` is a hard ceiling and
+   cannot be widened by markers or a run choice.
+8. Merge failure re-queries authoritative GitHub state. Never blind-retry.
+9. No secrets in checkpoints, status, review bodies, or skill notes.
+10. If the host cannot continue out of session, perform **one truthful pass**,
    record `one_pass_only`, report the limitation, and stop. Do not spawn an
    unmanaged daemon.
 
@@ -92,6 +105,7 @@ helmet status ISSUE_URL --config /path/to/policy.json
 helmet issue ISSUE_URL \
   --config /path/to/policy.json \
   --host-continuation cron|session|none|unknown \
+  --merge-mode unattended_when_clean|explicit_captain_approval \
   --one-pass-only   # when host cannot recur
 
 # Discovery only (no dispatch label, no root-task create)
@@ -121,9 +135,19 @@ helmet install-skills --target hermes
 
 1. Load authority policy version 2 (`captain_github_login`, `worker_github_login`,
    repositories, labels, budgets, merge markers).
-2. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
+2. On an interactive session, if status reports `merge_choice_required: true`,
+   ask the Captain once before dispatch and rerun with `--merge-mode`. Persisted
+   choices survive restarts; do not ask again unless the authority fingerprint
+   changes. Scheduled/non-interactive runs honor a valid persisted choice and
+   otherwise use the policy default without a question. An explicit manual
+   choice cannot later be widened.
+3. At startup, report the effective merge mode and continuation mechanism. For
+   a session host, keep exactly one bounded `helmet wait ISSUE_URL
+   --timeout-seconds 1800` handle and reconcile after meaningful wakes or
+   timeouts; do not emit repeated unchanged updates or create duplicate waiters.
+4. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
    allowlist, open issue state, ready/dispatch labels, and budgets are checked.
-3. Stop with precise status on authority mismatch, closed issue, non-allowlisted
+5. Stop with precise status on authority mismatch, closed issue, non-allowlisted
    repo, missing labels, or exhausted budget.
 
 Completion: checkpoint state is past `PREFLIGHT` or terminal with blocker.
@@ -200,9 +224,9 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
 ### 6. READY → MERGE_GATE → optional MERGE → VERIFY_MERGED
 
 1. Clean review of **current** head + required checks green + mergeable.
-2. Default: stop for explicit Captain approval (`stop_for_approval`).
-3. If issue body has whole-line `Merge when clean: yes` (see authority helpers),
-   Captain may merge **once** for that exact head SHA. Policy `local-only`
+2. Default: Captain may merge **once** for that exact head SHA.
+3. If the issue or parent epic has whole-line `Merge when clean: no` (see
+   authority helpers), stop for explicit Captain approval. Policy `local-only`
    worker completion does not treat GitHub `mergeable_state=clean` as independently
    verified required checks; unattended merge then still needs those checks or
    falls back to explicit Captain approval.
@@ -274,5 +298,5 @@ Kanban. It does not dispatch, review, repair, merge, or create a second watcher.
 - [ ] Review anchored to exact head; formal GitHub review posted when actionable
 - [ ] No Kanban repair created by this skill
 - [ ] `helmet status` matches checkpoint + live GitHub without writes
-- [ ] Merge gate respects default vs `Merge when clean: yes`
+- [ ] Merge gate respects autonomous default vs `Merge when clean: no`
 - [ ] One-pass hosts report continuation limitation honestly
