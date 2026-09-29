@@ -5,6 +5,19 @@ skill and needs no external planning, review, or company skill pack. The issue,
 repository rules, authority policy, and explicit operator decisions define the
 accepted outcome. Additional reviewer preferences do not redefine it.
 
+## Repair the source, then reinstall
+
+Change Hermes Helmet behavior in its source repository and have a separate
+agent review the exact change. Build and reinstall the reviewed source through
+the supported package or marketplace installer; verify the installed commit
+and bundled files afterward. Installed plugin caches, vendor checkouts, and
+generated skill copies are installation outputs, not repair worktrees.
+
+Use the configured implementation and review identities. A missing approval
+is resolved through the review workflow, not by editing approval records,
+switching to another actor's credentials, or weakening checks. Source policy
+changes remain subject to the existing review workflow until they are installed.
+
 ## Make the review converge
 
 A blocking finding identifies a supported failure, its material consequence,

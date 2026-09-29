@@ -16,7 +16,10 @@ state. Do not reproduce those checks in this skill.
 1. Collect the company display name, human Captain GitHub login
    (`captain_github_login`), distinct worker login (`worker_github_login`),
    exact repository work/action allowlist, ready/dispatch labels, and
-   provider/model in a local JSON answers file. Include OpenViking and FAVA
+   provider/model in a local JSON answers file. Ask once whether accepted task
+   and review content may always use the configured Hermes executor. Persist
+   the answer as `captain_model_provider_consent`; never infer `true`. Include
+   OpenViking and FAVA
    Trails as `selected`/`confirmed`, or decline them. Defaults are selected
    but not confirmed, which leaves both disabled in the written policy.
    Confirmation must be in this file before setup; a later conversation

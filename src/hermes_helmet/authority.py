@@ -105,6 +105,7 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
         "version",
         "company",
         "captain_github_login",
+        "captain_model_provider_consent",
         "worker_github_login",
         "github_identity",
         "schedule",
@@ -212,6 +213,7 @@ class Policy:
     company_display_name: str = ""
     company_slug: str = ""
     captain_github_login: str = ""
+    captain_model_provider_consent: bool = False
     ready_label: str = "ready-for-agent"
     github_owners: tuple[str, ...] = ()
     trusted_human_associations: tuple[str, ...] = DEFAULT_TRUSTED_HUMAN_ASSOCIATIONS
@@ -672,6 +674,9 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
 
     require_authority = version >= 2
     company_display_name, company_slug = _parse_company(raw, required=require_authority)
+    captain_model_provider_consent = _require_bool(
+        raw, "captain_model_provider_consent", False
+    )
 
     schedule = _require_non_empty_string(raw, "schedule")
     board = _require_non_empty_string(raw, "board")
@@ -767,6 +772,7 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
         company_display_name=company_display_name,
         company_slug=company_slug,
         captain_github_login=captain,
+        captain_model_provider_consent=captain_model_provider_consent,
         ready_label=ready_label,
         github_owners=github_owners,
         trusted_human_associations=trusted_humans,
@@ -1062,6 +1068,14 @@ occurred when it has not.
   and model `{policy.inference_model}` with max turns {policy.worker_max_turns}.
   Optional FAVA generation, OpenViking semantic generation, and embedding lanes
   are independent contracts and are never assumed to share that artifact.
+- Captain model/provider consent is
+  `{str(policy.captain_model_provider_consent).lower()}`. When true, accepted
+  issue or epic delegation includes sending its in-scope task and review
+  content to the configured Hermes executor; do not ask again per task, model,
+  or provider. This never authorizes secrets, a scope expansion, or changes to
+  provider credentials or billing. When false, honor existing task-specific
+  consent or obtain it before external model use. This instruction-level
+  consent record is not a runtime egress guard.
 - Epic parallelism is capped at {policy.max_epic_parallelism}. Issue runtime
   budget is {policy.budgets.max_issue_runtime_minutes} minutes; repair rounds
   are capped at {policy.budgets.max_repair_rounds}.
@@ -1157,6 +1171,7 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
             "slug": policy.company_slug,
         },
         "captain_github_login": policy.captain_github_login,
+        "captain_model_provider_consent": policy.captain_model_provider_consent,
         "worker_github_login": policy.github_identity,
         "schedule": policy.schedule,
         "board": policy.board,
