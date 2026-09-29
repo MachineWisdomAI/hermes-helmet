@@ -456,6 +456,13 @@ class AuthorityTests(unittest.TestCase):
                 epic_body="Epic root\n\nMerge when clean: no\n",
             )
         )
+        self.assertTrue(
+            authority.unattended_merge_allowed(
+                policy,
+                issue_body="child\n\nMerge when clean: yes\n",
+                epic_body="Epic root\n\nMerge when clean: no\n",
+            )
+        )
 
     def test_explicit_approval_remains_supported_as_policy_opt_out(self) -> None:
         raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
@@ -468,12 +475,57 @@ class AuthorityTests(unittest.TestCase):
         self.assertFalse(authority.unattended_merge_allowed(policy, issue_body=""))
         contract = authority.render_crew_contract(policy)
         self.assertIn("requires explicit Captain approval by default", contract)
-        self.assertIn("Merge when clean: yes", contract)
+        self.assertIn("installation-wide opt-out", contract)
+        self.assertIn("Silence is not approval", contract)
         self.assertNotIn("defaults to unattended merge", contract)
-        self.assertTrue(
+        self.assertFalse(
             authority.unattended_merge_allowed(
                 policy, issue_body="Merge when clean: yes\n"
             )
+        )
+
+    def test_manual_choice_can_narrow_but_never_widen_policy_ceiling(self) -> None:
+        policy = authority.load_authority(EXAMPLECO)
+        self.assertEqual(
+            authority.merge_authority_for(
+                policy, requested_mode="explicit_captain_approval"
+            ),
+            "explicit_captain_approval",
+        )
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        raw["merge"]["default_mode"] = "explicit_captain_approval"
+        explicit = authority.policy_from_mapping(raw)
+        self.assertEqual(
+            authority.merge_authority_for(
+                explicit,
+                issue_body="Merge when clean: yes\n",
+                requested_mode="unattended_when_clean",
+            ),
+            "explicit_captain_approval",
+        )
+
+    def test_merge_authority_fingerprint_tracks_authority_inputs(self) -> None:
+        policy = authority.load_authority(EXAMPLECO)
+        base = authority.merge_authority_fingerprint(policy, issue_body="ordinary")
+        self.assertNotEqual(
+            base,
+            authority.merge_authority_fingerprint(
+                policy, issue_body="Merge when clean: no\n"
+            ),
+        )
+        self.assertNotEqual(
+            base,
+            authority.merge_authority_fingerprint(
+                policy,
+                issue_body="ordinary",
+                parent_epic_url="https://github.com/example-org/demo-repo/issues/42",
+            ),
+        )
+        self.assertNotEqual(
+            base,
+            authority.merge_authority_fingerprint(
+                policy, issue_body="ordinary", graph_fingerprint="abc123"
+            ),
         )
 
     def test_secret_shaped_and_unknown_fields_rejected_nested(self) -> None:

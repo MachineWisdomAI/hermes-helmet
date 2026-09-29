@@ -114,6 +114,7 @@ or issue does not satisfy its unfinished outcome.
    saved/body Parent must not bypass a different current native parent.
    Unattended merge-gate status (`unattended_when_clean:awaiting`) is active progress,
    not `awaiting_human`.
+   An installation configured `explicit_captain_approval` is a hard ceiling.
 8. No secrets in checkpoints, status, or skill notes.
 9. If the host cannot continue out of session, one truthful pass with
    `--one-pass-only`, then stop.
@@ -127,6 +128,7 @@ Prefer the installed **`helmet`** console script.
 helmet epic EPIC_URL \
   --config /path/to/policy.json \
   --accept-graph \
+  --merge-mode unattended_when_clean|explicit_captain_approval \
   --host-continuation cron|session|none|unknown
 
 # Graph/status only (no child dispatch)
@@ -160,9 +162,15 @@ helmet install-skills --target hermes
 
 1. Load authority policy version 2 (Captain/worker, allowlists, labels, budgets,
    `max_epic_parallelism`).
-2. Verify observed GitHub login is Captain and differs from worker.
-3. Load epic root: must be open; must **not** carry `dispatch_label`.
-4. Stop on authority mismatch, closed root, missing label config, or bad budgets.
+2. On an interactive session, if status reports `merge_choice_required: true`,
+   ask once before dispatch, rerun with `--merge-mode`, and propagate that
+   persisted choice to every child. Do not ask again unless policy, authority
+   markers, validated parent, or the accepted graph changes. Scheduled runs use
+   the policy default without a question.
+3. Report the effective merge mode and continuation mechanism at startup.
+4. Verify observed GitHub login is Captain and differs from worker.
+5. Load epic root: must be open; must **not** carry `dispatch_label`.
+6. Stop on authority mismatch, closed root, missing label config, or bad budgets.
 
 ### 2. LOAD + VALIDATE GRAPH
 

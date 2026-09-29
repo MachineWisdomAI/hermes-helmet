@@ -39,6 +39,12 @@ merges. Default merge mode permits the Captain to merge that exact clean head
 without another prompt. A whole-line `Merge when clean: no` on the issue (or an
 inheriting parent epic) requires separate explicit approval.
 
+Interactive session hosts ask once before dispatch when no valid persisted
+choice exists. `helmet issue --merge-mode …` stores the choice, source, and
+authority fingerprint; resumes do not ask again until an authority input
+changes. Scheduled runs use the policy default. An installation configured for
+explicit Captain approval cannot be widened.
+
 Canonical implementation selection requires repository + issue association
 before DONE: the issue's canonical branch, a GitHub closing keyword aimed at
 this issue (``Closes #N``, optional colon, ``owner/repo#N``, or
@@ -68,7 +74,8 @@ issue links remain discovery leads only — not ownership.
 Non-secret JSON under `~/.hermes-helmet/checkpoints/` by default (override with
 `HERMES_HELMET_CHECKPOINT_DIR` or `--checkpoint-dir`), keyed by issue URL digest.
 Stores state, root task id, PR URL, reviewed/clean head SHAs, repair round count,
-merge mode, and structured blocker/operation codes. Never stores tokens, raw
+effective merge mode, persisted choice/source, authority fingerprint,
+`merge_choice_required`, and structured blocker/operation codes. Never stores tokens, raw
 command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,

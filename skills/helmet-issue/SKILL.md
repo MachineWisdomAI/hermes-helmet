@@ -70,6 +70,8 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
    the merge gate; a different live native parent or moved/removed body Parent
    drops stale inheritance (matching body/saved links must not bypass native
    moves).
+   An installation configured `explicit_captain_approval` is a hard ceiling and
+   cannot be widened by markers or a run choice.
 7. Merge failure re-queries authoritative GitHub state. Never blind-retry.
 8. No secrets in checkpoints, status, review bodies, or skill notes.
 9. If the host cannot continue out of session, perform **one truthful pass**,
@@ -94,6 +96,7 @@ helmet status ISSUE_URL --config /path/to/policy.json
 helmet issue ISSUE_URL \
   --config /path/to/policy.json \
   --host-continuation cron|session|none|unknown \
+  --merge-mode unattended_when_clean|explicit_captain_approval \
   --one-pass-only   # when host cannot recur
 
 # Discovery only (no dispatch label, no root-task create)
@@ -123,9 +126,18 @@ helmet install-skills --target hermes
 
 1. Load authority policy version 2 (`captain_github_login`, `worker_github_login`,
    repositories, labels, budgets, merge markers).
-2. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
+2. On an interactive session, if status reports `merge_choice_required: true`,
+   ask the Captain once before dispatch and rerun with `--merge-mode`. Persisted
+   choices survive restarts; do not ask again unless the authority fingerprint
+   changes. Scheduled/non-interactive runs use the policy default without a
+   question. An explicit manual choice cannot later be widened.
+3. At startup, report the effective merge mode and continuation mechanism. For
+   a session host, keep exactly one bounded `helmet wait ISSUE_URL
+   --timeout-seconds 1800` handle and reconcile after meaningful wakes or
+   timeouts; do not emit repeated unchanged updates or create duplicate waiters.
+4. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
    allowlist, open issue state, ready/dispatch labels, and budgets are checked.
-3. Stop with precise status on authority mismatch, closed issue, non-allowlisted
+5. Stop with precise status on authority mismatch, closed issue, non-allowlisted
    repo, missing labels, or exhausted budget.
 
 Completion: checkpoint state is past `PREFLIGHT` or terminal with blocker.

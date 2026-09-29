@@ -87,6 +87,10 @@ Unattended-after-clean-review mode applies to children by default through
 `merge_authority_for(..., epic_body=…)`. `Merge when clean: no` on the epic body
 narrows children to explicit Captain approval; a child whole-line
 `Merge when clean: yes` can re-enable autonomous merge for that child.
+An installation-wide explicit-approval policy remains a hard ceiling. On an
+interactive session, `helmet epic --merge-mode …` persists one choice and
+propagates it to children; scheduled runs use the policy default without a
+question. Authority or accepted-graph changes invalidate an unattended choice.
 
 ## Install targets
 

@@ -107,6 +107,10 @@ Optional executor company pack (omit for minimum startup):
   or epic to explicit approval; a child may explicitly re-enable autonomous
   merge with `Merge when clean: yes`. Explanatory, quoted, backticked, and
   near-match prose do not change authority.
+  An explicitly configured `explicit_captain_approval` default is a hard
+  installation-wide ceiling: markers and run choices cannot widen it.
+  Interactive runs persist one choice plus an authority fingerprint; scheduled
+  runs use the policy default without asking.
 - `openviking_peers` entries must be objects with a single `id` field. Bare
   strings and undocumented aliases such as `peer_id` are rejected. Peer `id`
   values must be unique case-insensitively. Defaults in the ExampleCo fixture

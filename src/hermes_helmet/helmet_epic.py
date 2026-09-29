@@ -23,8 +23,12 @@ from typing import Sequence
 from urllib.parse import quote
 
 from hermes_helmet.authority import (
+    ALLOWED_MERGE_MODES,
     AuthorityError,
+    EXPLICIT_CAPTAIN_APPROVAL_MODE,
     Policy,
+    UNATTENDED_MERGE_MODE,
+    merge_authority_fingerprint,
     merge_authority_for,
     verify_captain_identity,
 )
@@ -237,6 +241,10 @@ class EpicCheckpoint:
     host_continuation: str = "unknown"
     one_pass_only: bool = False
     epic_merge_mode: str = "unattended_when_clean"
+    merge_mode_choice: str | None = None
+    merge_mode_source: str = "policy"
+    merge_authority_fingerprint: str = ""
+    merge_choice_required: bool = False
     child_invocations: int = 0
 
     def to_public_dict(self) -> dict[str, object]:
@@ -304,6 +312,7 @@ def load_epic_checkpoint(
     path: Path,
     *,
     expected_epic_url: str | None = None,
+    default_merge_mode: str = EXPLICIT_CAPTAIN_APPROVAL_MODE,
 ) -> EpicCheckpoint | None:
     if not path.is_file():
         return None
@@ -369,8 +378,23 @@ def load_epic_checkpoint(
             host_continuation=str(raw.get("host_continuation") or "unknown"),
             one_pass_only=bool(raw.get("one_pass_only", False)),
             epic_merge_mode=str(
-                raw.get("epic_merge_mode") or "unattended_when_clean"
+                raw.get("epic_merge_mode") or default_merge_mode
             ),
+            merge_mode_choice=(
+                str(raw.get("merge_mode_choice"))
+                if raw.get("merge_mode_choice") is not None
+                else (
+                    str(raw.get("epic_merge_mode"))
+                    if raw.get("epic_merge_mode") in ALLOWED_MERGE_MODES
+                    else None
+                )
+            ),
+            merge_mode_source=str(
+                raw.get("merge_mode_source")
+                or ("legacy" if raw.get("epic_merge_mode") in ALLOWED_MERGE_MODES else "policy")
+            ),
+            merge_authority_fingerprint=str(raw.get("merge_authority_fingerprint") or ""),
+            merge_choice_required=bool(raw.get("merge_choice_required", False)),
             child_invocations=max(0, int(raw.get("child_invocations") or 0)),
         )
     except HelmetEpicError:
@@ -389,6 +413,10 @@ def save_epic_checkpoint(path: Path, checkpoint: EpicCheckpoint) -> None:
         raise HelmetEpicError(
             f"refusing to persist unknown epic checkpoint state: {checkpoint.state}"
         )
+    if checkpoint.epic_merge_mode not in ALLOWED_MERGE_MODES:
+        raise HelmetEpicError("refusing to persist invalid epic merge mode")
+    if checkpoint.merge_mode_choice is not None and checkpoint.merge_mode_choice not in ALLOWED_MERGE_MODES:
+        raise HelmetEpicError("refusing to persist invalid epic merge mode choice")
     checkpoint.last_blocker = (
         None
         if checkpoint.last_blocker is None
@@ -1639,6 +1667,8 @@ def invoke_child_issue(
     one_pass_only: bool,
     apply_dispatch: bool,
     worker_runtime: Sequence[str],
+    merge_mode_choice: str | None,
+    merge_mode_source: str,
 ) -> dict[str, object]:
     """Invoke one helmet-issue pass for a child, propagating epic merge authority."""
 
@@ -1656,6 +1686,8 @@ def invoke_child_issue(
         worker_runtime=worker_runtime,
         epic_body=epic_body,
         parent_epic_url=epic_url,
+        merge_mode_choice=merge_mode_choice,
+        merge_mode_source=merge_mode_source,
     )
     return {
         "issue_url": child_url,
@@ -1682,6 +1714,7 @@ def run_epic_pass(
     extra_child_urls: Sequence[str] = (),
     worker_runtime: Sequence[str] = (),
     child_invoker=None,
+    merge_mode_choice: str | None = None,
 ) -> tuple[EpicCheckpoint, EpicStatusReport, EpicGraph | None]:
     """One truthful epic orchestration pass.
 
@@ -1694,12 +1727,17 @@ def run_epic_pass(
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
     epic_url = normalize_issue_url(epic_url)
     path = epic_checkpoint_path(checkpoint_dir, epic_url)
-    checkpoint = load_epic_checkpoint(path, expected_epic_url=epic_url)
+    checkpoint = load_epic_checkpoint(
+        path,
+        expected_epic_url=epic_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
     if checkpoint is None:
         checkpoint = EpicCheckpoint(
             version=EPIC_CHECKPOINT_VERSION,
             epic_url=epic_url,
             state="PREFLIGHT",
+            epic_merge_mode=policy.merge_default_mode,
         )
     checkpoint.host_continuation = host_continuation
     checkpoint.one_pass_only = one_pass_only
@@ -1713,10 +1751,9 @@ def run_epic_pass(
 
     graph: EpicGraph | None = None
     try:
-        root, _observed, epic_merge_mode = preflight_epic(
+        root, _observed, _epic_merge_mode = preflight_epic(
             policy, epic_url, runner, gh=gh
         )
-        checkpoint.epic_merge_mode = epic_merge_mode
         _ensure_root_not_dispatched(policy, root, runner, gh=gh)
 
         graph = build_epic_graph(
@@ -1727,6 +1764,60 @@ def run_epic_pass(
             extra_child_urls=extra_child_urls,
         )
         checkpoint.graph_fingerprint = graph.fingerprint
+
+        authority_graph_fingerprint = (
+            graph.fingerprint
+            if checkpoint.accepted_fingerprint is None or accept_graph
+            else checkpoint.accepted_fingerprint
+        )
+        authority_fingerprint = merge_authority_fingerprint(
+            policy,
+            issue_body=root.body,
+            graph_fingerprint=authority_graph_fingerprint,
+        )
+        fingerprint_changed = bool(
+            checkpoint.merge_authority_fingerprint
+            and checkpoint.merge_authority_fingerprint != authority_fingerprint
+        )
+        manual_explicit_ceiling = (
+            checkpoint.merge_mode_choice == EXPLICIT_CAPTAIN_APPROVAL_MODE
+            and checkpoint.merge_mode_source in {"interactive", "cli", "legacy"}
+        )
+        if fingerprint_changed and not manual_explicit_ceiling:
+            checkpoint.merge_mode_choice = None
+            checkpoint.merge_mode_source = "policy"
+            checkpoint.merge_choice_required = False
+            checkpoint.notes.append(checkpoint_note("op", "merge_authority_changed"))
+        if merge_mode_choice is not None:
+            if merge_mode_choice not in ALLOWED_MERGE_MODES:
+                raise HelmetEpicError(checkpoint_note("err", "merge_mode_invalid"))
+            if not (
+                manual_explicit_ceiling
+                and merge_mode_choice == UNATTENDED_MERGE_MODE
+            ):
+                checkpoint.merge_mode_choice = merge_mode_choice
+                checkpoint.merge_mode_source = "cli"
+            checkpoint.merge_choice_required = False
+
+        base_mode = merge_authority_for(policy, issue_body=root.body)
+        if checkpoint.merge_mode_choice is None:
+            if base_mode == EXPLICIT_CAPTAIN_APPROVAL_MODE:
+                checkpoint.merge_mode_choice = EXPLICIT_CAPTAIN_APPROVAL_MODE
+                checkpoint.merge_mode_source = "authority"
+                checkpoint.merge_choice_required = False
+            elif host_continuation == "session":
+                checkpoint.merge_mode_source = "required"
+                checkpoint.merge_choice_required = True
+            else:
+                checkpoint.merge_mode_choice = policy.merge_default_mode
+                checkpoint.merge_mode_source = "policy"
+                checkpoint.merge_choice_required = False
+        checkpoint.merge_authority_fingerprint = authority_fingerprint
+        checkpoint.epic_merge_mode = merge_authority_for(
+            policy,
+            issue_body=root.body,
+            requested_mode=checkpoint.merge_mode_choice,
+        )
 
         # Graph change gate: pause new dispatch until Captain accepts.
         if checkpoint.accepted_fingerprint is None:
@@ -1787,6 +1878,24 @@ def run_epic_pass(
             if checkpoint.state == "GRAPH_CHANGED":
                 checkpoint.state = "GRAPH_READY"
                 checkpoint.last_blocker = None
+
+        if checkpoint.merge_choice_required:
+            note = checkpoint_note("op", "merge_choice_required")
+            if note not in checkpoint.notes:
+                checkpoint.notes.append(note)
+            save_epic_checkpoint(path, checkpoint)
+            report = build_epic_status(
+                policy,
+                graph,
+                checkpoint,
+                ledger=ledger,
+                checkpoint_dir=checkpoint_dir,
+                runner=runner,
+                gh=gh,
+                hermes=hermes,
+                worker_runtime=runtime,
+            )
+            return checkpoint, report, graph
 
         buckets = classify_children(
             policy,
@@ -1900,6 +2009,8 @@ def run_epic_pass(
                     one_pass_only=one_pass_only,
                     apply_dispatch=apply_dispatch,
                     worker_runtime=runtime,
+                    merge_mode_choice=checkpoint.merge_mode_choice,
+                    merge_mode_source="epic",
                 )
                 checkpoint.child_invocations += 1
                 status_obj = result.get("status") if isinstance(result, dict) else None
@@ -2106,6 +2217,10 @@ def build_epic_status(
             "graph_source": graph.source,
             "child_count": len(graph.children),
             "epic_merge_mode": checkpoint.epic_merge_mode,
+            "merge_mode_choice": checkpoint.merge_mode_choice,
+            "merge_mode_source": checkpoint.merge_mode_source,
+            "merge_authority_fingerprint": checkpoint.merge_authority_fingerprint,
+            "merge_choice_required": checkpoint.merge_choice_required,
             "accepted_fingerprint": checkpoint.accepted_fingerprint,
             "child_invocations": checkpoint.child_invocations,
             "checkpoint_state": checkpoint.state,
@@ -2131,12 +2246,17 @@ def status_epic(
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
     epic_url = normalize_issue_url(epic_url)
     path = epic_checkpoint_path(checkpoint_dir, epic_url)
-    checkpoint = load_epic_checkpoint(path, expected_epic_url=epic_url)
+    checkpoint = load_epic_checkpoint(
+        path,
+        expected_epic_url=epic_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
     if checkpoint is None:
         checkpoint = EpicCheckpoint(
             version=EPIC_CHECKPOINT_VERSION,
             epic_url=epic_url,
             state="UNKNOWN",
+            epic_merge_mode=policy.merge_default_mode,
         )
     try:
         graph = build_epic_graph(

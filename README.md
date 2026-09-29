@@ -146,7 +146,7 @@ setup:
 > Follow the issue through review, necessary repairs, and acceptance under the
 > agreed merge authority.
 
-The [September 23, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
+The [September 29, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-29)
 provides packaged artifacts. Its CLI command is `hermes-helmet`; current source
 also installs the shorter `helmet` command used here. See the
 [preview notes](docs/public-preview.md) for that release's details.
@@ -204,6 +204,9 @@ explicit whole-line `Merge when clean: no` directive on an issue or parent epic
 requires a separate Captain approval instead. A child can explicitly re-enable
 autonomous merge with `Merge when clean: yes`. Implementation and repair stay
 with the worker; merging stays on the Captain side.
+An installation deliberately configured for explicit Captain approval remains
+a hard ceiling. Interactive runs ask once before dispatch and persist that
+choice across waits and restarts; scheduled runs use the policy default.
 
 ### Resume from the existing record
 

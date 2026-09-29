@@ -14,6 +14,7 @@ values.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -886,6 +887,7 @@ def merge_authority_for(
     *,
     issue_body: str = "",
     epic_body: str | None = None,
+    requested_mode: str | None = None,
 ) -> str:
     """Resolve merge authority for an issue, with epic-root inheritance.
 
@@ -895,6 +897,13 @@ def merge_authority_for(
     approval. ``Merge when clean: yes`` remains an explicit re-grant for a child
     beneath a narrowed epic. Ambiguous prose does not change policy.
     """
+
+    if requested_mode is not None and requested_mode not in ALLOWED_MERGE_MODES:
+        raise AuthorityError("merge mode choice is invalid")
+    if policy.merge_default_mode == EXPLICIT_CAPTAIN_APPROVAL_MODE:
+        return EXPLICIT_CAPTAIN_APPROVAL_MODE
+    if requested_mode == EXPLICIT_CAPTAIN_APPROVAL_MODE:
+        return EXPLICIT_CAPTAIN_APPROVAL_MODE
 
     issue_body = issue_body or ""
     if _marker_present(issue_body, policy.merge_narrow_marker):
@@ -907,6 +916,37 @@ def merge_authority_for(
         if _marker_present(epic_body, policy.merge_unattended_marker):
             return UNATTENDED_MERGE_MODE
     return policy.merge_default_mode
+
+
+def merge_authority_fingerprint(
+    policy: Policy,
+    *,
+    issue_body: str = "",
+    epic_body: str | None = None,
+    parent_epic_url: str | None = None,
+    graph_fingerprint: str | None = None,
+) -> str:
+    """Fingerprint the non-secret inputs that can change merge authority."""
+
+    payload = {
+        "policy_default": policy.merge_default_mode,
+        "unattended_marker": policy.merge_unattended_marker,
+        "narrow_marker": policy.merge_narrow_marker,
+        "issue_unattended": _marker_present(
+            issue_body or "", policy.merge_unattended_marker
+        ),
+        "issue_narrow": _marker_present(issue_body or "", policy.merge_narrow_marker),
+        "epic_unattended": _marker_present(
+            epic_body or "", policy.merge_unattended_marker
+        ),
+        "epic_narrow": _marker_present(epic_body or "", policy.merge_narrow_marker),
+        "parent_epic_url": (parent_epic_url or "").strip(),
+        "graph_fingerprint": (graph_fingerprint or "").strip(),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def unattended_merge_allowed(
@@ -950,9 +990,9 @@ def render_crew_contract(policy: Policy) -> str:
   Captain approval for that scope. Workers never merge."""
     else:
         merge_authority_text = f"""- Merge authority requires explicit Captain approval by default
-  (`{policy.merge_default_mode}`). `{policy.merge_unattended_marker}` on an
-  issue or epic root grants unattended merge only after current-head Captain
-  review, required checks, and mergeability pass. Workers never merge."""
+  (`{policy.merge_default_mode}`). This installation-wide opt-out cannot be
+  widened by issue or epic markers. Silence is not approval.
+  Workers never merge."""
 
     return f"""# {company} Crew Contract
 

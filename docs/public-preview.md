@@ -48,14 +48,14 @@ python -m pip install .
 helmet --help
 ```
 
-The dated [`preview-2026-09-23`](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23)
-release contains the `0.1.0rc1` Python package. Its original console command is
+The dated [`preview-2026-09-29`](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-29)
+release contains the `0.1.0rc2` Python package. Its original console command is
 `hermes-helmet`; current source keeps that name as a compatible alias and adds
 the shorter `helmet` command.
 
 A later worker-image preview is published to GHCR from
 `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. Pin it by digest as described in
-[runtime-image.md](runtime-image.md). That image also carries the `0.1.0rc1`
+[runtime-image.md](runtime-image.md). That image carries the earlier `0.1.0rc1`
 package label from its source commit; it is not this September 23 wheel and it
 is not a stable release.
 
