@@ -15,6 +15,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ### Changed
 
+- Advance the pinned upstream Hermes Agent base to the supported stable
+  v2026.9.24 tag (Hermes Agent 0.21.5), still pinned by immutable tag+digest,
+  across the image build, Compose default, preview workflow platform refs,
+  quickstart and tests.
 - Introduce Hermes Helmet as an open-source software factory for teams using
   coding agents, with a walkthrough of delegation, review, repair, and
   acceptance.

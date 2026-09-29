@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294}
+        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7}
         HERMES_HELMET_SOURCE_COMMIT: ${HERMES_HELMET_SOURCE_COMMIT:-unknown}
         HERMES_HELMET_VERSION: ${HERMES_HELMET_VERSION:-0.0.0-dev}
     image: ${HERMES_HELMET_IMAGE:-hermes-helmet:local}

@@ -21,8 +21,8 @@ and external skill packs are optional. The bundled `setup-helmet`,
   through Codex; Claude Code and Hermes have installation and static validation.
 
 The development image defaults pin the official Hermes Agent base
-`nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294`
-(Hermes Agent 0.21.3). Override only with another immutable tag+digest; do not
+`nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7`
+(Hermes Agent 0.21.5). Override only with another immutable tag+digest; do not
 use `latest` or `main`.
 
 ## Install the CLI

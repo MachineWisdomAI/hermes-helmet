@@ -15,16 +15,16 @@ VERIFY = ROOT / ".github" / "workflows" / "verify.yml"
 PINNED_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 USES_RE = re.compile(r"^\s+uses:\s+(\S+)", re.MULTILINE)
 BASE_IMAGE = (
-    "nousresearch/hermes-agent:v2026.9.14@"
-    "sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294"
+    "nousresearch/hermes-agent:v2026.9.24@"
+    "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7"
 )
 BASE_AMD64 = (
     "nousresearch/hermes-agent@"
-    "sha256:1f983df4d778d46b3c3892d7598c9d57291430a6e35936ebc371ae1e5766699a"
+    "sha256:2fd023efbb8d3d2b0ce1a73d028b07370cff34f567cfe0e999553e8c327ea283"
 )
 BASE_ARM64 = (
     "nousresearch/hermes-agent@"
-    "sha256:011f2e232f119a9601cf6525f7542921d758703c7771ce2f7b639a07fa8640d1"
+    "sha256:93b4e2877a2f48f4474b6dd2b99386ae32c4c552d32639df1a869b3f13c50b5a"
 )
 RUNTIME = "ghcr.io/machinewisdomai/hermes-helmet/runtime"
 
