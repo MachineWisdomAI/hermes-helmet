@@ -1802,9 +1802,14 @@ def run_epic_pass(
             checkpoint.merge_authority_fingerprint
             and checkpoint.merge_authority_fingerprint != authority_fingerprint
         )
+        if checkpoint.merge_mode_source == "legacy":
+            checkpoint.merge_mode_choice = None
+            checkpoint.merge_mode_source = "policy"
+            checkpoint.merge_choice_required = False
+            checkpoint.notes.append(checkpoint_note("op", "legacy_merge_revalidated"))
         manual_explicit_ceiling = (
             checkpoint.merge_mode_choice == EXPLICIT_CAPTAIN_APPROVAL_MODE
-            and checkpoint.merge_mode_source in {"interactive", "cli", "legacy"}
+            and checkpoint.merge_mode_source in {"interactive", "cli"}
         )
         if fingerprint_changed and not manual_explicit_ceiling:
             checkpoint.merge_mode_choice = None

@@ -1880,6 +1880,10 @@ def evaluate_merge_gate(
     from checkless ``clean``; explicit Captain approval remains available.
     """
 
+    if checkpoint.merge_choice_required:
+        return "stop_for_approval", checkpoint_note(
+            "err", "merge_choice_required"
+        )
     if checkpoint.state == "BLOCKED":
         return (
             "not_ready",
@@ -2326,12 +2330,18 @@ def run_preflight_and_adopt(
             checkpoint.merge_authority_fingerprint
             and checkpoint.merge_authority_fingerprint != authority_fingerprint
         )
+        if checkpoint.merge_mode_source == "legacy":
+            checkpoint.merge_mode_choice = None
+            checkpoint.merge_mode_source = "policy"
+            checkpoint.merge_choice_required = False
+            checkpoint.notes.append(checkpoint_note("op", "legacy_merge_revalidated"))
         merge_source_origin = checkpoint.merge_mode_source.removeprefix("epic:")
         manual_explicit_ceiling = (
             checkpoint.merge_mode_choice == EXPLICIT_CAPTAIN_APPROVAL_MODE
             and (
-                merge_source_origin in {"interactive", "cli", "legacy"}
+                merge_source_origin in {"interactive", "cli"}
                 or checkpoint.merge_mode_source == "epic"
+                or checkpoint.merge_mode_source == "epic:legacy"
             )
         )
         if fingerprint_changed and not manual_explicit_ceiling:

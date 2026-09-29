@@ -1071,6 +1071,48 @@ class HeadAndMergeTests(unittest.TestCase):
         self.assertEqual(decision, "merge_allowed")
         self.assertIsNone(blocker)
 
+    def test_merge_choice_required_blocks_direct_gate_evaluation(self) -> None:
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="No merge directive here.\n",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        pull = hi.PullRequestRef(
+            FIXTURE_SLUG,
+            10,
+            PR_URL,
+            "abc",
+            "automation/demo-repo-2",
+            "main",
+            WORKER,
+            "open",
+            False,
+            "clean",
+            False,
+        )
+        checkpoint = hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="READY",
+            clean_head="abc",
+            merge_choice_required=True,
+        )
+        decision, blocker = hi.evaluate_merge_gate(
+            policy,
+            issue,
+            pull,
+            checkpoint,
+            required_checks_green=True,
+            mergeable=True,
+        )
+        self.assertEqual(decision, "stop_for_approval")
+        self.assertIn("merge_choice_required", blocker or "")
+
     def test_explicit_installation_policy_is_hard_ceiling(self) -> None:
         raw = _policy_dict()
         raw["merge"] = {
@@ -1401,6 +1443,68 @@ class HeadAndMergeTests(unittest.TestCase):
 
 
 class OrchestrationPassTests(unittest.TestCase):
+    def test_legacy_effective_mode_revalidates_against_current_authority(self) -> None:
+        def write_legacy(checkpoint_dir: Path) -> None:
+            path = hi.checkpoint_path(checkpoint_dir, ISSUE_URL)
+            checkpoint = hi.Checkpoint(
+                version=1,
+                issue_url=ISSUE_URL,
+                state="WAIT_PR",
+                merge_mode="explicit_captain_approval",
+            )
+            hi.save_checkpoint(path, checkpoint)
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            for key in (
+                "merge_mode_choice",
+                "merge_mode_source",
+                "merge_authority_fingerprint",
+                "merge_choice_required",
+            ):
+                raw.pop(key)
+            path.write_text(json.dumps(raw), encoding="utf-8")
+
+        cases = (
+            ("scheduled", _policy(), "unattended_when_clean", "policy", False),
+            ("session", _policy(), None, "required", True),
+            (
+                "explicit-policy",
+                _policy(
+                    merge={
+                        "default_mode": "explicit_captain_approval",
+                        "unattended_marker": "Merge when clean: yes",
+                        "narrow_marker": "Merge when clean: no",
+                    }
+                ),
+                "explicit_captain_approval",
+                "authority",
+                False,
+            ),
+        )
+        for name, policy, expected_choice, expected_source, expected_required in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                ledger = Path(tmp) / "ledger.sqlite3"
+                checkpoints = Path(tmp) / "cp"
+                _ledger_with_root(ledger)
+                write_legacy(checkpoints)
+                checkpoint, _ = hi.run_preflight_and_adopt(
+                    policy,
+                    ISSUE_URL,
+                    ledger=ledger,
+                    checkpoint_dir=checkpoints,
+                    runner=FakeRunner(),
+                    gh="gh",
+                    hermes="hermes",
+                    host_continuation=("session" if name == "session" else "cron"),
+                    apply_dispatch=False,
+                    worker_runtime=(),
+                )
+                self.assertEqual(checkpoint.merge_mode_choice, expected_choice)
+                self.assertEqual(checkpoint.merge_mode_source, expected_source)
+                self.assertEqual(
+                    checkpoint.merge_choice_required,
+                    expected_required,
+                )
+
     def test_session_asks_once_then_persists_choice(self) -> None:
         policy = _policy()
         runner = FakeRunner()
