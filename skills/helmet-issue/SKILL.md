@@ -60,14 +60,16 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 4. Do not create repair from: approval-only reviews, untrusted activity, worker
    self-activity, repeated polling, or CI failure without a verified finding.
 5. A changed PR head invalidates any prior clean result; re-review the new head.
-6. Default merge mode stops for explicit Captain approval. Only an unambiguous
-   whole-line `Merge when clean: yes` on the issue (or a live parent epic that
-   still lists this child via **live native parent** association preferred, else
-   body `Parent` / parent-side sub-issue membership, and carries the marker)
-   permits Captain-side merge after current-head clean review, required checks,
-   and mergeability. Saved `parent_epic_url` is revalidated at resume and the
-   merge gate; a different live native parent or moved/removed body Parent drops
-   stale inheritance (matching body/saved links must not bypass native moves).
+6. Default merge mode permits Captain-side merge after current-head clean
+   review, required checks, and mergeability. An unambiguous whole-line
+   `Merge when clean: no` on the issue (or a live parent epic that still lists
+   this child via **live native parent** association preferred, else body
+   `Parent` / parent-side sub-issue membership) narrows authority to a separate
+   explicit approval. A child may re-enable autonomous merge with whole-line
+   `Merge when clean: yes`. Saved `parent_epic_url` is revalidated at resume and
+   the merge gate; a different live native parent or moved/removed body Parent
+   drops stale inheritance (matching body/saved links must not bypass native
+   moves).
 7. Merge failure re-queries authoritative GitHub state. Never blind-retry.
 8. No secrets in checkpoints, status, review bodies, or skill notes.
 9. If the host cannot continue out of session, perform **one truthful pass**,
@@ -200,9 +202,9 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
 ### 6. READY → MERGE_GATE → optional MERGE → VERIFY_MERGED
 
 1. Clean review of **current** head + required checks green + mergeable.
-2. Default: stop for explicit Captain approval (`stop_for_approval`).
-3. If issue body has whole-line `Merge when clean: yes` (see authority helpers),
-   Captain may merge **once** for that exact head SHA. Policy `local-only`
+2. Default: Captain may merge **once** for that exact head SHA.
+3. If the issue or parent epic has whole-line `Merge when clean: no` (see
+   authority helpers), stop for explicit Captain approval. Policy `local-only`
    worker completion does not treat GitHub `mergeable_state=clean` as independently
    verified required checks; unattended merge then still needs those checks or
    falls back to explicit Captain approval.
@@ -274,5 +276,5 @@ Kanban. It does not dispatch, review, repair, merge, or create a second watcher.
 - [ ] Review anchored to exact head; formal GitHub review posted when actionable
 - [ ] No Kanban repair created by this skill
 - [ ] `helmet status` matches checkpoint + live GitHub without writes
-- [ ] Merge gate respects default vs `Merge when clean: yes`
+- [ ] Merge gate respects autonomous default vs `Merge when clean: no`
 - [ ] One-pass hosts report continuation limitation honestly

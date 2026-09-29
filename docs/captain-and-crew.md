@@ -98,11 +98,11 @@ secret values.
 6. Captain `helmet-epic` runs independent children with bounded parallelism.
    The epic root is never dispatch-labeled.
 
-The worker never merges and never force-pushes. Merge defaults to explicit
-Captain approval. Silence is not approval. An unambiguous `Merge when clean: yes`
-directive on an issue or epic root grants unattended merge only after current-head
-review, required checks, and mergeability pass. Private-plan `local-only` worker
-completion does not treat GitHub `mergeable_state=clean` as those required checks.
+The worker never merges and never force-pushes. The Captain merges by default
+only after current-head review, required checks, and mergeability pass. An
+unambiguous `Merge when clean: no` directive on an issue or epic root requires a
+separate explicit approval. Private-plan `local-only` worker completion does not
+treat GitHub `mergeable_state=clean` as those required checks.
 
 GitHub remains authoritative for issues, pull requests, checks, reviews, heads,
 and merge state. Hermes Helmet does not copy review prose into Kanban and does not

@@ -23,8 +23,12 @@ from typing import Mapping, Sequence
 SUPPORTED_POLICY_VERSIONS = frozenset({1, 2})
 DEFAULT_TRUSTED_HUMAN_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 ALLOWED_TRUSTED_HUMAN_ASSOCIATIONS = frozenset(DEFAULT_TRUSTED_HUMAN_ASSOCIATIONS)
-DEFAULT_MERGE_MODE = "explicit_captain_approval"
-ALLOWED_MERGE_MODES = frozenset({DEFAULT_MERGE_MODE})
+UNATTENDED_MERGE_MODE = "unattended_when_clean"
+EXPLICIT_CAPTAIN_APPROVAL_MODE = "explicit_captain_approval"
+DEFAULT_MERGE_MODE = UNATTENDED_MERGE_MODE
+ALLOWED_MERGE_MODES = frozenset(
+    {UNATTENDED_MERGE_MODE, EXPLICIT_CAPTAIN_APPROVAL_MODE}
+)
 DEFAULT_UNATTENDED_MARKER = "Merge when clean: yes"
 DEFAULT_NARROW_MARKER = "Merge when clean: no"
 DEFAULT_WORKER_ACCESS_SCOPE = "selected"
@@ -466,7 +470,10 @@ def _parse_merge(raw: Mapping[str, object]) -> tuple[str, str, str]:
     _reject_unknown_and_secret_keys(value, MERGE_KEYS, prefix="merge")
     mode = value.get("default_mode", DEFAULT_MERGE_MODE)
     if not isinstance(mode, str) or mode.strip() not in ALLOWED_MERGE_MODES:
-        raise _field_error("merge.default_mode", "must be explicit_captain_approval")
+        raise _field_error(
+            "merge.default_mode",
+            "must be unattended_when_clean or explicit_captain_approval",
+        )
     unattended = value.get("unattended_marker", DEFAULT_UNATTENDED_MARKER)
     narrow = value.get("narrow_marker", DEFAULT_NARROW_MARKER)
     if not isinstance(unattended, str) or not unattended.strip():
@@ -882,22 +889,23 @@ def merge_authority_for(
 ) -> str:
     """Resolve merge authority for an issue, with epic-root inheritance.
 
-    Default mode is explicit Captain approval. An unambiguous
-    ``Merge when clean: yes`` directive on the issue grants unattended merge for
-    that scope. The same directive on an epic root grants children unless a
-    child narrows with an unambiguous ``Merge when clean: no``. Ambiguous prose
-    and silence are never approval.
+    Default mode is unattended merge after a clean Captain review, passing
+    required checks, and mergeability. An unambiguous ``Merge when clean: no``
+    directive on an issue or epic narrows that scope to explicit Captain
+    approval. ``Merge when clean: yes`` remains an explicit re-grant for a child
+    beneath a narrowed epic. Ambiguous prose does not change policy.
     """
 
     issue_body = issue_body or ""
     if _marker_present(issue_body, policy.merge_narrow_marker):
-        return policy.merge_default_mode
+        return EXPLICIT_CAPTAIN_APPROVAL_MODE
     if _marker_present(issue_body, policy.merge_unattended_marker):
-        return "unattended_when_clean"
-    if epic_body is not None and _marker_present(epic_body, policy.merge_unattended_marker):
+        return UNATTENDED_MERGE_MODE
+    if epic_body is not None:
         if _marker_present(epic_body, policy.merge_narrow_marker):
-            return policy.merge_default_mode
-        return "unattended_when_clean"
+            return EXPLICIT_CAPTAIN_APPROVAL_MODE
+        if _marker_present(epic_body, policy.merge_unattended_marker):
+            return UNATTENDED_MERGE_MODE
     return policy.merge_default_mode
 
 
@@ -908,7 +916,7 @@ def unattended_merge_allowed(
     epic_body: str | None = None,
 ) -> bool:
     return merge_authority_for(policy, issue_body=issue_body, epic_body=epic_body) == (
-        "unattended_when_clean"
+        UNATTENDED_MERGE_MODE
     )
 
 
@@ -959,10 +967,10 @@ occurred when it has not.
   `{policy.ready_label}`.
 - Trusted human review is limited to repository associations: {humans}.
 - Trusted automation is limited to exact bot logins: {bots}.
-- Merge authority defaults to explicit Captain approval
-  (`{policy.merge_default_mode}`). `{policy.merge_unattended_marker}` on an
-  issue or epic root grants unattended merge for that scope only after current
-  head review, required checks, and mergeability pass. Silence is not approval.
+- Merge authority defaults to unattended merge after current-head Captain
+  review, required checks, and mergeability pass (`{policy.merge_default_mode}`).
+  `{policy.merge_narrow_marker}` on an issue or epic root requires explicit
+  Captain approval for that scope. Workers never merge.
 - Optional integrations selected by policy: {integration_text}.
 - When publishing a pull request, complete the Kanban task with
   `metadata.published_pr` as the canonical field. Newly contracted completions

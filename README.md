@@ -198,11 +198,12 @@ reviewed head, an effective approval, passing required checks, and a mergeable
 state. The merge request includes the head SHA, and Hermes Helmet reads back
 GitHub's merge state afterward.
 
-You choose the merge authority. By default, the first officer asks for your
-approval. An explicit whole-line `Merge when clean: yes` directive on an issue
-or its parent epic authorizes it to merge once those conditions pass. A child
-can narrow inherited authority with `Merge when clean: no`. Implementation and
-repair stay with the worker; merging stays on the Captain side.
+By default, the first officer merges after it has reviewed the exact current
+head, required checks pass, and GitHub reports the pull request mergeable. An
+explicit whole-line `Merge when clean: no` directive on an issue or parent epic
+requires a separate Captain approval instead. A child can explicitly re-enable
+autonomous merge with `Merge when clean: yes`. Implementation and repair stay
+with the worker; merging stays on the Captain side.
 
 ### Resume from the existing record
 

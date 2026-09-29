@@ -50,7 +50,7 @@ class AuthorityTests(unittest.TestCase):
             policy.trusted_human_associations,
             ("OWNER", "MEMBER", "COLLABORATOR"),
         )
-        self.assertEqual(policy.merge_default_mode, "explicit_captain_approval")
+        self.assertEqual(policy.merge_default_mode, "unattended_when_clean")
         self.assertFalse(policy.integrations.openviking)
         self.assertEqual(policy.budgets.max_issue_runtime_minutes, 240)
         self.assertEqual(policy.max_epic_parallelism, 2)
@@ -66,7 +66,7 @@ class AuthorityTests(unittest.TestCase):
         self.assertIn("`example-agent`", contract)
         self.assertIn("Never impersonate", contract)
         self.assertIn("Default deny", contract)
-        self.assertIn("Silence is not approval", contract)
+        self.assertIn("defaults to unattended merge", contract)
         self.assertIn("What did it read?", contract)
         self.assertIn("Where did the human approve, reject, or correct it?", contract)
         for marker in FORBIDDEN_PUBLIC_MARKERS:
@@ -384,11 +384,11 @@ class AuthorityTests(unittest.TestCase):
             )
         )
 
-    def test_merge_when_clean_explicit_and_inherited(self) -> None:
+    def test_merge_when_clean_defaults_unattended_and_can_narrow(self) -> None:
         policy = authority.load_authority(EXAMPLECO)
         self.assertEqual(
             authority.merge_authority_for(policy, issue_body="ordinary issue"),
-            "explicit_captain_approval",
+            "unattended_when_clean",
         )
         self.assertTrue(
             authority.unattended_merge_allowed(
@@ -416,7 +416,7 @@ class AuthorityTests(unittest.TestCase):
                 epic_body="Epic root\n\nMerge when clean: yes\n",
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             authority.unattended_merge_allowed(
                 policy,
                 issue_body="",
@@ -436,11 +436,11 @@ class AuthorityTests(unittest.TestCase):
         ]
         for body in ambiguous_bodies:
             with self.subTest(body=body):
-                self.assertFalse(
+                self.assertTrue(
                     authority.unattended_merge_allowed(policy, issue_body=body),
                     body,
                 )
-                self.assertFalse(
+                self.assertTrue(
                     authority.unattended_merge_allowed(
                         policy,
                         issue_body="child",
@@ -448,6 +448,29 @@ class AuthorityTests(unittest.TestCase):
                     ),
                     body,
                 )
+
+        self.assertFalse(
+            authority.unattended_merge_allowed(
+                policy,
+                issue_body="child",
+                epic_body="Epic root\n\nMerge when clean: no\n",
+            )
+        )
+
+    def test_explicit_approval_remains_supported_as_policy_opt_out(self) -> None:
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        raw["merge"]["default_mode"] = "explicit_captain_approval"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "policy.json"
+            path.write_text(json.dumps(raw), encoding="utf-8")
+            policy = authority.load_authority(path)
+        self.assertEqual(policy.merge_default_mode, "explicit_captain_approval")
+        self.assertFalse(authority.unattended_merge_allowed(policy, issue_body=""))
+        self.assertTrue(
+            authority.unattended_merge_allowed(
+                policy, issue_body="Merge when clean: yes\n"
+            )
+        )
 
     def test_secret_shaped_and_unknown_fields_rejected_nested(self) -> None:
         base = json.loads(EXAMPLECO.read_text(encoding="utf-8"))

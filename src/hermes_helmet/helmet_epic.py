@@ -236,7 +236,7 @@ class EpicCheckpoint:
     notes: list[str] = field(default_factory=list)
     host_continuation: str = "unknown"
     one_pass_only: bool = False
-    epic_merge_mode: str = "explicit_captain_approval"
+    epic_merge_mode: str = "unattended_when_clean"
     child_invocations: int = 0
 
     def to_public_dict(self) -> dict[str, object]:
@@ -369,7 +369,7 @@ def load_epic_checkpoint(
             host_continuation=str(raw.get("host_continuation") or "unknown"),
             one_pass_only=bool(raw.get("one_pass_only", False)),
             epic_merge_mode=str(
-                raw.get("epic_merge_mode") or "explicit_captain_approval"
+                raw.get("epic_merge_mode") or "unattended_when_clean"
             ),
             child_invocations=max(0, int(raw.get("child_invocations") or 0)),
         )

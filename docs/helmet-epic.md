@@ -83,10 +83,10 @@ plus root_open, fingerprint, max_parallelism, blocker, and terminal flag.
 
 ## Merge inheritance
 
-`Merge when clean: yes` on the epic body grants unattended-when-clean mode to
-children via `merge_authority_for(..., epic_body=…)`. A child whole-line
-`Merge when clean: no` narrows back to explicit Captain approval. Default mode
-still stops each merge for explicit approval when no marker is present.
+Unattended-after-clean-review mode applies to children by default through
+`merge_authority_for(..., epic_body=…)`. `Merge when clean: no` on the epic body
+narrows children to explicit Captain approval; a child whole-line
+`Merge when clean: yes` can re-enable autonomous merge for that child.
 
 ## Install targets
 

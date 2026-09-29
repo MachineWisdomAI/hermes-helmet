@@ -35,9 +35,9 @@ exists without a recoverable root, treats an explicit blocked review as a hard
 merge stop (clears clean authority), reviews each head from a separate
 first-officer checkout, and posts formal GitHub review findings. The issue
 poller (`github-issue-poller`) creates same-PR repair work. The worker never
-merges. Default merge mode stops for explicit Captain approval. Only a
-whole-line `Merge when clean: yes` on the issue (or an inheriting parent epic)
-permits an unattended merge of that exact clean head.
+merges. Default merge mode permits the Captain to merge that exact clean head
+without another prompt. A whole-line `Merge when clean: no` on the issue (or an
+inheriting parent epic) requires separate explicit approval.
 
 Canonical implementation selection requires repository + issue association
 before DONE: the issue's canonical branch, a GitHub closing keyword aimed at

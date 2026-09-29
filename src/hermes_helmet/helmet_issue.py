@@ -383,7 +383,7 @@ class Checkpoint:
     clean_head: str | None = None
     pending_repair: bool = False
     repair_rounds: int = 0
-    merge_mode: str = "explicit_captain_approval"
+    merge_mode: str = "unattended_when_clean"
     merge_attempted_head: str | None = None
     last_blocker: str | None = None
     identical_blocker_count: int = 0
@@ -508,7 +508,7 @@ def load_checkpoint(
             clean_head=raw.get("clean_head") if raw.get("clean_head") is None else str(raw.get("clean_head")),
             pending_repair=bool(raw.get("pending_repair", False)),
             repair_rounds=repair_rounds,
-            merge_mode=str(raw.get("merge_mode", "explicit_captain_approval")),
+            merge_mode=str(raw.get("merge_mode", "unattended_when_clean")),
             merge_attempted_head=(
                 None
                 if raw.get("merge_attempted_head") is None
