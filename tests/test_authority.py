@@ -466,6 +466,10 @@ class AuthorityTests(unittest.TestCase):
             policy = authority.load_authority(path)
         self.assertEqual(policy.merge_default_mode, "explicit_captain_approval")
         self.assertFalse(authority.unattended_merge_allowed(policy, issue_body=""))
+        contract = authority.render_crew_contract(policy)
+        self.assertIn("requires explicit Captain approval by default", contract)
+        self.assertIn("Merge when clean: yes", contract)
+        self.assertNotIn("defaults to unattended merge", contract)
         self.assertTrue(
             authority.unattended_merge_allowed(
                 policy, issue_body="Merge when clean: yes\n"

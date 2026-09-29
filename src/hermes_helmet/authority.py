@@ -943,6 +943,16 @@ def render_crew_contract(policy: Policy) -> str:
     if policy.integrations.signal:
         integrations.append("Signal")
     integration_text = ", ".join(integrations) if integrations else "none enabled"
+    if policy.merge_default_mode == UNATTENDED_MERGE_MODE:
+        merge_authority_text = f"""- Merge authority defaults to unattended merge after current-head Captain
+  review, required checks, and mergeability pass (`{policy.merge_default_mode}`).
+  `{policy.merge_narrow_marker}` on an issue or epic root requires explicit
+  Captain approval for that scope. Workers never merge."""
+    else:
+        merge_authority_text = f"""- Merge authority requires explicit Captain approval by default
+  (`{policy.merge_default_mode}`). `{policy.merge_unattended_marker}` on an
+  issue or epic root grants unattended merge only after current-head Captain
+  review, required checks, and mergeability pass. Workers never merge."""
 
     return f"""# {company} Crew Contract
 
@@ -967,10 +977,7 @@ occurred when it has not.
   `{policy.ready_label}`.
 - Trusted human review is limited to repository associations: {humans}.
 - Trusted automation is limited to exact bot logins: {bots}.
-- Merge authority defaults to unattended merge after current-head Captain
-  review, required checks, and mergeability pass (`{policy.merge_default_mode}`).
-  `{policy.merge_narrow_marker}` on an issue or epic root requires explicit
-  Captain approval for that scope. Workers never merge.
+{merge_authority_text}
 - Optional integrations selected by policy: {integration_text}.
 - When publishing a pull request, complete the Kanban task with
   `metadata.published_pr` as the canonical field. Newly contracted completions
