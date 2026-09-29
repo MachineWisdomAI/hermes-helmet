@@ -126,6 +126,14 @@ or issue does not satisfy its unfinished outcome.
 9. No secrets in checkpoints, status, or skill notes.
 10. If the host cannot continue out of session, one truthful pass with
    `--one-pass-only`, then stop.
+11. When policy `captain_model_provider_consent` is true, the Captain's accepted
+    epic delegation authorizes every in-scope child task and review to use the
+    configured Hermes executor. Do not ask again per child, model, or provider,
+    including for configured OpenRouter/open-weight routes. With false or
+    omitted, honor explicit task-specific consent or obtain it before external
+    model use. The flag never authorizes
+    secrets, scope expansion, credential/billing changes, or an unconfigured
+    provider.
 
 ## Commands
 

@@ -86,6 +86,14 @@ Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 10. If the host cannot continue out of session, perform **one truthful pass**,
    record `one_pass_only`, report the limitation, and stop. Do not spawn an
    unmanaged daemon.
+11. When policy `captain_model_provider_consent` is true, the Captain's accepted
+    delegation authorizes this run's in-scope task and review content to use the
+    configured Hermes executor. Do not ask again per task, model, or provider,
+    including for configured OpenRouter/open-weight routes. With false or
+    omitted, honor explicit task-specific consent or obtain it before external
+    model use. The flag never authorizes
+    secrets, scope expansion, credential/billing changes, or an unconfigured
+    provider.
 
 ## Commands (deterministic helpers)
 
