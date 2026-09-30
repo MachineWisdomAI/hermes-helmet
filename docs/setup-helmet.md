@@ -15,7 +15,10 @@ Through the agent (non-secret only):
 2. A separate worker GitHub account (never the Captain).
 3. Exact repository work/action allowlist and ready/dispatch labels. Optional
    `worker_access_scope` (`selected` default, or `broader`) records whether
-   extra private token visibility is accepted.
+   extra private token visibility is accepted. The written policy also carries
+   the optional `enrollment` ceilings (`enabled`, `allowed_purposes`) that
+   govern the later named-request `helmet prepare-repo` seam; defaults permit
+   `work` and `review`.
 4. Worker provider/model selection.
 5. OpenViking and FAVA Trails: selected by default, confirmed or declined in
    the answers file before `helmet setup` writes the policy, and safe to
