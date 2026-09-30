@@ -26,6 +26,20 @@ FORBIDDEN_PUBLIC_MARKERS = (
 
 
 class AuthorityTests(unittest.TestCase):
+    def test_provider_consent_defaults_false_and_round_trips_explicit_choice(self) -> None:
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        raw.pop("captain_model_provider_consent", None)
+        self.assertFalse(authority.policy_from_mapping(raw).captain_model_provider_consent)
+        for choice in (True, False):
+            raw["captain_model_provider_consent"] = choice
+            policy = authority.policy_from_mapping(raw)
+            restored = authority.policy_from_mapping(authority.authority_public_dict(policy))
+            self.assertIs(restored.captain_model_provider_consent, choice)
+        for invalid in ("true", "false", 1, 0, None, {}):
+            raw["captain_model_provider_consent"] = invalid
+            with self.assertRaisesRegex(authority.AuthorityError, "captain_model_provider_consent"):
+                authority.policy_from_mapping(raw)
+
     def test_exampleco_fixture_renders_deterministically(self) -> None:
         policy = authority.load_authority(EXAMPLECO)
         self.assertEqual(policy.version, 2)

@@ -15,6 +15,15 @@ Keep PATs and provider keys in owner-only runtime files or process environment.
 Authority policy may name models, base URLs, timeouts, bind mode, and embedding
 dimensions — never credentials.
 
+`captain_model_provider_consent: true` records one-time standing consent for
+accepted, delegated task and review content to use the configured Hermes
+executor provider/model. With that flag enabled, do not add per-task,
+per-model, or per-provider prompts, including for configured gateways such as
+OpenRouter and open-weight models. This instruction-level record is not a
+runtime egress guard. With omitted or `false`, Captain skills honor existing
+task-specific consent or obtain it before external model use. Changing credentials, billing, scope, or provider
+configuration is always separate.
+
 | Lane | Contract | Example path |
 | --- | --- | --- |
 | Hermes executor | chat completions | `https://api.openai.com/v1/chat/completions` |

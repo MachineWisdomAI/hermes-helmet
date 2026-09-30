@@ -5,6 +5,16 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.1.0rc3 candidate
+
+- Record explicit, durable Captain consent for configured Hermes model/provider
+  use and honor existing task-specific consent without repeated prompts. This
+  is instruction-level consent, not a runtime egress guard or host override.
+- Require source-first repairs, independent review, and supported reinstall
+  instead of patching installed skill bundles or approval records.
+- Give the follow-up package and plugin cache a distinct candidate version;
+  the published rc2 artifacts remain unchanged.
+
 ## 0.1.0rc2 — 2026-09-29
 
 ### Fixed
