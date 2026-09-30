@@ -27,6 +27,7 @@ Load helpers:
     "slug": "exampleco"
   },
   "captain_github_login": "example-captain",
+  "captain_model_provider_consent": false,
   "worker_github_login": "example-agent",
   "schedule": "every 15m",
   "board": "default",
@@ -87,6 +88,14 @@ Optional executor company pack (omit for minimum startup):
   Legacy trailing hyphens (including consecutive hyphens) are accepted so real
   historical accounts load; empty, leading-hyphen, underscore/dot, and overlong
   values are rejected. Captain and worker must differ case-insensitively.
+- `captain_model_provider_consent` is an optional boolean that defaults to
+  `false`. When `true`, accepting and delegating an issue or epic also grants
+  standing consent to send its in-scope task and review content to the
+  configured Hermes executor model/provider. Helmet must not ask again per
+  task, child, model, or provider. It never authorizes secrets, scope expansion,
+  provider credential changes, billing changes, or an unconfigured provider.
+  This is a consent record used by Captain skills, not a runtime egress gate.
+  False or omitted does not erase explicit task-specific user authorization.
 - `worker_github_login` is the executor identity. Version 1's `github_identity`
   remains accepted as an alias. When both are present they must match;
   conflicting aliases are rejected.

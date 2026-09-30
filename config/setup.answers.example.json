@@ -4,6 +4,7 @@
     "slug": "exampleco"
   },
   "captain_github_login": "example-captain",
+  "captain_model_provider_consent": false,
   "worker_github_login": "example-agent",
   "schedule": "every 15m",
   "board": "default",

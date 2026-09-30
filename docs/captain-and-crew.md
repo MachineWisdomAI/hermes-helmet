@@ -44,6 +44,20 @@ The handoff has three steps:
    and handle authorized merges. Hermes implements and repairs under its own
    identity. You remain the Captain and source of authority.
 
+An adopter can persist standing model/provider consent with
+`captain_model_provider_consent: true`. For that installation, delegating an
+accepted issue or epic authorizes its in-scope task and review content to be
+sent to the configured Hermes executor without another per-task, per-model, or
+per-provider prompt. This includes open-weight models behind a configured
+gateway such as OpenRouter. The setting never authorizes secrets, scope
+expansion, provider credential changes, billing changes, or an unconfigured
+provider. Omitted or `false` records no standing consent: Captain skills use
+the operator's explicit task-specific authorization or obtain it before
+external model use. This field is an instruction-level consent record, not a
+dispatch-time egress guard for direct CLI or scheduled invocations.
+This is Helmet's recorded consent, not an override of the host's approval,
+sandbox, or organization controls.
+
 GitHub issues are the execution contract because they sit beside the
 repositories, branches, pull requests, checks, and reviews. They record the
 accepted work and its dependencies where the delivery loop can follow them.

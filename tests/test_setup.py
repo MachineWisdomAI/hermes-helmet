@@ -240,6 +240,13 @@ class QuestionnaireTests(unittest.TestCase):
         self.assertFalse(policy.integrations.openviking)
         self.assertFalse(policy.integrations.fava_trails)
         self.assertFalse(policy.integrations.signal)
+        self.assertFalse(policy.captain_model_provider_consent)
+        opted_in = authority.policy_from_mapping(
+            helmet_setup.answers_to_policy_mapping(
+                _answers(captain_model_provider_consent=True)
+            )
+        )
+        self.assertTrue(opted_in.captain_model_provider_consent)
 
     def test_answers_reject_unknown_top_level_and_nested_keys(self) -> None:
         top_level = _answers(worker_github_logni="example-agent")
