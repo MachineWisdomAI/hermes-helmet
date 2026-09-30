@@ -18,15 +18,39 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   CPU or unlimited model spend.
 - Package and plugin candidate versions are `0.1.0rc5` / `0.1.0-rc.5`.
 
-### 0.1.0rc3 candidate
+### 0.1.0rc4 candidate
+
+- Add named-request repository enrollment: when the human Captain explicitly
+  asks the first officer to work on or review a named repository, that request
+  authorizes enrolling that exact repo. `helmet prepare-repo` validates the
+  request against current authority (Captain identity, allowed owners, and
+  explicit `enrollment` ceilings in the policy), calls the worker-runtime
+  `prepare-repo` transport verb with the normalized exact slug or canonical
+  issue/PR reference, and persists a sanitized atomic receipt. Existing
+  allowlisted repositories remain no-ops; read-only status never enrolls.
+- Re-validate stored enrollment receipts against the current policy on every
+  lookup, so owner narrowing, Captain changes, or disabled/restricted
+  enrollment revoke stale receipts; repeat requests re-run the transport seam
+  so access and clone validation are never skipped.
+- Enforce review-only enrollment ceilings: review-enrolled repositories are
+  never dispatched and never granted merge authority in issue or epic flows.
+- Continue unattended after named-request enrollment instead of stopping at a
+  fresh merge-mode question: the effective permitted policy default is used
+  and persisted as merge source `named_request`. Explicit manual choices and
+  installation ceilings are never overwritten or widened.
+- Validate the canonical repository identity of timeline cross-referenced pull
+  requests before adopting their number: valid foreign references are ignored,
+  references with no usable identity grant no authority, and contradictory
+  metadata claiming the local repository fails closed. Fixes a terminal
+  failed run when a foreign PR cross-references a managed issue.
+- Give the follow-up package and plugin cache a distinct candidate version;
+  the published rc2 artifacts remain unchanged.
 
 - Record explicit, durable Captain consent for configured Hermes model/provider
   use and honor existing task-specific consent without repeated prompts. This
   is instruction-level consent, not a runtime egress guard or host override.
 - Require source-first repairs, independent review, and supported reinstall
   instead of patching installed skill bundles or approval records.
-- Give the follow-up package and plugin cache a distinct candidate version;
-  the published rc2 artifacts remain unchanged.
 
 ## 0.1.0rc2 — 2026-09-29
 
@@ -60,6 +84,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ### Changed
 
+- Advance the pinned upstream Hermes Agent base to the supported stable
+  v2026.9.24 tag (Hermes Agent 0.21.5), still pinned by immutable tag+digest,
+  across the image build, Compose default, preview workflow platform refs,
+  quickstart and tests.
 - Collect OpenViking/FAVA answers before `helmet setup` writes policy, require
   host checkout roots before doctor, keep host and Compose policies separate
   when worktree paths differ, make `deploy/.env` owner-only before the token,

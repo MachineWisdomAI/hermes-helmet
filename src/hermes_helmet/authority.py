@@ -32,7 +32,7 @@ ALLOWED_MERGE_MODES = frozenset(
     {UNATTENDED_MERGE_MODE, EXPLICIT_CAPTAIN_APPROVAL_MODE}
 )
 MERGE_MODE_SOURCES = frozenset(
-    {"policy", "authority", "required", "interactive", "cli", "legacy"}
+    {"policy", "authority", "required", "interactive", "cli", "legacy", "named_request"}
 )
 DEFAULT_UNATTENDED_MARKER = "Merge when clean: yes"
 DEFAULT_NARROW_MARKER = "Merge when clean: no"
@@ -52,6 +52,11 @@ MANAGED_WAIT_TIMEOUT_SECONDS = 1800
 ELAPSED_WINDOW_DISCLAIMER = (
     "These are bounded elapsed windows, not a promise of uninterrupted CPU "
     "execution or unlimited model spending."
+)
+ENROLLMENT_PURPOSE_WORK = "work"
+ENROLLMENT_PURPOSE_REVIEW = "review"
+ENROLLMENT_PURPOSES = frozenset(
+    {ENROLLMENT_PURPOSE_WORK, ENROLLMENT_PURPOSE_REVIEW}
 )
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 OWNER_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -142,6 +147,7 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
         "model_lanes",
         "worker_access_scope",
         "worker_completion_contract",
+        "enrollment",
     }
 )
 COMPANY_KEYS = frozenset({"display_name", "slug"})
@@ -159,6 +165,7 @@ PEER_OBJECT_KEYS = frozenset({"id"})
 REPOSITORY_KEYS = frozenset({"slug", "worktree"})
 SKILLS_KEYS = frozenset({"company_pack"})
 COMPANY_PACK_KEYS = frozenset({"source", "allowlist"})
+ENROLLMENT_KEYS = frozenset({"enabled", "allowed_purposes"})
 SKILL_ALLOWLIST_NAME_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 SKILL_ALLOWLIST_NAME_MAX = 64
 
@@ -183,6 +190,23 @@ class IntegrationChoices:
     openviking: bool = False
     fava_trails: bool = False
     signal: bool = False
+
+
+@dataclass(frozen=True)
+class EnrollmentPolicy:
+    """Deliberate ceilings for named-request repository enrollment.
+
+    ``enabled`` is the explicit installation switch; ``allowed_purposes``
+    limits which enrollment purposes (``work`` / ``review``) may be granted.
+    Defaults permit both purposes; narrowing or disabling never retroactively
+    widens anything.
+    """
+
+    enabled: bool = True
+    allowed_purposes: tuple[str, ...] = (
+        ENROLLMENT_PURPOSE_REVIEW,
+        ENROLLMENT_PURPOSE_WORK,
+    )
 
 
 @dataclass(frozen=True)
@@ -248,6 +272,7 @@ class Policy:
     model_lanes: object | None = None
     worker_access_scope: str = DEFAULT_WORKER_ACCESS_SCOPE
     worker_completion_contract: str = DEFAULT_WORKER_COMPLETION_CONTRACT
+    enrollment: EnrollmentPolicy = EnrollmentPolicy()
 
     @property
     def worker_github_login(self) -> str:
@@ -610,6 +635,39 @@ def _parse_integrations(raw: Mapping[str, object]) -> IntegrationChoices:
     )
 
 
+def _parse_enrollment(raw: Mapping[str, object]) -> EnrollmentPolicy:
+    """Parse deliberate named-request enrollment ceilings (defaults permit both)."""
+
+    if "enrollment" not in raw or raw.get("enrollment") is None:
+        return EnrollmentPolicy()
+    value = raw.get("enrollment")
+    if not isinstance(value, dict):
+        raise _field_error("enrollment", "must be an object")
+    _reject_unknown_and_secret_keys(value, ENROLLMENT_KEYS, prefix="enrollment")
+    enabled_raw = value.get("enabled", True)
+    if not isinstance(enabled_raw, bool):
+        raise _field_error("enrollment.enabled", "must be a boolean")
+    enabled = enabled_raw
+    if value.get("allowed_purposes") is None:
+        purposes = tuple(sorted(ENROLLMENT_PURPOSES))
+    else:
+        purposes_raw = value.get("allowed_purposes")
+        if not isinstance(purposes_raw, list) or not purposes_raw:
+            raise _field_error("enrollment.allowed_purposes", "must be a non-empty list")
+        parsed: list[str] = []
+        for index, item in enumerate(purposes_raw):
+            if not isinstance(item, str) or item.strip() not in ENROLLMENT_PURPOSES:
+                raise _field_error(
+                    f"enrollment.allowed_purposes[{index}]",
+                    "must be work or review",
+                )
+            purpose = item.strip()
+            if purpose not in parsed:
+                parsed.append(purpose)
+        purposes = tuple(parsed)
+    return EnrollmentPolicy(enabled=enabled, allowed_purposes=purposes)
+
+
 def _parse_budgets(raw: Mapping[str, object]) -> Budgets:
     value = raw.get("budgets", {})
     if value is None:
@@ -893,6 +951,7 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
     github_owners = _derive_owners(repositories, explicit_owners)
     merge_mode, unattended_marker, narrow_marker = _parse_merge(raw)
     integrations = _parse_integrations(raw)
+    enrollment = _parse_enrollment(raw)
     budgets = _parse_budgets(raw)
     peers = _parse_peers(raw)
     skills = _parse_skills(raw)
@@ -979,6 +1038,7 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
         model_lanes=model_lanes,
         worker_access_scope=worker_access_scope,
         worker_completion_contract=worker_completion_contract,
+        enrollment=enrollment,
     )
 
 
@@ -1405,6 +1465,10 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
         "model_lanes": model_lanes,
         "worker_access_scope": policy.worker_access_scope,
         "worker_completion_contract": policy.worker_completion_contract,
+        "enrollment": {
+            "enabled": policy.enrollment.enabled,
+            "allowed_purposes": list(policy.enrollment.allowed_purposes),
+        },
         "skills": (
             {
                 "company_pack": {

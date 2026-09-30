@@ -28,6 +28,7 @@ import sqlite3
 from typing import Protocol, Sequence
 from urllib.parse import urlencode
 
+from hermes_helmet import repo_enroll
 from hermes_helmet.authority import (
     ALLOWED_MERGE_MODES,
     AuthorityError,
@@ -98,6 +99,9 @@ def _resolve_worker_runtime() -> tuple[str, ...]:
     - ``ledger-root ISSUE_URL`` → prints root task id or empty
     - ``ledger-watch ISSUE_URL`` → prints JSON watch object or empty
     - ``dispatch-root ISSUE_URL --json`` → prints ``{"task_id":…,"created":bool}``
+    - ``prepare-repo REQUEST_REF --purpose work|review --json`` → provisions an
+      explicitly requested repository checkout and prints
+      ``{"slug":…,"worktree":…,"purpose":…,"created":bool}`` (see repo_enroll)
     - ``wait ISSUE_URL --timeout-seconds N --json [--cursor TOKEN]`` → blocks
       outside the agent loop and prints one bounded wake result
 
@@ -346,6 +350,9 @@ class IssueRef:
     state: str
     labels: tuple[str, ...]
     html_url: str
+    # Empty for allowlisted repositories; otherwise "work" or "review" when
+    # the repository is admitted through a named-request enrollment receipt.
+    enrollment_purpose: str = ""
 
     @property
     def url(self) -> str:
@@ -663,6 +670,7 @@ def resolve_parent_epic_body(
     gh: str = DEFAULT_GH,
     child_issue: IssueRef | None = None,
     child_url: str | None = None,
+    enrollment_store: "repo_enroll.EnrollmentStore | None" = None,
 ) -> tuple[str | None, str | None]:
     """Return (epic_body, parent_epic_url) with live parent body when needed.
 
@@ -690,7 +698,9 @@ def resolve_parent_epic_body(
         parent_url is not None or epic_body is not None
     ):
         try:
-            child_ref = load_issue(policy, child_url, runner, gh=gh)
+            child_ref = load_issue(
+                policy, child_url, runner, gh=gh, enrollment_store=enrollment_store
+            )
         except HelmetIssueError:
             # Cannot confirm membership — fail closed on inherited authority.
             return None, None
@@ -789,7 +799,9 @@ def resolve_parent_epic_body(
         return epic_body, parent_url
     if parent_url is None or runner is None:
         return None, parent_url
-    parent_issue = load_issue(policy, parent_url, runner, gh=gh)
+    parent_issue = load_issue(
+        policy, parent_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
     return parent_issue.body, parent_url
 
 
@@ -803,11 +815,26 @@ def observed_github_login(runner: Runner, gh: str = DEFAULT_GH) -> str:
     return login.strip()
 
 
-def load_issue(policy: Policy, issue_url: str, runner: Runner, *, gh: str = DEFAULT_GH) -> IssueRef:
+def load_issue(
+    policy: Policy,
+    issue_url: str,
+    runner: Runner,
+    *,
+    gh: str = DEFAULT_GH,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
+) -> IssueRef:
     slug, number = parse_issue_url(issue_url)
     repository = next((item for item in policy.repositories if item.slug.casefold() == slug.casefold()), None)
+    enrollment_purpose = ""
+    if repository is None and enrollment_store is not None:
+        repository, enrollment_purpose = repo_enroll.resolve_repository(
+            policy, enrollment_store, slug
+        )
     if repository is None:
-        raise HelmetIssueError("issue repository is outside the configured allowlist")
+        raise HelmetIssueError(
+            "issue repository is outside the configured allowlist "
+            "(named-request enrollment may be required)"
+        )
     raw = _github_json(runner, gh, f"repos/{repository.slug}/issues/{number}")
     if not isinstance(raw, dict):
         raise HelmetIssueError("GitHub issue payload is invalid")
@@ -841,6 +868,7 @@ def load_issue(policy: Policy, issue_url: str, runner: Runner, *, gh: str = DEFA
         state=state,
         labels=tuple(labels),
         html_url=html_url.strip(),
+        enrollment_purpose=enrollment_purpose,
     )
 
 
@@ -1080,6 +1108,50 @@ def _pr_url_from_kanban(payload: dict[str, object], *, task_id: str) -> str | No
         ) from exc
 
 
+# GitHub API URL forms seen on timeline cross-reference nodes.
+_API_REF_URL_RE = re.compile(
+    r"^https://api\.github\.com/repos/(?P<slug>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)"
+    r"(?:/(?:issues|pulls)/\d+)?/?$"
+)
+
+
+def _timeline_pr_reference_slugs(issue_node: dict[str, object]) -> set[str]:
+    """Canonical casefolded ``owner/name`` slugs of a timeline PR reference.
+
+    Cross-reference events carry the source repository's identity in several
+    URL fields (``html_url``, ``repository_url``, ``url``, and
+    ``pull_request.url`` / ``pull_request.html_url``). Returns every slug that
+    parses from those fields. Absent, empty, or unparseable fields are unusable
+    metadata on an untrusted lead: they grant no authority and are never a
+    terminal gate by themselves. Callers decide adoption from the result and
+    fail closed only when contradictory metadata claims the local repository.
+    """
+
+    candidates: list[str] = []
+    for key in ("html_url", "repository_url", "url"):
+        value = issue_node.get(key)
+        if isinstance(value, str):
+            candidates.append(value)
+    pull_request = issue_node.get("pull_request")
+    if isinstance(pull_request, dict):
+        for key in ("url", "html_url"):
+            value = pull_request.get(key)
+            if isinstance(value, str):
+                candidates.append(value)
+
+    slugs: set[str] = set()
+    for value in candidates:
+        text = value.strip().rstrip("/")
+        if not text:
+            continue
+        for regex in (ISSUE_URL_RE, PULL_REQUEST_URL_RE, _API_REF_URL_RE):
+            match = regex.fullmatch(text)
+            if match is not None:
+                slugs.add(match.group("slug").casefold())
+                break
+    return slugs
+
+
 def discover_linked_pull_requests(
     issue: IssueRef,
     runner: Runner,
@@ -1106,17 +1178,31 @@ def discover_linked_pull_requests(
     else:
         records = []
     pr_numbers: set[int] = set()
+    local_slug = issue.repository.slug.casefold()
     for raw in records:
         if not isinstance(raw, dict):
             continue
         for key in ("source", "data"):
             node = raw.get(key)
-            if isinstance(node, dict):
-                issue_node = node.get("issue") if key == "source" else node
-                if isinstance(issue_node, dict) and "pull_request" in issue_node:
-                    number = issue_node.get("number")
-                    if isinstance(number, int):
-                        pr_numbers.add(number)
+            if not isinstance(node, dict):
+                continue
+            issue_node = node.get("issue") if key == "source" else node
+            if not isinstance(issue_node, dict) or "pull_request" not in issue_node:
+                continue
+            # Validate the canonical repo of every timeline PR reference before
+            # trusting its number. Valid foreign references and references with
+            # no usable identity are ignored (never adopted, never a terminal
+            # gate); contradictory metadata claiming the local repo fails closed.
+            ref_slugs = _timeline_pr_reference_slugs(issue_node)
+            if local_slug not in ref_slugs:
+                continue
+            if len(ref_slugs) > 1:
+                raise HelmetIssueError(
+                    checkpoint_note("err", "timeline_cross_ref_conflict")
+                )
+            number = issue_node.get("number")
+            if isinstance(number, int) and not isinstance(number, bool):
+                pr_numbers.add(number)
         body = raw.get("body")
         if isinstance(body, str):
             for match in PULL_REQUEST_URL_RE.finditer(body):
@@ -1351,6 +1437,7 @@ def preflight(
     *,
     gh: str = DEFAULT_GH,
     epic_body: str | None = None,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> tuple[IssueRef, str, str]:
     """Validate Captain authority, allowlist, issue state, labels, and budgets."""
 
@@ -1380,7 +1467,9 @@ def preflight(
             "captain credential isolation: worker GitHub login is stored on the Captain host"
         )
 
-    issue = load_issue(policy, issue_url, runner, gh=gh)
+    issue = load_issue(
+        policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
     if issue.state != "open":
         raise HelmetIssueError("issue is not open")
     # Labels: either ready or dispatch is acceptable for orchestration; dispatch
@@ -1888,6 +1977,8 @@ def evaluate_merge_gate(
     from checkless ``clean``; explicit Captain approval remains available.
     """
 
+    if issue.enrollment_purpose == repo_enroll.PURPOSE_REVIEW:
+        return "not_ready", checkpoint_note("err", "review_enrollment_no_merge")
     if checkpoint.merge_choice_required:
         return "stop_for_approval", checkpoint_note(
             "err", "merge_choice_required"
@@ -2194,6 +2285,7 @@ def status_issue(
     gh: str = DEFAULT_GH,
     hermes: str = DEFAULT_HERMES,
     worker_runtime: Sequence[str] = (),
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> StatusReport:
     """Read-only status for an issue. Never mutates GitHub, ledger, or checkpoint."""
 
@@ -2215,7 +2307,9 @@ def status_issue(
         root_task_id = resolve_root_task_id(
             ledger, issue_url, runner, worker_runtime=runtime
         )
-        issue = load_issue(policy, issue_url, runner, gh=gh)
+        issue = load_issue(
+            policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+        )
         root_task_id, pull, repair_id = discover_progress(
             policy,
             issue,
@@ -2275,6 +2369,7 @@ def run_preflight_and_adopt(
     parent_epic_url: str | None = None,
     merge_mode_choice: str | None = None,
     merge_mode_source: str = "interactive",
+    enrollment_store: "repo_enroll.EnrollmentStore | None" = None,
 ) -> tuple[Checkpoint, StatusReport]:
     """One safe orchestration pass through discovery (no review body generation)."""
 
@@ -2328,7 +2423,13 @@ def run_preflight_and_adopt(
         ):
             raise HelmetIssueError(checkpoint_note("err", "policy_budgets_invalid"))
 
-        issue = load_issue(policy, issue_url, runner, gh=gh)
+        issue = load_issue(
+            policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+        )
+        if issue.enrollment_purpose == repo_enroll.PURPOSE_REVIEW and apply_dispatch:
+            raise HelmetIssueError(
+                checkpoint_note("err", "review_enrollment_no_dispatch")
+            )
         # Carry / refresh validated parent association for merge inheritance.
         effective_parent = parent_epic_url or checkpoint.parent_epic_url
         resolved_epic_body, resolved_parent = resolve_parent_epic_body(
@@ -2338,6 +2439,7 @@ def run_preflight_and_adopt(
             runner=runner,
             gh=gh,
             child_issue=issue,
+            enrollment_store=enrollment_store,
         )
         if resolved_parent:
             checkpoint.parent_epic_url = resolved_parent
@@ -2407,13 +2509,25 @@ def run_preflight_and_adopt(
                 checkpoint.merge_mode_choice = EXPLICIT_CAPTAIN_APPROVAL_MODE
                 checkpoint.merge_mode_source = "authority"
                 checkpoint.merge_choice_required = False
-            elif host_continuation == "session":
+            elif host_continuation == "session" and not issue.enrollment_purpose:
                 checkpoint.merge_mode_source = "required"
                 checkpoint.merge_choice_required = True
             else:
+                # Named-request enrollment is explicit Captain delegation for this
+                # exact repo: an optional merge-mode consultation must not block
+                # unattended continuation. Use and persist the effective permitted
+                # policy default. This never broadens an explicit-approval ceiling
+                # (handled above) and never overwrites a saved manual choice
+                # (this branch only runs when no choice exists).
                 checkpoint.merge_mode_choice = policy.merge_default_mode
-                checkpoint.merge_mode_source = "policy"
+                checkpoint.merge_mode_source = (
+                    "named_request" if issue.enrollment_purpose else "policy"
+                )
                 checkpoint.merge_choice_required = False
+                if issue.enrollment_purpose:
+                    note = checkpoint_note("op", "named_request_unattended_default")
+                    if note not in checkpoint.notes:
+                        checkpoint.notes.append(note)
 
         checkpoint.merge_authority_fingerprint = authority_fingerprint
         checkpoint.merge_mode = merge_authority_for(
@@ -2913,6 +3027,7 @@ def apply_review_outcome(
     hermes: str = DEFAULT_HERMES,
     config: Path | None = None,
     worker_runtime: Sequence[str] = (),
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> Checkpoint:
     """Record a Captain review only after binding to live head + formal review."""
 
@@ -2949,7 +3064,9 @@ def apply_review_outcome(
             checkpoint_note("err", "worker_profile_on_captain_host")
         )
 
-    issue = load_issue(policy, issue_url, runner, gh=gh)
+    issue = load_issue(
+        policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
     _root, pull, _repair = discover_progress(
         policy, issue, ledger, runner, gh=gh, hermes=hermes, worker_runtime=runtime
     )

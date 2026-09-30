@@ -50,6 +50,7 @@ class FirstOfficerPluginTests(unittest.TestCase):
         )
         self.assertIn('version = "0.1.0rc5"', pyproject)
         self.assertNotEqual(claude["version"], "0.1.0rc1")
+        self.assertNotEqual(claude["version"], "0.1.0-rc.3")
         self.assertEqual(claude["license"], "Apache-2.0")
         self.assertEqual(codex["license"], "Apache-2.0")
         self.assertEqual(claude["author"]["name"], "Machine Wisdom")

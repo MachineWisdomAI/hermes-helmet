@@ -60,7 +60,39 @@ before DONE: the issue's canonical branch, a GitHub closing keyword aimed at
 this issue (``Closes #N``, optional colon, ``owner/repo#N``, or
 ``Closes https://…/issues/N``), or an existing ledger/Kanban watch URL.
 Timeline cross-references, bare ``#N`` mentions, and ordinary body/Markdown
-issue links remain discovery leads only — not ownership.
+issue links remain discovery leads only — not ownership. Timeline
+cross-referenced pull requests are additionally validated against their
+canonical repository identity before adoption: valid foreign references are
+ignored, references with no usable identity grant no authority, and
+contradictory metadata claiming the local repository fails closed.
+
+## Named-request repository enrollment
+
+When the human Captain explicitly asks the first officer to work on or review
+a named repository that is not in the static allowlist, that request is
+authorization to enroll that exact repository:
+
+```sh
+helmet prepare-repo REQUEST_REF --config /path/to/policy.json --purpose work|review
+```
+
+`REQUEST_REF` is the exact `owner/name` slug, a canonical issue/PR URL, or a
+credential-free Git origin URL; every accepted form is normalized to the exact
+slug before the worker-runtime `prepare-repo` transport provisions the
+checkout below the configured data root. The sanitized original reference is
+retained only in the audit receipt. Enrollment is deterministic and
+idempotent: existing allowlisted repositories are no-ops (explicit
+`enrollment` restrictions govern new enrollments only and never affect the
+static allowlist), receipts persist
+atomically and recover after interruption, and repeats re-run the transport
+seam so current access and clone validation are never skipped. Stored
+receipts are re-validated against the current policy on every lookup, so
+owner narrowing, Captain changes, or explicit `enrollment` restrictions
+revoke stale receipts. Review-only enrollment never dispatches issues or
+grants merge permission; read-only status never enrolls or clones. Optional
+consultation is non-blocking here because the explicit named-repo request
+already grants authority for that exact repository — not because silence is
+consent.
 
 ## Non-goals
 
@@ -76,6 +108,7 @@ issue links remain discovery leads only — not ownership.
 | `skills/helmet-issue/SKILL.md` | Portable skill (also packaged under `hermes_helmet/bundled_skills/`) |
 | `helmet issue ISSUE_URL` | Deterministic preflight/adopt/discover pass + checkpoint |
 | `helmet status ISSUE_URL` | Read-only status |
+| `helmet prepare-repo REQUEST_REF --purpose work\|review` | Named-request enrollment of one exact repository (Captain-authorized, idempotent) |
 | `helmet install-skills` | Install skill into host skill directories |
 | `github-issue-poller` | Sole creator of repair Kanban tasks |
 

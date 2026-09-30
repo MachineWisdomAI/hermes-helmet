@@ -47,6 +47,7 @@ for required in \
     skills/helmet-epic/SKILL.md \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
+    src/hermes_helmet/repo_enroll.py \
     src/hermes_helmet/fava_trails.py \
     src/hermes_helmet/cli.py \
     src/hermes_helmet/install_skills.py \
@@ -185,8 +186,8 @@ assert entrypoint.index("unset GH_TOKEN") < entrypoint.index("run_company_skills
 assert entrypoint.index("run_company_skills_import") < entrypoint.index(upstream)
 # Canonical Hermes base pin: immutable tag+digest, no latest/main.
 expected_base = (
-    "nousresearch/hermes-agent:v2026.9.14@"
-    "sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294"
+    "nousresearch/hermes-agent:v2026.9.24@"
+    "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7"
 )
 assert f"ARG HERMES_BASE_IMAGE={expected_base}" in dockerfile
 assert f"HERMES_BASE_IMAGE: ${{HERMES_BASE_IMAGE:-{expected_base}}}" in text

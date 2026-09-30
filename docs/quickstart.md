@@ -32,8 +32,8 @@ digest is
 built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. See
 [runtime-image.md](runtime-image.md). Development builds still pin the official
 Hermes Agent base
-`nousresearch/hermes-agent:v2026.9.14@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294`
-(Hermes Agent 0.21.3). Override only with another immutable tag+digest; do not
+`nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7`
+(Hermes Agent 0.21.5). Override only with another immutable tag+digest; do not
 use `latest` or `main`.
 
 ## Install the CLI
@@ -379,7 +379,10 @@ See [setup-helmet.md](setup-helmet.md).
 ## What this runtime does
 
 - Creates one Kanban root task per eligible issue (idempotent by issue URL)
-- Ignores closed, unlabeled, malformed, and non-allowlisted issues
+- Ignores closed, unlabeled, malformed, and non-allowlisted issues (the
+  Captain-side `helmet prepare-repo` named-request enrollment path can admit an
+  exact requested repository for first-officer workflows; the poller itself
+  stays on the static allowlist)
 - After a PR exists, trusted review activity creates one dependent same-PR repair
 - Coalesces activity behind an outstanding repair; later activity can succeed it
 - Never merges from the worker and never force-pushes

@@ -155,6 +155,13 @@ Optional executor company pack (omit for minimum startup):
   are elapsed bounds, including managed waits, not a promise of uninterrupted
   CPU or unlimited model spend. The one-event-driven-waiter-per-child wait
   remains 1,800 seconds.
+- Optional `enrollment` sets deliberate ceilings for named-request repository
+  enrollment: `enabled` (default `true`) and `allowed_purposes` (default
+  `["review", "work"]`). Disabling or narrowing it revokes stale enrollment
+  receipts on their next re-validation; it never affects the static
+  `repositories` allowlist. Enrollment still requires the configured Captain
+  identity and an allowed owner, and never adds owners. See
+  [helmet-issue.md](helmet-issue.md#named-request-repository-enrollment).
 - Repository slugs are unique case-insensitively. Repository `worktree` paths
   must be absolute, unique after normalization, and free of unsafe elements
   (`..`, null bytes, OS-sensitive roots).
