@@ -437,6 +437,43 @@ class PrepareRepositoryTests(unittest.TestCase):
         self.assertEqual(allowed.status, "enrolled")
         self.assertEqual(allowed.receipt.purposes, ("review",))
 
+    def test_static_allowlist_unaffected_by_enrollment_restrictions(self) -> None:
+        # Static/no-op alternative to the new/enrolled rejections above: an
+        # existing allowlisted repository keeps its documented no-op when
+        # enrollment is disabled or its purposes narrowed, without a transport
+        # call or a stored receipt.
+        transport = ContractTransport()
+        disabled = _policy(enrollment={"enabled": False})
+        result = re_mod.prepare_repository(
+            disabled,
+            "example-org/demo-repo",
+            purpose="work",
+            runner=transport,
+            worker_runtime=RUNTIME,
+            actor_login=CAPTAIN,
+            store=self.store,
+        )
+        self.assertEqual(result.status, "allowlisted")
+        self.assertFalse(result.receipt.created)
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(self.store.all(), [])
+        # A narrowed allowed_purposes must not block a purpose the static
+        # policy already grants.
+        review_only = _policy(enrollment={"allowed_purposes": ["review"]})
+        narrowed = re_mod.prepare_repository(
+            review_only,
+            "example-org/demo-repo",
+            purpose="work",
+            runner=transport,
+            worker_runtime=RUNTIME,
+            actor_login=CAPTAIN,
+            store=self.store,
+        )
+        self.assertEqual(narrowed.status, "allowlisted")
+        self.assertFalse(narrowed.receipt.created)
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(self.store.all(), [])
+
     def test_missing_worker_runtime_rejected(self) -> None:
         transport = ContractTransport()
         with self.assertRaisesRegex(re_mod.EnrollmentError, "worker_runtime_unset"):
@@ -527,8 +564,12 @@ class PrepareRepositoryTests(unittest.TestCase):
                 actor_login=CAPTAIN,
                 store=self.store,
             )
-        # Unsafe system path.
-        unsafe = ContractTransport(worktree="/etc/new-repo")
+        # Unsafe system path. ``/proc`` is a real (non-symlink) directory on
+        # Linux and absent on macOS, so the symlink guard cannot pre-empt the
+        # unsafe-prefix check on either platform — unlike ``/etc``, which is a
+        # symlink to ``/private/etc`` on macOS and legitimately trips the
+        # symlink guard first (covered by test_symlinked_worktree_rejected).
+        unsafe = ContractTransport(worktree="/proc/new-repo")
         with self.assertRaisesRegex(re_mod.EnrollmentError, "enroll_worktree_unsafe"):
             re_mod.prepare_repository(
                 self.policy,

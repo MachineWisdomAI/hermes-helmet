@@ -510,11 +510,14 @@ def prepare_repository(
     non-allowlisted request re-runs the transport seam under the store lock so
     current access and clone validation are never skipped on a repeat.  The
     transport receives the normalized exact slug; the sanitized original
-    reference is retained only in the audit receipt.  Fails closed on
-    malformed/credential-bearing refs, owner mismatch, disabled or narrowed
-    enrollment, Captain/worker identity violations, missing worker runtime,
-    transport failure, slug/purpose mismatch, unsafe or symlinked worktrees,
-    and path collisions.
+    reference is retained only in the audit receipt.  Enrollment ceilings
+    (disabled/narrowed enrollment, owner limits) govern genuinely new
+    enrollments only; the static allowlist no-op is unaffected by them.
+    Fails closed on malformed/credential-bearing refs, owner mismatch,
+    disabled or narrowed enrollment for new repositories, Captain/worker
+    identity violations, missing worker runtime, transport failure,
+    slug/purpose mismatch, unsafe or symlinked worktrees, and path
+    collisions.
     """
 
     if purpose not in ENROLLMENT_PURPOSES:
@@ -533,18 +536,10 @@ def prepare_repository(
             _note("err", "enroll_captain_identity_mismatch")
         ) from exc
 
-    # Honor deliberate enrollment ceilings; never add owners.
-    enrollment = policy.enrollment
-    if not enrollment.enabled:
-        raise EnrollmentError(_note("err", "enroll_disabled"))
-    if purpose not in enrollment.allowed_purposes:
-        raise EnrollmentError(_note("err", "enroll_purpose_not_allowed"))
-    owner = slug.split("/", 1)[0]
-    allowed_owners = {o.casefold() for o in policy.github_owners}
-    if not allowed_owners or owner.casefold() not in allowed_owners:
-        raise EnrollmentError(_note("err", "enroll_owner_not_allowed"))
-
-    # Existing allowlisted repositories remain no-ops.
+    # Existing allowlisted repositories remain no-ops: the static allowlist
+    # was granted deliberately, so enrollment ceilings (disabled/narrowed
+    # enrollment, owner limits) govern new enrollments only and never block
+    # the documented no-op for a repository the policy already carries.
     for repository in policy.repositories:
         if repository.slug.casefold() == slug.casefold():
             return EnrollmentResult(
@@ -561,6 +556,18 @@ def prepare_repository(
                     created=False,
                 ),
             )
+
+    # Honor deliberate enrollment ceilings for genuinely new repositories;
+    # never add owners.
+    enrollment = policy.enrollment
+    if not enrollment.enabled:
+        raise EnrollmentError(_note("err", "enroll_disabled"))
+    if purpose not in enrollment.allowed_purposes:
+        raise EnrollmentError(_note("err", "enroll_purpose_not_allowed"))
+    owner = slug.split("/", 1)[0]
+    allowed_owners = {o.casefold() for o in policy.github_owners}
+    if not allowed_owners or owner.casefold() not in allowed_owners:
+        raise EnrollmentError(_note("err", "enroll_owner_not_allowed"))
 
     runtime = tuple(str(part) for part in worker_runtime if str(part).strip())
     if not runtime:

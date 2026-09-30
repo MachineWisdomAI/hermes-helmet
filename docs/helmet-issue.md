@@ -81,7 +81,9 @@ credential-free Git origin URL; every accepted form is normalized to the exact
 slug before the worker-runtime `prepare-repo` transport provisions the
 checkout below the configured data root. The sanitized original reference is
 retained only in the audit receipt. Enrollment is deterministic and
-idempotent: existing allowlisted repositories are no-ops, receipts persist
+idempotent: existing allowlisted repositories are no-ops (explicit
+`enrollment` restrictions govern new enrollments only and never affect the
+static allowlist), receipts persist
 atomically and recover after interruption, and repeats re-run the transport
 seam so current access and clone validation are never skipped. Stored
 receipts are re-validated against the current policy on every lookup, so
