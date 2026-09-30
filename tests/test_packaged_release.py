@@ -360,7 +360,7 @@ class PackagedReleaseProofTests(unittest.TestCase):
         cls._tmp.cleanup()
 
     def test_wheel_from_sdist_contains_every_skill_and_reference(self) -> None:
-        self.assertIn("0.1.0rc3", self.wheel.name)
+        self.assertIn("0.1.0rc4", self.wheel.name)
         missing, extra, mismatched = asset_diff(self.expected, wheel_skill_assets(self.wheel))
         self.assertEqual(missing, [], msg="wheel omitted bundled skill assets")
         self.assertEqual(extra, [], msg="wheel added unexpected bundled skill assets")

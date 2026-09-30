@@ -24,7 +24,11 @@ state. Do not reproduce those checks in this skill.
    but not confirmed, which leaves both disabled in the written policy.
    Confirmation must be in this file before setup; a later conversation
    cannot enable the integrations. Never put a PAT, API key, password, or
-   credential in the answers file.
+   credential in the answers file. Named-request repository enrollment is
+   governed by the policy `enrollment` key (default: enabled, purposes
+   `work` and `review`); an installation may set `enrollment.enabled: false`
+   or narrow `enrollment.allowed_purposes` to restrict the later
+   `helmet prepare-repo` seam without touching the static allowlist.
 2. Ask the operator to create a separate fine-grained worker PAT with the
    required metadata, contents, pull-request, and issue permissions on the
    selected repositories. Extra public visibility is not a Hermes Helmet

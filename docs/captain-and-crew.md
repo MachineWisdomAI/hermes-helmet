@@ -111,7 +111,11 @@ secret values.
 
 ## Control loop
 
-1. Label an allowlisted open issue with the policy `dispatch_label`.
+1. Label an allowlisted open issue with the policy `dispatch_label`. When the
+   Captain explicitly asks the first officer to work on or review a named
+   repository outside the allowlist, `helmet prepare-repo` enrolls that exact
+   repository first; the named request is the authority, optional confirmation
+   is non-blocking, and review-only enrollment never dispatches or merges.
 2. The poller creates one Kanban root task for that issue URL.
 3. The executor opens a tested pull request as the configured worker and
    records `metadata.published_pr`.

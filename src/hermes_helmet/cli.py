@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from hermes_helmet import doctor as helmet_doctor
+from hermes_helmet import repo_enroll
 from hermes_helmet import setup as helmet_setup
 
 from hermes_helmet.authority import AuthorityError, load_authority
@@ -59,10 +60,13 @@ from hermes_helmet.helmet_issue import (
     DEFAULT_GH,
     DEFAULT_HERMES,
     DEFAULT_LEDGER,
+    DEFAULT_WORKER_RUNTIME,
     HelmetIssueError,
     SubprocessRunner,
     apply_review_outcome,
     load_policy_for_issue,
+    observed_github_login,
+    parse_worker_runtime,
     run_preflight_and_adopt,
     status_issue,
     wait_for_issue_change,
@@ -126,9 +130,23 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
         help=(
             "Optional Captain→worker transport command prefix "
             "(env HERMES_HELMET_WORKER_RUNTIME). Verbs: ledger-root, "
-            "ledger-watch, dispatch-root, wait. Does not invent a second ledger."
+            "ledger-watch, dispatch-root, prepare-repo, wait. Does not invent "
+            "a second ledger."
         ),
     )
+    parser.add_argument(
+        "--enrollment-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Named-request enrollment receipt directory "
+            "(env HERMES_HELMET_ENROLLMENT_DIR, else ~/.hermes-helmet/enrollments)"
+        ),
+    )
+
+
+def _enrollment_store(args: argparse.Namespace) -> repo_enroll.EnrollmentStore:
+    return repo_enroll.EnrollmentStore(getattr(args, "enrollment_dir", None))
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -144,6 +162,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             gh=args.gh,
             hermes=args.hermes,
             worker_runtime=args.worker_runtime,
+            enrollment_store=_enrollment_store(args),
         )
     except HelmetIssueError as exc:
         print(f"helmet status failed: {exc}", file=sys.stderr)
@@ -211,6 +230,7 @@ def cmd_issue(args: argparse.Namespace) -> int:
                 gh=args.gh,
                 hermes=args.hermes,
                 worker_runtime=args.worker_runtime,
+                enrollment_store=_enrollment_store(args),
             )
             print(json.dumps(checkpoint.to_public_dict(), indent=2, sort_keys=True))
             return 0
@@ -229,6 +249,7 @@ def cmd_issue(args: argparse.Namespace) -> int:
             parent_epic_url=args.parent_epic_url or None,
             merge_mode_choice=args.merge_mode,
             merge_mode_source="cli",
+            enrollment_store=_enrollment_store(args),
         )
     except HelmetIssueError as exc:
         print(f"helmet issue failed: {exc}", file=sys.stderr)
@@ -264,6 +285,7 @@ def cmd_epic(args: argparse.Namespace) -> int:
             extra_child_urls=args.child or (),
             worker_runtime=args.worker_runtime,
             merge_mode_choice=args.merge_mode,
+            enrollment_store=_enrollment_store(args),
         )
     except (HelmetEpicError, HelmetIssueError) as exc:
         print(f"helmet epic failed: {exc}", file=sys.stderr)
@@ -310,6 +332,7 @@ def cmd_epic_status(args: argparse.Namespace) -> int:
             hermes=args.hermes,
             extra_child_urls=args.child or (),
             worker_runtime=args.worker_runtime,
+            enrollment_store=_enrollment_store(args),
         )
     except (HelmetEpicError, HelmetIssueError) as exc:
         print(f"helmet epic-status failed: {exc}", file=sys.stderr)
@@ -347,6 +370,29 @@ def cmd_epic_status(args: argparse.Namespace) -> int:
         ):
             for url in urls:
                 print(f"  {label}: {url}")
+    return 0
+
+
+def cmd_prepare_repo(args: argparse.Namespace) -> int:
+    """Enroll an explicitly requested repository via the worker-runtime transport."""
+    try:
+        policy = load_authority(args.config)
+        runner = SubprocessRunner(gh=args.gh, hermes=args.hermes)
+        observed = observed_github_login(runner, gh=args.gh)
+        runtime = parse_worker_runtime(args.worker_runtime) or DEFAULT_WORKER_RUNTIME
+        result = repo_enroll.prepare_repository(
+            policy,
+            args.request_ref,
+            purpose=args.purpose,
+            runner=runner,
+            worker_runtime=runtime,
+            actor_login=observed,
+            store=repo_enroll.EnrollmentStore(args.enrollment_dir),
+        )
+    except (repo_enroll.EnrollmentError, AuthorityError, HelmetIssueError) as exc:
+        print(f"helmet prepare-repo failed: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result.to_public_dict(), indent=2, sort_keys=True))
     return 0
 
 
@@ -1218,6 +1264,50 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional explicit child issue URL (repeatable)",
     )
     epic_status_p.set_defaults(func=cmd_epic_status)
+
+    prep_p = sub.add_parser(
+        "prepare-repo",
+        help=(
+            "Enroll an explicitly requested repository (Captain-authorized, "
+            "idempotent; provisions the worker checkout via the runtime transport)"
+        ),
+    )
+    prep_p.add_argument(
+        "request_ref",
+        help="Exact owner/name slug, canonical issue/PR URL, or credential-free Git origin",
+    )
+    prep_p.add_argument(
+        "--purpose",
+        choices=sorted(repo_enroll.ENROLLMENT_PURPOSES),
+        required=True,
+        help="work = full participation; review = read/review only, no dispatch or merge",
+    )
+    prep_p.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG,
+        help="Authority policy JSON (version 2)",
+    )
+    prep_p.add_argument("--gh", default=DEFAULT_GH, help="gh binary")
+    prep_p.add_argument("--hermes", default=DEFAULT_HERMES, help="hermes binary")
+    prep_p.add_argument(
+        "--worker-runtime",
+        default="",
+        help=(
+            "Captain→worker transport command prefix "
+            "(env HERMES_HELMET_WORKER_RUNTIME); must support the prepare-repo verb"
+        ),
+    )
+    prep_p.add_argument(
+        "--enrollment-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Enrollment receipt directory "
+            "(env HERMES_HELMET_ENROLLMENT_DIR, else ~/.hermes-helmet/enrollments)"
+        ),
+    )
+    prep_p.set_defaults(func=cmd_prepare_repo)
 
     setup_p = sub.add_parser(
         "setup",

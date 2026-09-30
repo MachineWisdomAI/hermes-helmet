@@ -47,6 +47,7 @@ for required in \
     skills/helmet-epic/SKILL.md \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
+    src/hermes_helmet/repo_enroll.py \
     src/hermes_helmet/fava_trails.py \
     src/hermes_helmet/cli.py \
     src/hermes_helmet/install_skills.py \

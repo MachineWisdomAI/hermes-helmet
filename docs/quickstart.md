@@ -379,7 +379,10 @@ See [setup-helmet.md](setup-helmet.md).
 ## What this runtime does
 
 - Creates one Kanban root task per eligible issue (idempotent by issue URL)
-- Ignores closed, unlabeled, malformed, and non-allowlisted issues
+- Ignores closed, unlabeled, malformed, and non-allowlisted issues (the
+  Captain-side `helmet prepare-repo` named-request enrollment path can admit an
+  exact requested repository for first-officer workflows; the poller itself
+  stays on the static allowlist)
 - After a PR exists, trusted review activity creates one dependent same-PR repair
 - Coalesces activity behind an outstanding repair; later activity can succeed it
 - Never merges from the worker and never force-pushes

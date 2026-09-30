@@ -1018,6 +1018,173 @@ class DiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(chosen, delivered)
 
+    def test_timeline_foreign_cross_reference_is_ignored(self) -> None:
+        """A cross-referenced PR from another repo must not be fetched as local."""
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        runner = FakeRunner()
+        runner.open_pulls = []
+        foreign_slug = "other-org/other-repo"
+        runner.timeline = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "number": 103,
+                        "html_url": f"https://github.com/{foreign_slug}/pull/103",
+                        "repository_url": f"https://api.github.com/repos/{foreign_slug}",
+                        "url": f"https://api.github.com/repos/{foreign_slug}/issues/103",
+                        "pull_request": {
+                            "url": f"https://api.github.com/repos/{foreign_slug}/pulls/103",
+                            "html_url": f"https://github.com/{foreign_slug}/pull/103",
+                        },
+                    }
+                },
+            }
+        ]
+        refs = hi.discover_linked_pull_requests(issue, runner, gh="gh")  # type: ignore[arg-type]
+        self.assertEqual(refs, [])
+        foreign_endpoint = f"repos/{FIXTURE_SLUG}/pulls/103"
+        self.assertFalse(
+            any(foreign_endpoint in cmd for cmd in runner.calls),
+            "foreign cross-reference must not trigger a local pulls fetch",
+        )
+
+    def test_timeline_same_repo_cross_reference_still_discovered(self) -> None:
+        """A cross-referenced PR in the same repo is still discovered."""
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        runner = FakeRunner()
+        runner.open_pulls = []
+        runner.timeline = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "number": 10,
+                        "html_url": PR_URL,
+                        "repository_url": f"https://api.github.com/repos/{FIXTURE_SLUG}",
+                        "pull_request": {
+                            "url": f"https://api.github.com/repos/{FIXTURE_SLUG}/pulls/10",
+                            "html_url": PR_URL,
+                        },
+                    }
+                },
+            }
+        ]
+        refs = hi.discover_linked_pull_requests(issue, runner, gh="gh")  # type: ignore[arg-type]
+        self.assertEqual([ref.number for ref in refs], [10])
+
+    def test_timeline_conflicting_repo_identity_fails_closed(self) -> None:
+        """Contradictory identity metadata claiming the local repo fails closed."""
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        runner = FakeRunner()
+        runner.open_pulls = []
+        runner.timeline = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "number": 10,
+                        "html_url": PR_URL,
+                        "repository_url": "https://api.github.com/repos/other-org/other-repo",
+                        "pull_request": {
+                            "url": f"https://api.github.com/repos/{FIXTURE_SLUG}/pulls/10",
+                        },
+                    }
+                },
+            }
+        ]
+        with self.assertRaises(hi.HelmetIssueError):
+            hi.discover_linked_pull_requests(issue, runner, gh="gh")  # type: ignore[arg-type]
+
+    def test_timeline_missing_repo_identity_is_ignored(self) -> None:
+        """A PR reference with no usable identity is ignored, never adopted."""
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        runner = FakeRunner()
+        runner.open_pulls = []
+        runner.timeline = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "number": 10,
+                        "pull_request": {},
+                    }
+                },
+            }
+        ]
+        refs = hi.discover_linked_pull_requests(issue, runner, gh="gh")  # type: ignore[arg-type]
+        self.assertEqual(refs, [])
+        self.assertFalse(
+            any(f"repos/{FIXTURE_SLUG}/pulls/10" in cmd for cmd in runner.calls),
+            "identity-less cross-reference must not trigger a local pulls fetch",
+        )
+
+    def test_timeline_conflicting_foreign_identities_are_ignored(self) -> None:
+        """Contradictory metadata that never claims the local repo is ignored."""
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        runner = FakeRunner()
+        runner.open_pulls = []
+        runner.timeline = [
+            {
+                "event": "cross-referenced",
+                "source": {
+                    "issue": {
+                        "number": 10,
+                        "html_url": "https://github.com/other-org/other-repo/pull/10",
+                        "repository_url": "https://api.github.com/repos/third-org/third-repo",
+                        "pull_request": {},
+                    }
+                },
+            }
+        ]
+        refs = hi.discover_linked_pull_requests(issue, runner, gh="gh")  # type: ignore[arg-type]
+        self.assertEqual(refs, [])
+
 
 class HeadAndMergeTests(unittest.TestCase):
     def test_changed_head_invalidates_clean(self) -> None:
@@ -2129,6 +2296,187 @@ class OrchestrationPassTests(unittest.TestCase):
             started_at=hi._utc_now(),
         )
         self.assertIsNotNone(hi.budget_exhausted(cp, policy))
+
+
+class EnrolledRepoRunner(FakeRunner):
+    """FakeRunner serving live GitHub endpoints for an enrolled (non-allowlisted) repo."""
+
+    def __init__(self, slug: str, number: int) -> None:
+        super().__init__()
+        self._slug = slug
+        self._number = number
+        self.issue = {
+            "number": number,
+            "title": "Enrolled issue",
+            "body": "Named-request work.\n",
+            "state": "open",
+            "html_url": f"https://github.com/{slug}/issues/{number}",
+            "labels": [{"name": "ready-for-agent"}, {"name": "hermes-kanban-go"}],
+        }
+
+    def run(self, command: list[str]) -> str:
+        if command[0].endswith("gh") and len(command) > 2 and command[1] == "api":
+            endpoint = command[-1]
+            base = f"repos/{self._slug}/issues/{self._number}"
+            if endpoint == base:
+                return json.dumps(self.issue)
+            if endpoint.startswith(f"{base}/timeline"):
+                return json.dumps([])
+            if endpoint.startswith(f"repos/{self._slug}/pulls"):
+                return json.dumps([])
+        return super().run(command)
+
+
+class NamedRequestEnrollmentTests(unittest.TestCase):
+    """Named-request enrollment ceilings: review-only, unattended continuation."""
+
+    def _store_with_receipt(
+        self, directory: Path, slug: str, purposes
+    ) -> hi.repo_enroll.EnrollmentStore:
+        store = hi.repo_enroll.EnrollmentStore(directory)
+        store.save(
+            hi.repo_enroll.EnrollmentReceipt(
+                version=hi.repo_enroll.RECEIPT_VERSION,
+                slug=slug,
+                purposes=tuple(purposes),
+                worktree=f"/opt/data/repos/{slug.split('/', 1)[1]}",
+                request_ref=slug,
+                actor=CAPTAIN,
+                authorized_at="2026-09-30T00:00:00+00:00",
+                created=True,
+            )
+        )
+        return store
+
+    def test_review_enrollment_blocks_dispatch(self) -> None:
+        policy = _policy()
+        slug = "example-org/enrolled-repo"
+        issue_url = f"https://github.com/{slug}/issues/7"
+        runner = EnrolledRepoRunner(slug, 7)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store_with_receipt(Path(tmp) / "enroll", slug, ("review",))
+            checkpoint, _ = hi.run_preflight_and_adopt(
+                policy,
+                issue_url,
+                ledger=Path(tmp) / "ledger.sqlite3",
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,  # type: ignore[arg-type]
+                gh="gh",
+                hermes="hermes",
+                host_continuation="session",
+                apply_dispatch=True,
+                worker_runtime=(),
+                enrollment_store=store,
+            )
+            self.assertEqual(checkpoint.state, "FAILED")
+            self.assertIn(
+                "review_enrollment_no_dispatch", checkpoint.last_blocker or ""
+            )
+            # No dispatch mutation happened.
+            self.assertEqual(runner.labels_posted, [])
+            self.assertEqual(runner.created_tasks, [])
+
+    def test_work_enrollment_continues_unattended_with_named_request_source(self) -> None:
+        policy = _policy()
+        slug = "example-org/enrolled-repo"
+        issue_url = f"https://github.com/{slug}/issues/7"
+        runner = EnrolledRepoRunner(slug, 7)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store_with_receipt(Path(tmp) / "enroll", slug, ("work",))
+            checkpoint, _ = hi.run_preflight_and_adopt(
+                policy,
+                issue_url,
+                ledger=Path(tmp) / "ledger.sqlite3",
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,  # type: ignore[arg-type]
+                gh="gh",
+                hermes="hermes",
+                host_continuation="session",
+                apply_dispatch=False,
+                worker_runtime=(),
+                enrollment_store=store,
+            )
+            self.assertFalse(checkpoint.merge_choice_required)
+            self.assertEqual(checkpoint.merge_mode_choice, "unattended_when_clean")
+            self.assertEqual(checkpoint.merge_mode_source, "named_request")
+            self.assertTrue(
+                any("named_request_unattended_default" in n for n in checkpoint.notes)
+            )
+
+    def test_merge_gate_blocks_review_enrollment(self) -> None:
+        policy = _policy()
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body="",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+            enrollment_purpose="review",
+        )
+        pull = hi.PullRequestRef(
+            FIXTURE_SLUG,
+            10,
+            PR_URL,
+            "abc123deadbeef",
+            "automation/demo-repo-2",
+            "main",
+            WORKER,
+            "open",
+            False,
+            "clean",
+            False,
+        )
+        checkpoint = hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="READY",
+            clean_head="abc123deadbeef",
+            reviewed_head="abc123deadbeef",
+        )
+        decision, blocker = hi.evaluate_merge_gate(policy, issue, pull, checkpoint)
+        self.assertEqual(decision, "not_ready")
+        self.assertIn("review_enrollment_no_merge", blocker or "")
+
+    def test_status_read_only_does_not_mutate_enrollment_store(self) -> None:
+        policy = _policy()
+        slug = "example-org/enrolled-repo"
+        issue_url = f"https://github.com/{slug}/issues/7"
+        runner = EnrolledRepoRunner(slug, 7)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store_with_receipt(Path(tmp) / "enroll", slug, ("work",))
+            before = sorted(p.name for p in store.directory.glob("*.json"))
+            report = hi.status_issue(
+                policy,
+                issue_url,
+                ledger=Path(tmp) / "ledger.sqlite3",
+                checkpoint_dir=Path(tmp) / "cp",
+                runner=runner,  # type: ignore[arg-type]
+                gh="gh",
+                hermes="hermes",
+                enrollment_store=store,
+            )
+            self.assertIsNotNone(report)
+            after = sorted(p.name for p in store.directory.glob("*.json"))
+            self.assertEqual(before, after)
+            self.assertEqual(list((Path(tmp) / "cp").glob("**/*")), [])
+
+    def test_unenrolled_repo_still_rejected(self) -> None:
+        policy = _policy()
+        runner = EnrolledRepoRunner("example-org/unknown-repo", 9)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = hi.repo_enroll.EnrollmentStore(Path(tmp) / "enroll")
+            with self.assertRaisesRegex(
+                hi.HelmetIssueError, "outside the configured allowlist"
+            ):
+                hi.load_issue(
+                    policy,
+                    "https://github.com/example-org/unknown-repo/issues/9",
+                    runner,  # type: ignore[arg-type]
+                    gh="gh",
+                    enrollment_store=store,
+                )
 
 
 class InstallSkillsTests(unittest.TestCase):

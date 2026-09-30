@@ -987,6 +987,54 @@ class DoctorAndSkillTests(unittest.TestCase):
             self.assertFalse(github.mutated)
             self.assertEqual(github.created_labels, [])
 
+    def test_doctor_preserves_nondefault_enrollment_through_canonicalization(self) -> None:
+        """Explicit enrollment ceilings must survive the doctor canonical path."""
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report = _run_setup(Path(tmp), _answers())
+            self.assertTrue(report.ok)
+            home = Path(tmp) / "home"
+            root = home / ".hermes-helmet"
+            policy_path = root / "policy.json"
+
+            # Operator narrows enrollment after setup, then re-canonicalizes
+            # through the same serializer path setup/doctor use.
+            raw = json.loads(policy_path.read_text(encoding="utf-8"))
+            raw["enrollment"] = {"enabled": True, "allowed_purposes": ["review"]}
+            policy = authority.policy_from_mapping(raw)
+            policy_text = (
+                json.dumps(authority.authority_public_dict(policy), indent=2, sort_keys=True)
+                + "\n"
+            )
+            contract = authority.render_crew_contract(policy)
+            policy_path.write_text(policy_text, encoding="utf-8")
+            (root / "generated" / "crew-contract.md").write_text(contract, encoding="utf-8")
+            state_path = root / "setup-state.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["fingerprint"] = hashlib.sha256(
+                (policy_text + "\0" + contract).encode("utf-8")
+            ).hexdigest()
+            state_path.write_text(
+                json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+
+            github = FakeGitHub(
+                labels={"example-org/demo-repo": {"ready-for-agent", "hermes-kanban-go"}}
+            )
+            result = helmet_doctor.doctor(
+                policy_path,
+                home=home,
+                skills_prefix=home,
+                github=github,
+                secret_file=root / "secrets" / "github_worker_pat",
+                model_transport=FakeTransport(),
+            )
+            self.assertTrue(result["policy_drift"]["ok"], result["policy_drift"])
+            on_disk = authority.load_authority(policy_path)
+            self.assertEqual(on_disk.enrollment.allowed_purposes, ("review",))
+            self.assertTrue(on_disk.enrollment.enabled)
+
     def test_doctor_does_not_mutate_labels_or_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _run_setup(Path(tmp), _answers())

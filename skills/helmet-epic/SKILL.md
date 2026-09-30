@@ -104,9 +104,11 @@ or issue does not satisfy its unfinished outcome.
    `(human only)` / `human-only`, a `## Human-only …` section heading, or a whole-line
    `never dispatch` instruction — not when ordinary issues merely discuss those gates.
 5. Validation rejects cycles, self-edges, missing or closed-as-incomplete blockers
-   (`state_reason=not_planned` / `duplicate`), non-allowlisted repositories,
+   (`state_reason=not_planned` / `duplicate`), repositories that are neither
+   allowlisted nor covered by a valid named-request enrollment receipt,
    duplicate explicit child seeds, ambiguous multi-Parent sets, and malformed
-   operative Parent/Blocked-by tokens.
+   operative Parent/Blocked-by tokens. Review-only enrolled children are never
+   dispatched; they classify as `awaiting_human`.
 6. Any change to children or blocking edges pauses **new** dispatch until the
    Captain passes `--accept-graph` for the refreshed fingerprint.
 7. Reinvocation resumes existing epic and **active** child runs (including
@@ -183,7 +185,10 @@ helmet install-skills --target hermes
    persisted choice to every child. Do not ask again unless policy, authority
    markers, validated parent, or the accepted graph changes. Scheduled runs
    honor a valid persisted choice and otherwise use the policy default without
-   a question.
+   a question. A named-request enrolled epic root is explicit Captain
+   delegation for that exact repo: an optional consultation must not block
+   unattended continuation; the effective permitted policy default is persisted
+   (source `named_request`) and used instead of a fresh question.
 3. Report the effective merge mode and continuation mechanism at startup.
 4. Verify observed GitHub login is Captain and differs from worker.
 5. Load epic root: must be open; must **not** carry `dispatch_label`.
@@ -193,9 +198,11 @@ helmet install-skills --target hermes
 
 1. Prefer native sub-issue/dependency APIs when non-empty.
 2. Else discover children via Parent links (search + optional `--child` seeds).
-3. Parse Blocked-by URLs; load external blockers on allowlisted repos.
+3. Parse Blocked-by URLs; load external blockers on allowlisted or valid
+   enrolled repos.
 4. Reject cycles, self-edges, incomplete closed blockers, ambiguous parents,
-   non-allowlisted repos.
+   and repos that are neither allowlisted nor covered by a valid named-request
+   enrollment receipt. A review-only enrolled epic root is never dispatched.
 5. Fingerprint `root + children + edges`. On fingerprint change vs accepted
    checkpoint, set `GRAPH_CHANGED` and pause new dispatch until `--accept-graph`.
 
