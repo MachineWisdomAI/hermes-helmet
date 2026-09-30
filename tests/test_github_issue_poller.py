@@ -302,6 +302,7 @@ class GitHubIssuePollerTests(unittest.TestCase):
                 command[command.index("--completion-contract") + 1],
                 FIXTURE_SLUG,
             )
+            self.assertEqual(command[command.index("--max-runtime") + 1], "86400")
             self.assertIn("hermes-kanban-go", json.dumps(runner.records))
             with sqlite3.connect(root / "ledger.sqlite3") as ledger:
                 self.assertEqual(
@@ -386,6 +387,7 @@ class GitHubIssuePollerTests(unittest.TestCase):
                         repair[repair.index("--completion-contract") + 1],
                         expected_contract,
                     )
+                    self.assertEqual(repair[repair.index("--max-runtime") + 1], "86400")
                     self.assertIn(
                         "metadata.published_pr",
                         repair[repair.index("--body") + 1],
@@ -1718,7 +1720,7 @@ class GitHubIssuePollerTests(unittest.TestCase):
             (policy.inference_provider, policy.inference_model),
             ("openai", "gpt-4.1"),
         )
-        self.assertEqual(policy.worker_max_turns, 100)
+        self.assertEqual(policy.worker_max_turns, 2000)
         self.assertEqual(
             policy.trusted_review_bots,
             ("github-code-quality[bot]",),

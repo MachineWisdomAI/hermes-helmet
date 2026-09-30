@@ -14,6 +14,7 @@ values.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -41,6 +42,16 @@ DEFAULT_WORKER_COMPLETION_CONTRACT = "github-pr"
 LOCAL_ONLY_COMPLETION_CONTRACT = "local-only"
 WORKER_COMPLETION_CONTRACTS = frozenset(
     {DEFAULT_WORKER_COMPLETION_CONTRACT, LOCAL_ONLY_COMPLETION_CONTRACT}
+)
+DEFAULT_MAX_ISSUE_RUNTIME_MINUTES = 8640  # 6 days, including managed waits
+DEFAULT_MAX_EPIC_RUNTIME_MINUTES = 8640
+DEFAULT_MAX_REPAIR_ROUNDS = 10
+DEFAULT_WORKER_MAX_TURNS = 2000
+DEFAULT_WORKER_MAX_RUNTIME_SECONDS = 86400  # 24 hours per worker attempt
+MANAGED_WAIT_TIMEOUT_SECONDS = 1800
+ELAPSED_WINDOW_DISCLAIMER = (
+    "These are bounded elapsed windows, not a promise of uninterrupted CPU "
+    "execution or unlimited model spending."
 )
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 OWNER_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -136,7 +147,14 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
 COMPANY_KEYS = frozenset({"display_name", "slug"})
 MERGE_KEYS = frozenset({"default_mode", "unattended_marker", "narrow_marker"})
 INTEGRATION_KEYS = frozenset({"openviking", "fava_trails", "signal"})
-BUDGET_KEYS = frozenset({"max_issue_runtime_minutes", "max_repair_rounds"})
+BUDGET_KEYS = frozenset(
+    {
+        "max_issue_runtime_minutes",
+        "max_epic_runtime_minutes",
+        "max_repair_rounds",
+        "worker_max_runtime_seconds",
+    }
+)
 PEER_OBJECT_KEYS = frozenset({"id"})
 REPOSITORY_KEYS = frozenset({"slug", "worktree"})
 SKILLS_KEYS = frozenset({"company_pack"})
@@ -169,8 +187,10 @@ class IntegrationChoices:
 
 @dataclass(frozen=True)
 class Budgets:
-    max_issue_runtime_minutes: int = 240
-    max_repair_rounds: int = 10
+    max_issue_runtime_minutes: int = DEFAULT_MAX_ISSUE_RUNTIME_MINUTES
+    max_epic_runtime_minutes: int = DEFAULT_MAX_EPIC_RUNTIME_MINUTES
+    max_repair_rounds: int = DEFAULT_MAX_REPAIR_ROUNDS
+    worker_max_runtime_seconds: int = DEFAULT_WORKER_MAX_RUNTIME_SECONDS
 
 
 @dataclass(frozen=True)
@@ -311,6 +331,160 @@ def _require_positive_int(raw: Mapping[str, object], field: str) -> int:
     return value
 
 
+def _optional_positive_int(
+    raw: Mapping[str, object],
+    field: str,
+    default: int,
+    *,
+    error_field: str | None = None,
+) -> int:
+    if field not in raw:
+        return default
+    value = raw.get(field)
+    name = error_field or field
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise _field_error(name, "must be a positive integer")
+    return value
+
+
+def parse_iso_datetime(value: str) -> datetime | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def budget_deadline_iso(started_at: str, minutes: int) -> str | None:
+    started = parse_iso_datetime(started_at)
+    if started is None or minutes < 1:
+        return None
+    return (started + timedelta(minutes=minutes)).replace(microsecond=0).isoformat()
+
+
+def budget_elapsed_exceeds(
+    started_at: str,
+    minutes: int,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    started = parse_iso_datetime(started_at)
+    if started is None or minutes < 1:
+        return False
+    current = now or datetime.now(timezone.utc)
+    return (current - started).total_seconds() > minutes * 60
+
+
+def effective_budgets_dict(policy: Policy) -> dict[str, object]:
+    return {
+        "max_issue_runtime_minutes": policy.budgets.max_issue_runtime_minutes,
+        "max_epic_runtime_minutes": policy.budgets.max_epic_runtime_minutes,
+        "max_repair_rounds": policy.budgets.max_repair_rounds,
+        "worker_max_runtime_seconds": policy.budgets.worker_max_runtime_seconds,
+        "worker_max_turns": policy.worker_max_turns,
+        "managed_wait_timeout_seconds": MANAGED_WAIT_TIMEOUT_SECONDS,
+    }
+
+
+def budget_provenance(
+    policy: Policy,
+    started_at: str,
+    *,
+    window_minutes: int,
+) -> dict[str, object]:
+    deadline = budget_deadline_iso(started_at, window_minutes)
+    return {
+        "started_at": started_at or None,
+        "deadline": deadline,
+        "start_provenance": "checkpoint.started_at" if started_at else None,
+        "window_minutes": window_minutes,
+    }
+
+
+def _minutes_phrase(minutes: int) -> str:
+    if minutes == DEFAULT_MAX_ISSUE_RUNTIME_MINUTES:
+        return f"{minutes} minutes (6 days)"
+    if minutes == 1440:
+        return f"{minutes} minutes (24 hours)"
+    return f"{minutes} minutes"
+
+
+def render_budget_announcement(
+    policy: Policy,
+    *,
+    started_at: str = "",
+    merge_mode: str,
+    merge_source: str,
+    continuation: str,
+    scope: str = "epic",
+) -> str:
+    """Captain-facing effective budget text. Uses actual policy values, not slogans."""
+
+    issue_window = _minutes_phrase(policy.budgets.max_issue_runtime_minutes)
+    epic_window = _minutes_phrase(policy.budgets.max_epic_runtime_minutes)
+    worker_seconds = policy.budgets.worker_max_runtime_seconds
+    deadline = budget_deadline_iso(
+        started_at,
+        policy.budgets.max_epic_runtime_minutes
+        if scope == "epic"
+        else policy.budgets.max_issue_runtime_minutes,
+    )
+    origin = (
+        f" original start {started_at}; deadline {deadline}."
+        if started_at and deadline
+        else " measured from the original durable start, not restarts."
+    )
+    if scope == "epic":
+        windows = (
+            f"Epic Captain window {epic_window}; child Captain window {issue_window}."
+        )
+    else:
+        windows = f"Captain issue window {issue_window}."
+    return (
+        f"{windows} Worker attempt quota {worker_seconds} seconds wall-clock and "
+        f"{policy.worker_max_turns} turns; repair rounds capped at "
+        f"{policy.budgets.max_repair_rounds}. Effective merge mode is `{merge_mode}` "
+        f"({merge_source}). Continuation is `{continuation}` with one event-driven "
+        f"waiter per child and a {MANAGED_WAIT_TIMEOUT_SECONDS}-second wait bound."
+        f"{origin} {ELAPSED_WINDOW_DISCLAIMER}"
+    )
+
+
+def captain_budget_status_details(
+    policy: Policy,
+    *,
+    started_at: str = "",
+    merge_mode: str,
+    merge_source: str,
+    continuation: str,
+    scope: str = "issue",
+) -> dict[str, object]:
+    window_minutes = (
+        policy.budgets.max_epic_runtime_minutes
+        if scope == "epic"
+        else policy.budgets.max_issue_runtime_minutes
+    )
+    return {
+        "budgets": effective_budgets_dict(policy),
+        "budget_window": budget_provenance(
+            policy, started_at, window_minutes=window_minutes
+        ),
+        "budget_announcement": render_budget_announcement(
+            policy,
+            started_at=started_at,
+            merge_mode=merge_mode,
+            merge_source=merge_source,
+            continuation=continuation,
+            scope=scope,
+        ),
+    }
+
+
 def _require_bool(raw: Mapping[str, object], field: str, default: bool) -> bool:
     if field not in raw:
         return default
@@ -443,15 +617,31 @@ def _parse_budgets(raw: Mapping[str, object]) -> Budgets:
     if not isinstance(value, dict):
         raise _field_error("budgets", "must be an object")
     _reject_unknown_and_secret_keys(value, BUDGET_KEYS, prefix="budgets")
-    max_issue = value.get("max_issue_runtime_minutes", 240)
-    max_repair = value.get("max_repair_rounds", 10)
-    if not isinstance(max_issue, int) or isinstance(max_issue, bool) or max_issue < 1:
-        raise _field_error("budgets.max_issue_runtime_minutes", "must be a positive integer")
-    if not isinstance(max_repair, int) or isinstance(max_repair, bool) or max_repair < 1:
-        raise _field_error("budgets.max_repair_rounds", "must be a positive integer")
     return Budgets(
-        max_issue_runtime_minutes=max_issue,
-        max_repair_rounds=max_repair,
+        max_issue_runtime_minutes=_optional_positive_int(
+            value,
+            "max_issue_runtime_minutes",
+            DEFAULT_MAX_ISSUE_RUNTIME_MINUTES,
+            error_field="budgets.max_issue_runtime_minutes",
+        ),
+        max_epic_runtime_minutes=_optional_positive_int(
+            value,
+            "max_epic_runtime_minutes",
+            DEFAULT_MAX_EPIC_RUNTIME_MINUTES,
+            error_field="budgets.max_epic_runtime_minutes",
+        ),
+        max_repair_rounds=_optional_positive_int(
+            value,
+            "max_repair_rounds",
+            DEFAULT_MAX_REPAIR_ROUNDS,
+            error_field="budgets.max_repair_rounds",
+        ),
+        worker_max_runtime_seconds=_optional_positive_int(
+            value,
+            "worker_max_runtime_seconds",
+            DEFAULT_WORKER_MAX_RUNTIME_SECONDS,
+            error_field="budgets.worker_max_runtime_seconds",
+        ),
     )
 
 
@@ -684,7 +874,9 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
     worker = _worker_login(raw)
     inference_provider = _require_non_empty_string(raw, "inference_provider")
     inference_model = _require_non_empty_string(raw, "inference_model")
-    worker_max_turns = _require_positive_int(raw, "worker_max_turns")
+    worker_max_turns = _optional_positive_int(
+        raw, "worker_max_turns", DEFAULT_WORKER_MAX_TURNS
+    )
     required_label = _dispatch_label(raw)
     ready_label = _optional_non_empty_string(raw, "ready_label", "ready-for-agent")
     # ready vs dispatch is the specified→executable frontier; collapse is fail-closed.
@@ -1065,8 +1257,9 @@ occurred when it has not.
   authorize unattended merge from GitHub `mergeable_state=clean` without
   independently verified required checks or explicit Captain approval.
 - Worker profile `{policy.assignee}` uses provider `{policy.inference_provider}`
-  and model `{policy.inference_model}` with max turns {policy.worker_max_turns}.
-  Optional FAVA generation, OpenViking semantic generation, and embedding lanes
+  and model `{policy.inference_model}` with max turns {policy.worker_max_turns}
+  and a {policy.budgets.worker_max_runtime_seconds}-second wall-clock bound per
+  attempt. Optional FAVA generation, OpenViking semantic generation, and embedding lanes
   are independent contracts and are never assumed to share that artifact.
 - Captain model/provider consent is
   `{str(policy.captain_model_provider_consent).lower()}`. When true, accepted
@@ -1077,8 +1270,10 @@ occurred when it has not.
   consent or obtain it before external model use. This instruction-level
   consent record is not a runtime egress guard.
 - Epic parallelism is capped at {policy.max_epic_parallelism}. Issue runtime
-  budget is {policy.budgets.max_issue_runtime_minutes} minutes; repair rounds
-  are capped at {policy.budgets.max_repair_rounds}.
+  budget is {policy.budgets.max_issue_runtime_minutes} minutes; epic Captain
+  window is {policy.budgets.max_epic_runtime_minutes} minutes from the original
+  durable start; repair rounds are capped at {policy.budgets.max_repair_rounds}.
+  {ELAPSED_WINDOW_DISCLAIMER}
 
 ## Required audit closeout
 
@@ -1197,7 +1392,9 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
         },
         "budgets": {
             "max_issue_runtime_minutes": policy.budgets.max_issue_runtime_minutes,
+            "max_epic_runtime_minutes": policy.budgets.max_epic_runtime_minutes,
             "max_repair_rounds": policy.budgets.max_repair_rounds,
+            "worker_max_runtime_seconds": policy.budgets.worker_max_runtime_seconds,
         },
         "max_epic_parallelism": policy.max_epic_parallelism,
         "openviking_peers": [{"id": peer.peer_id} for peer in policy.openviking_peers],

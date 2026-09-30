@@ -166,6 +166,22 @@ def cmd_status(args: argparse.Namespace) -> int:
             f"{report.details.get('merge_authority_fingerprint') or '-'}"
         )
         print(f"merge_choice_required: {bool(report.details.get('merge_choice_required'))}")
+        window = report.details.get("budget_window")
+        budgets = report.details.get("budgets")
+        window = window if isinstance(window, dict) else {}
+        budgets = budgets if isinstance(budgets, dict) else {}
+        print(f"started_at:     {window.get('started_at') or '-'}")
+        print(f"deadline:       {window.get('deadline') or '-'}")
+        print(
+            "captain_window: "
+            f"{window.get('window_minutes') or budgets.get('max_issue_runtime_minutes') or '-'}"
+            " minutes"
+        )
+        print(
+            "worker_quota:   "
+            f"{budgets.get('worker_max_runtime_seconds') or '-'}s / "
+            f"{budgets.get('worker_max_turns') or '-'} turns"
+        )
         print(f"blocker:        {report.blocker or '-'}")
         print(f"terminal:       {report.terminal}")
     return 0
@@ -335,6 +351,25 @@ def cmd_epic_status(args: argparse.Namespace) -> int:
             f"{report.details.get('merge_authority_fingerprint') or '-'}"
         )
         print(f"merge_choice_required: {bool(report.details.get('merge_choice_required'))}")
+        window = report.details.get("budget_window")
+        budgets = report.details.get("budgets")
+        window = window if isinstance(window, dict) else {}
+        budgets = budgets if isinstance(budgets, dict) else {}
+        print(f"started_at:     {window.get('started_at') or '-'}")
+        print(f"deadline:       {window.get('deadline') or '-'}")
+        print(
+            "epic_window:    "
+            f"{budgets.get('max_epic_runtime_minutes') or '-'} minutes"
+        )
+        print(
+            "child_window:   "
+            f"{budgets.get('max_issue_runtime_minutes') or '-'} minutes"
+        )
+        print(
+            "worker_quota:   "
+            f"{budgets.get('worker_max_runtime_seconds') or '-'}s / "
+            f"{budgets.get('worker_max_turns') or '-'} turns"
+        )
         print(f"blocker:        {report.blocker or '-'}")
         print(f"terminal:       {report.terminal}")
         for label, urls in (

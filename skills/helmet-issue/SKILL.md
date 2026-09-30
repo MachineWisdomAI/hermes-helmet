@@ -149,10 +149,15 @@ helmet install-skills --target hermes
    changes. Scheduled/non-interactive runs honor a valid persisted choice and
    otherwise use the policy default without a question. An explicit manual
    choice cannot later be widened.
-3. At startup, report the effective merge mode and continuation mechanism. For
-   a session host, keep exactly one bounded `helmet wait ISSUE_URL
-   --timeout-seconds 1800` handle and reconcile after meaningful wakes or
-   timeouts; do not emit repeated unchanged updates or create duplicate waiters.
+3. At startup, report the effective Captain issue window, worker wall-clock and
+   turn quotas, repair limit, merge mode, and continuation mechanism from
+   `helmet status --json` (`details.budget_announcement`, `details.budgets`,
+   `details.budget_window`). Announce the actual policy values; do not promise
+   six days when the effective window is shorter. These are bounded elapsed
+   windows, not uninterrupted CPU or unlimited model spend. For a session host,
+   keep exactly one bounded `helmet wait ISSUE_URL --timeout-seconds 1800`
+   handle and reconcile after meaningful wakes or timeouts; do not emit repeated
+   unchanged budget announcements or create duplicate waiters.
 4. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
    allowlist, open issue state, ready/dispatch labels, and budgets are checked.
 5. Stop with precise status on authority mismatch, closed issue, non-allowlisted

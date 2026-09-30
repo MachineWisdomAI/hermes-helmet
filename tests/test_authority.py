@@ -66,7 +66,10 @@ class AuthorityTests(unittest.TestCase):
         )
         self.assertEqual(policy.merge_default_mode, "unattended_when_clean")
         self.assertFalse(policy.integrations.openviking)
-        self.assertEqual(policy.budgets.max_issue_runtime_minutes, 240)
+        self.assertEqual(policy.budgets.max_issue_runtime_minutes, 8640)
+        self.assertEqual(policy.budgets.max_epic_runtime_minutes, 8640)
+        self.assertEqual(policy.budgets.worker_max_runtime_seconds, 86400)
+        self.assertEqual(policy.worker_max_turns, 2000)
         self.assertEqual(policy.max_epic_parallelism, 2)
         self.assertEqual(
             [peer.peer_id for peer in policy.openviking_peers],
@@ -85,6 +88,8 @@ class AuthorityTests(unittest.TestCase):
         self.assertIn("must not be stored as a `gh` profile", contract)
         self.assertIn("Default deny", contract)
         self.assertIn("defaults to unattended merge", contract)
+        self.assertIn("8640", contract)
+        self.assertIn("bounded elapsed windows", contract)
         self.assertIn("What did it read?", contract)
         self.assertIn("Where did the human approve, reject, or correct it?", contract)
         for marker in FORBIDDEN_PUBLIC_MARKERS:
@@ -104,6 +109,32 @@ class AuthorityTests(unittest.TestCase):
         text = EXAMPLE_POLICY.read_text(encoding="utf-8")
         for marker in FORBIDDEN_PUBLIC_MARKERS:
             self.assertNotIn(marker, text)
+
+    def test_omitted_budgets_and_turns_receive_documented_defaults(self) -> None:
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        raw.pop("worker_max_turns", None)
+        raw.pop("budgets", None)
+        policy = authority.policy_from_mapping(raw)
+        self.assertEqual(policy.worker_max_turns, 2000)
+        self.assertEqual(policy.budgets.max_issue_runtime_minutes, 8640)
+        self.assertEqual(policy.budgets.max_epic_runtime_minutes, 8640)
+        self.assertEqual(policy.budgets.max_repair_rounds, 10)
+        self.assertEqual(policy.budgets.worker_max_runtime_seconds, 86400)
+        short = dict(raw, budgets={"max_issue_runtime_minutes": 120})
+        explicit = authority.policy_from_mapping(short)
+        self.assertEqual(explicit.budgets.max_issue_runtime_minutes, 120)
+        self.assertEqual(explicit.budgets.max_epic_runtime_minutes, 8640)
+        announcement = authority.render_budget_announcement(
+            explicit,
+            started_at="2026-01-01T00:00:00+00:00",
+            merge_mode="unattended_when_clean",
+            merge_source="policy",
+            continuation="session",
+            scope="epic",
+        )
+        self.assertIn("120 minutes", announcement)
+        self.assertNotIn("6 days", announcement.split("child Captain window", 1)[1][:80])
+        self.assertIn("bounded elapsed windows", announcement)
 
     def test_worker_access_scope_defaults_and_rejects_unknown(self) -> None:
         base = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
@@ -224,6 +255,9 @@ class AuthorityTests(unittest.TestCase):
             ),
             ({"budgets": {"max_issue_runtime_minutes": 0, "max_repair_rounds": 1}}, "budgets"),
             ({"budgets": {"max_issue_runtime_minutes": 1, "max_repair_rounds": -3}}, "budgets"),
+            ({"budgets": {"max_epic_runtime_minutes": 0}}, "budgets"),
+            ({"budgets": {"worker_max_runtime_seconds": -1}}, "budgets"),
+            ({"worker_max_turns": 0}, "worker_max_turns"),
             ({"max_epic_parallelism": 0}, "max_epic_parallelism"),
             (
                 {

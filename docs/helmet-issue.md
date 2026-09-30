@@ -85,7 +85,7 @@ Non-secret JSON under `~/.hermes-helmet/checkpoints/` by default (override with
 `HERMES_HELMET_CHECKPOINT_DIR` or `--checkpoint-dir`), keyed by issue URL digest.
 Stores state, root task id, PR URL, reviewed/clean head SHAs, repair round count,
 effective merge mode, persisted choice/source, authority fingerprint,
-`merge_choice_required`, and structured blocker/operation codes. Never stores tokens, raw
+`merge_choice_required`, original `started_at`, and structured blocker/operation codes. Never stores tokens, raw
 command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,

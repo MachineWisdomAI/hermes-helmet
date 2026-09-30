@@ -34,7 +34,7 @@ Load helpers:
   "assignee": "builder",
   "inference_provider": "openai",
   "inference_model": "gpt-4.1",
-  "worker_max_turns": 100,
+  "worker_max_turns": 2000,
   "ready_label": "ready-for-agent",
   "dispatch_label": "hermes-kanban-go",
   "cron_deliver": "local",
@@ -52,8 +52,10 @@ Load helpers:
     "signal": false
   },
   "budgets": {
-    "max_issue_runtime_minutes": 240,
-    "max_repair_rounds": 10
+    "max_issue_runtime_minutes": 8640,
+    "max_epic_runtime_minutes": 8640,
+    "max_repair_rounds": 10,
+    "worker_max_runtime_seconds": 86400
   },
   "max_epic_parallelism": 2,
   "openviking_peers": [
@@ -144,6 +146,15 @@ Optional executor company pack (omit for minimum startup):
   `local-only` does not authorize unattended merge from GitHub
   `mergeable_state=clean` without independently verified required checks or
   explicit Captain approval.
+- Omitted `worker_max_turns` defaults to `2000`. Invalid explicit values are
+  rejected. Omitted `budgets` default to a 8,640-minute (6 day) Captain issue
+  window, a 8,640-minute epic Captain window, 10 repair rounds, and a 86,400
+  second (24 hour) worker wall-clock bound per Kanban attempt. Explicit values
+  remain the effective policy. Native Kanban create passes `--max-runtime` for
+  new root and repair tasks; adopted tasks keep their identity. These windows
+  are elapsed bounds, including managed waits, not a promise of uninterrupted
+  CPU or unlimited model spend. The one-event-driven-waiter-per-child wait
+  remains 1,800 seconds.
 - Repository slugs are unique case-insensitively. Repository `worktree` paths
   must be absolute, unique after normalization, and free of unsafe elements
   (`..`, null bytes, OS-sensitive roots).

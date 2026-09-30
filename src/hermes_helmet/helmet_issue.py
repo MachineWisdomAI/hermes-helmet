@@ -36,6 +36,8 @@ from hermes_helmet.authority import (
     Policy,
     Repository,
     UNATTENDED_MERGE_MODE,
+    budget_elapsed_exceeds,
+    captain_budget_status_details,
     load_authority,
     merge_authority_fingerprint,
     merge_authority_for,
@@ -1360,6 +1362,12 @@ def preflight(
         raise HelmetIssueError("captain and worker identities must differ")
     if policy.budgets.max_issue_runtime_minutes < 1 or policy.budgets.max_repair_rounds < 1:
         raise HelmetIssueError("policy budgets are invalid")
+    if (
+        policy.budgets.max_epic_runtime_minutes < 1
+        or policy.budgets.worker_max_runtime_seconds < 1
+        or policy.worker_max_turns < 1
+    ):
+        raise HelmetIssueError("policy budgets are invalid")
 
     observed = observed_github_login(runner, gh=gh)
     try:
@@ -2054,19 +2062,14 @@ def set_blocker(checkpoint: Checkpoint, reason: str, *, fatal: bool = False) -> 
 
 
 def budget_exhausted(checkpoint: Checkpoint, policy: Policy) -> str | None:
+    if checkpoint.state == "DONE":
+        return None
     if checkpoint.repair_rounds > policy.budgets.max_repair_rounds:
         return checkpoint_note("err", "budget", "max_repair_rounds")
-    if checkpoint.started_at:
-        try:
-            started = datetime.fromisoformat(checkpoint.started_at)
-        except ValueError:
-            started = None
-        if started is not None:
-            if started.tzinfo is None:
-                started = started.replace(tzinfo=timezone.utc)
-            elapsed = datetime.now(timezone.utc) - started
-            if elapsed.total_seconds() > policy.budgets.max_issue_runtime_minutes * 60:
-                return checkpoint_note("err", "budget", "max_issue_runtime_minutes")
+    if budget_elapsed_exceeds(
+        checkpoint.started_at, policy.budgets.max_issue_runtime_minutes
+    ):
+        return checkpoint_note("err", "budget", "max_issue_runtime_minutes")
     return None
 
 
@@ -2130,6 +2133,27 @@ def build_status(
     elif checkpoint and state == "DONE":
         merge_gate = f"{checkpoint.merge_mode}:done"
 
+    continuation = (
+        "one_pass_only:continuation_unavailable"
+        if checkpoint
+        and (
+            checkpoint.one_pass_only
+            or checkpoint.host_continuation in {"none", "unknown"}
+        )
+        else "managed"
+    )
+    merge_mode = checkpoint.merge_mode if checkpoint else policy.merge_default_mode
+    merge_source = checkpoint.merge_mode_source if checkpoint else "policy"
+    started_at = checkpoint.started_at if checkpoint else ""
+    budget_details = captain_budget_status_details(
+        policy,
+        started_at=started_at,
+        merge_mode=merge_mode,
+        merge_source=merge_source,
+        continuation=continuation,
+        scope="issue",
+    )
+
     return StatusReport(
         issue_url=issue_url,
         state=state,
@@ -2148,21 +2172,14 @@ def build_status(
             "repair_rounds": checkpoint.repair_rounds if checkpoint else 0,
             "host_continuation": checkpoint.host_continuation if checkpoint else "unknown",
             "one_pass_only": checkpoint.one_pass_only if checkpoint else False,
-            "continuation": (
-                "one_pass_only:continuation_unavailable"
-                if checkpoint
-                and (
-                    checkpoint.one_pass_only
-                    or checkpoint.host_continuation in {"none", "unknown"}
-                )
-                else "managed"
-            ),
+            "continuation": continuation,
             "live_error": live_error,
             "head_needs_review": head_needs_review,
             "merge_mode_choice": checkpoint.merge_mode_choice if checkpoint else None,
-            "merge_mode_source": checkpoint.merge_mode_source if checkpoint else "policy",
+            "merge_mode_source": merge_source,
             "merge_authority_fingerprint": checkpoint.merge_authority_fingerprint if checkpoint else "",
             "merge_choice_required": checkpoint.merge_choice_required if checkpoint else False,
+            **budget_details,
         },
     )
 
@@ -2304,6 +2321,12 @@ def run_preflight_and_adopt(
             raise HelmetIssueError(checkpoint_note("err", "captain_worker_must_differ"))
         if policy.budgets.max_issue_runtime_minutes < 1 or policy.budgets.max_repair_rounds < 1:
             raise HelmetIssueError(checkpoint_note("err", "policy_budgets_invalid"))
+        if (
+            policy.budgets.max_epic_runtime_minutes < 1
+            or policy.budgets.worker_max_runtime_seconds < 1
+            or policy.worker_max_turns < 1
+        ):
+            raise HelmetIssueError(checkpoint_note("err", "policy_budgets_invalid"))
 
         issue = load_issue(policy, issue_url, runner, gh=gh)
         # Carry / refresh validated parent association for merge inheritance.
@@ -2401,6 +2424,9 @@ def run_preflight_and_adopt(
         )
         if not checkpoint.started_at:
             checkpoint.started_at = _utc_now()
+        announced = checkpoint_note("op", "budget_announced")
+        if announced not in checkpoint.notes:
+            checkpoint.notes.append(announced)
 
         if checkpoint.merge_choice_required:
             note = checkpoint_note("op", "merge_choice_required")

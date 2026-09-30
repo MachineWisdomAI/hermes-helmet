@@ -222,7 +222,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   /opt/hermes/.venv/bin/hermes -p builder config set model.default gpt-4.1
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
-  /opt/hermes/.venv/bin/hermes -p builder config set agent.max_turns 100
+  /opt/hermes/.venv/bin/hermes -p builder config set agent.max_turns 2000
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   /opt/hermes/.venv/bin/hermes -p builder auth add openai
 ```

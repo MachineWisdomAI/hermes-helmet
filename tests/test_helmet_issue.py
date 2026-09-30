@@ -2130,6 +2130,50 @@ class OrchestrationPassTests(unittest.TestCase):
         )
         self.assertIsNotNone(hi.budget_exhausted(cp, policy))
 
+    def test_default_window_keeps_seven_hours_active_and_exposes_status(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        raw = _policy_dict()
+        raw.pop("budgets", None)
+        raw.pop("worker_max_turns", None)
+        policy = policy_from_mapping(raw)
+        self.assertEqual(policy.budgets.max_issue_runtime_minutes, 8640)
+        self.assertEqual(policy.worker_max_turns, 2000)
+        started = (datetime.now(timezone.utc) - timedelta(hours=7)).replace(
+            microsecond=0
+        ).isoformat()
+        cp = hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="WAIT_PR",
+            started_at=started,
+        )
+        self.assertIsNone(hi.budget_exhausted(cp, policy))
+        report = hi.build_status(policy, ISSUE_URL, cp)
+        self.assertEqual(report.details["budgets"]["max_issue_runtime_minutes"], 8640)
+        self.assertEqual(report.details["budget_window"]["started_at"], started)
+        self.assertIsNotNone(report.details["budget_window"]["deadline"])
+        self.assertIn("8640 minutes (6 days)", report.details["budget_announcement"])
+        self.assertIn("bounded elapsed windows", report.details["budget_announcement"])
+        cp.started_at = (
+            datetime.now(timezone.utc) - timedelta(minutes=8641)
+        ).replace(microsecond=0).isoformat()
+        self.assertIsNotNone(hi.budget_exhausted(cp, policy))
+        cp.state = "DONE"
+        self.assertIsNone(hi.budget_exhausted(cp, policy))
+
+    def test_explicit_short_window_does_not_claim_six_days(self) -> None:
+        policy = _policy(budgets={"max_issue_runtime_minutes": 120, "max_repair_rounds": 10})
+        cp = hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="WAIT_PR",
+            started_at="2026-01-01T00:00:00+00:00",
+        )
+        report = hi.build_status(policy, ISSUE_URL, cp)
+        self.assertIn("120 minutes", report.details["budget_announcement"])
+        self.assertNotIn("6 days", report.details["budget_announcement"])
+
 
 class InstallSkillsTests(unittest.TestCase):
     def test_static_validate_and_install_all_targets(self) -> None:

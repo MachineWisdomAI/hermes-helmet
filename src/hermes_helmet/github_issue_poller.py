@@ -351,6 +351,10 @@ def _tracked_tasks(ledger: Path) -> list[tuple[str, str]]:
         connection.close()
 
 
+def _kanban_max_runtime_args(policy: Policy) -> list[str]:
+    return ["--max-runtime", str(policy.budgets.worker_max_runtime_seconds)]
+
+
 def _kanban_task(policy: Policy, task_id: str, runner: Runner) -> dict[str, object]:
     output = runner.run(
         [
@@ -618,6 +622,7 @@ def _create_review_task(
             context.branch_name,
             "--completion-contract",
             policy.kanban_completion_contract(context.repository.slug),
+            *_kanban_max_runtime_args(policy),
             "--idempotency-key",
             event.idempotency_key(context),
             "--json",
@@ -842,6 +847,7 @@ def create_task_once(issue: Issue, policy: Policy, ledger: Path, runner: Runner)
                 issue.branch,
                 "--completion-contract",
                 policy.kanban_completion_contract(issue.repository.slug),
+                *_kanban_max_runtime_args(policy),
                 "--idempotency-key",
                 issue.url,
                 "--json",

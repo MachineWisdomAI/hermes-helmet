@@ -5,6 +5,19 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.1.0rc5 candidate
+
+- Default Captain issue and epic windows to 8,640 minutes (6 days) from the
+  original durable start, including managed waits. Explicit operator limits
+  stay in force; existing checkpoints are not rewritten.
+- Default each worker attempt to 24 hours wall-clock and 2,000 turns, and pass
+  `--max-runtime` on native Kanban create for root and same-PR repair tasks.
+- Announce effective Captain windows, worker quotas, repair limit, merge mode,
+  and continuation at issue/epic startup, and expose start/deadline provenance
+  in text and JSON status. These are bounded elapsed windows, not uninterrupted
+  CPU or unlimited model spend.
+- Package and plugin candidate versions are `0.1.0rc5` / `0.1.0-rc.5`.
+
 ### 0.1.0rc3 candidate
 
 - Record explicit, durable Captain consent for configured Hermes model/provider
