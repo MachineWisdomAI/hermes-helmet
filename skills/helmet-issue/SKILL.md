@@ -148,15 +148,26 @@ helmet install-skills --target hermes
    choices survive restarts; do not ask again unless the authority fingerprint
    changes. Scheduled/non-interactive runs honor a valid persisted choice and
    otherwise use the policy default without a question. An explicit manual
-   choice cannot later be widened.
+   choice cannot later be widened. Named-request enrollment is explicit Captain
+   delegation for that exact repo: an optional merge-mode consultation must not
+   block unattended continuation; the effective permitted policy default is
+   persisted (source `named_request`) and used instead of a fresh question.
 3. At startup, report the effective merge mode and continuation mechanism. For
    a session host, keep exactly one bounded `helmet wait ISSUE_URL
    --timeout-seconds 1800` handle and reconcile after meaningful wakes or
    timeouts; do not emit repeated unchanged updates or create duplicate waiters.
 4. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
-   allowlist, open issue state, ready/dispatch labels, and budgets are checked.
-5. Stop with precise status on authority mismatch, closed issue, non-allowlisted
-   repo, missing labels, or exhausted budget.
+   allowlist/enrollment, open issue state, ready/dispatch labels, and budgets
+   are checked.
+5. A repository outside the static allowlist proceeds only with a valid
+   named-request enrollment receipt, which the human Captain's explicit request
+   authorizes (`helmet prepare-repo REQUEST_REF --purpose work|review`,
+   reusable by issue, epic, and report-only review workflows). Review-only
+   enrollment never dispatches or merges. Silence is not consent; the explicit
+   named-repo delegation is the authority, and an optional confirmation must
+   not block continuation. Stop with precise status on authority mismatch,
+   closed issue, missing enrollment for a non-allowlisted repo, missing labels,
+   or exhausted budget.
 
 Completion: checkpoint state is past `PREFLIGHT` or terminal with blocker.
 

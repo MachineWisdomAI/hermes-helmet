@@ -39,8 +39,9 @@ child blocks, and never dispatch-labels the epic root.
 Never infer edges from table row order or narrative prose; same-repo `#N` refs resolve only inside operative Parent/Blocked-by sections.
 
 Validation rejects cycles, self-edges, missing or closed-as-incomplete blockers,
-non-allowlisted repositories, duplicate explicit child seeds, malformed operative links, and
-ambiguous multi-Parent sets.
+repositories that are neither allowlisted nor covered by a valid named-request
+enrollment receipt, duplicate explicit child seeds, malformed operative links, and
+ambiguous multi-Parent sets. Review-only enrolled children are never dispatched.
 
 ## Non-goals
 

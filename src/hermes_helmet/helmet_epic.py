@@ -22,6 +22,7 @@ import re
 from typing import Sequence
 from urllib.parse import quote
 
+from hermes_helmet import repo_enroll
 from hermes_helmet.authority import (
     ALLOWED_MERGE_MODES,
     AuthorityError,
@@ -171,6 +172,8 @@ class EpicNode:
     parent_urls: tuple[str, ...] = ()
     blocked_by_urls: tuple[str, ...] = ()
     source: str = "body"  # native_sub_issue | native_dependency | body
+    # Empty for allowlisted repos; "work"/"review" when admitted via enrollment.
+    enrollment_purpose: str = ""
 
     @property
     def closed_complete(self) -> bool:
@@ -811,6 +814,7 @@ def _issue_ref_to_node(
         parent_urls=parent_urls,
         blocked_by_urls=blocked_by_urls,
         source=source,
+        enrollment_purpose=issue.enrollment_purpose,
     )
 
 
@@ -822,8 +826,9 @@ def load_issue_node(
     gh: str = DEFAULT_GH,
     is_root: bool = False,
     source: str = "body",
+    enrollment_store: "repo_enroll.EnrollmentStore | None" = None,
 ) -> EpicNode:
-    issue = load_issue(policy, issue_url, runner, gh=gh)
+    issue = load_issue(policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store)
     # Fetch state_reason via API fields (REST includes it on modern payloads).
     slug, number = parse_issue_url(issue_url)
     raw = _github_json(runner, gh, f"repos/{slug}/issues/{number}")
@@ -1108,6 +1113,7 @@ def _search_parent_children(
     runner: Runner,
     *,
     gh: str,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> list[str]:
     """Discover child issues via search for explicit Parent body links.
 
@@ -1132,7 +1138,7 @@ def _search_parent_children(
     queries.append(f'"#{root_number}"')
 
     search_errors: list[str] = []
-    for repo in policy.repositories:
+    for repo in repo_enroll.effective_repositories(policy, enrollment_store):
         for query in queries:
             quoted = quote(query, safe="")
             endpoint = (
@@ -1196,6 +1202,7 @@ def _filter_search_candidates_by_parent(
     *,
     gh: str,
     existing: set[str],
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> list[str]:
     """Keep search hits only when live Parent membership points at the epic.
 
@@ -1209,7 +1216,15 @@ def _filter_search_candidates_by_parent(
         url = normalize_issue_url(raw)
         if url == root_url or url in existing:
             continue
-        node = load_issue_node(policy, url, runner, gh=gh, is_root=False, source="body")
+        node = load_issue_node(
+            policy,
+            url,
+            runner,
+            gh=gh,
+            is_root=False,
+            source="body",
+            enrollment_store=enrollment_store,
+        )
         parents = tuple(node.parent_urls)
         if not parents:
             continue
@@ -1230,15 +1245,26 @@ def build_epic_graph(
     *,
     gh: str = DEFAULT_GH,
     extra_child_urls: Sequence[str] = (),
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> EpicGraph:
     """Load and validate the epic graph from GitHub + explicit body links."""
 
     root_url = normalize_issue_url(epic_url)
-    root = load_issue_node(policy, root_url, runner, gh=gh, is_root=True, source="root")
+    root = load_issue_node(
+        policy,
+        root_url,
+        runner,
+        gh=gh,
+        is_root=True,
+        source="root",
+        enrollment_store=enrollment_store,
+    )
 
     native_children_result = _try_native_sub_issues(root, runner, gh=gh)
     native_children = list(native_children_result or ())
-    search_hits = _search_parent_children(policy, root_url, runner, gh=gh)
+    search_hits = _search_parent_children(
+        policy, root_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
 
     # Explicit operator seeds: duplicates in the same seed list are rejected.
     seed_from_extra: list[str] = []
@@ -1269,6 +1295,7 @@ def build_epic_graph(
         runner,
         gh=gh,
         existing=seen_seed,
+        enrollment_store=enrollment_store,
     )
     for url in search_children:
         if url not in seen_seed:
@@ -1287,7 +1314,15 @@ def build_epic_graph(
         else:
             src = "body"
         source_tags.add(src)
-        node = load_issue_node(policy, url, runner, gh=gh, is_root=False, source=src)
+        node = load_issue_node(
+            policy,
+            url,
+            runner,
+            gh=gh,
+            is_root=False,
+            source=src,
+            enrollment_store=enrollment_store,
+        )
         nodes[url] = node
 
     # Validate membership for body-discovered / explicit children.
@@ -1351,7 +1386,13 @@ def build_epic_graph(
                 # Blockers may live on allowlisted repos even if not epic children.
                 try:
                     external[burl] = load_issue_node(
-                        policy, burl, runner, gh=gh, is_root=False, source="blocker"
+                        policy,
+                        burl,
+                        runner,
+                        gh=gh,
+                        is_root=False,
+                        source="blocker",
+                        enrollment_store=enrollment_store,
                     )
                 except HelmetIssueError as exc:
                     raise HelmetEpicError(
@@ -1484,6 +1525,7 @@ def classify_children(
     ledger: Path,
     worker_runtime: Sequence[str],
     epic_body: str,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> dict[str, list[str]]:
     """Classify each child into status buckets using live GitHub + issue checkpoints."""
 
@@ -1504,6 +1546,10 @@ def classify_children(
         if is_human_only_issue(node):
             buckets["awaiting_human"].append(url)
             continue
+        if node.enrollment_purpose == repo_enroll.PURPOSE_REVIEW:
+            # Review-only enrollment permits reading/reviewing, not dispatch.
+            buckets["awaiting_human"].append(url)
+            continue
         if not blockers_satisfied(url, graph, completed_urls=completed):
             buckets["blocked"].append(url)
             continue
@@ -1519,6 +1565,7 @@ def classify_children(
                 gh=gh,
                 hermes=hermes,
                 worker_runtime=worker_runtime,
+                enrollment_store=enrollment_store,
             )
         except HelmetIssueError:
             # No status yet — ready for dispatch if open and labeled appropriately.
@@ -1622,6 +1669,7 @@ def preflight_epic(
     runner: Runner,
     *,
     gh: str = DEFAULT_GH,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> tuple[EpicNode, str, str]:
     """Validate Captain identity, allowlist, epic root state, budgets, labels config."""
 
@@ -1649,7 +1697,10 @@ def preflight_epic(
     if policy.github_identity.casefold() in profiles:
         raise HelmetEpicError(checkpoint_note("err", "worker_profile_on_captain_host"))
 
-    root = load_issue_node(policy, epic_url, runner, gh=gh, is_root=True, source="root")
+    root = load_issue_node(
+        policy, epic_url, runner, gh=gh, is_root=True, source="root",
+        enrollment_store=enrollment_store,
+    )
     if root.state != "open":
         raise HelmetEpicError(checkpoint_note("err", "epic_root_not_open"))
     # Root must NEVER carry dispatch label (orchestration record only).
@@ -1692,6 +1743,7 @@ def invoke_child_issue(
     worker_runtime: Sequence[str],
     merge_mode_choice: str | None,
     merge_mode_source: str,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> dict[str, object]:
     """Invoke one helmet-issue pass for a child, propagating epic merge authority."""
 
@@ -1711,6 +1763,7 @@ def invoke_child_issue(
         parent_epic_url=epic_url,
         merge_mode_choice=merge_mode_choice,
         merge_mode_source=merge_mode_source,
+        enrollment_store=enrollment_store,
     )
     return {
         "issue_url": child_url,
@@ -1738,6 +1791,7 @@ def run_epic_pass(
     worker_runtime: Sequence[str] = (),
     child_invoker=None,
     merge_mode_choice: str | None = None,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> tuple[EpicCheckpoint, EpicStatusReport, EpicGraph | None]:
     """One truthful epic orchestration pass.
 
@@ -1775,9 +1829,13 @@ def run_epic_pass(
     graph: EpicGraph | None = None
     try:
         root, _observed, _epic_merge_mode = preflight_epic(
-            policy, epic_url, runner, gh=gh
+            policy, epic_url, runner, gh=gh, enrollment_store=enrollment_store
         )
         _ensure_root_not_dispatched(policy, root, runner, gh=gh)
+        if root.enrollment_purpose == repo_enroll.PURPOSE_REVIEW and apply_dispatch:
+            raise HelmetEpicError(
+                checkpoint_note("err", "review_enrollment_no_dispatch")
+            )
 
         graph = build_epic_graph(
             policy,
@@ -1785,6 +1843,7 @@ def run_epic_pass(
             runner,
             gh=gh,
             extra_child_urls=extra_child_urls,
+            enrollment_store=enrollment_store,
         )
         checkpoint.graph_fingerprint = graph.fingerprint
 
@@ -1833,13 +1892,23 @@ def run_epic_pass(
                 checkpoint.merge_mode_choice = EXPLICIT_CAPTAIN_APPROVAL_MODE
                 checkpoint.merge_mode_source = "authority"
                 checkpoint.merge_choice_required = False
-            elif host_continuation == "session":
+            elif host_continuation == "session" and not root.enrollment_purpose:
                 checkpoint.merge_mode_source = "required"
                 checkpoint.merge_choice_required = True
             else:
+                # Named-request enrollment is explicit Captain authorization for
+                # this repository, so an unanswered optional consultation uses
+                # and persists the effective permitted policy default instead
+                # of blocking the pass.
                 checkpoint.merge_mode_choice = policy.merge_default_mode
-                checkpoint.merge_mode_source = "policy"
+                checkpoint.merge_mode_source = (
+                    "named_request" if root.enrollment_purpose else "policy"
+                )
                 checkpoint.merge_choice_required = False
+                if root.enrollment_purpose:
+                    note = checkpoint_note("op", "named_request_unattended_default")
+                    if note not in checkpoint.notes:
+                        checkpoint.notes.append(note)
         checkpoint.merge_authority_fingerprint = authority_fingerprint
         checkpoint.epic_merge_mode = merge_authority_for(
             policy,
@@ -1872,6 +1941,7 @@ def run_epic_pass(
                     gh=gh,
                     hermes=hermes,
                     worker_runtime=runtime,
+                    enrollment_store=enrollment_store,
                 )
                 return checkpoint, report, graph
         elif checkpoint.accepted_fingerprint != graph.fingerprint:
@@ -1899,6 +1969,7 @@ def run_epic_pass(
                     gh=gh,
                     hermes=hermes,
                     worker_runtime=runtime,
+                    enrollment_store=enrollment_store,
                 )
                 return checkpoint, report, graph
         else:
@@ -1922,6 +1993,7 @@ def run_epic_pass(
                 gh=gh,
                 hermes=hermes,
                 worker_runtime=runtime,
+                enrollment_store=enrollment_store,
             )
             return checkpoint, report, graph
 
@@ -1935,6 +2007,7 @@ def run_epic_pass(
             ledger=ledger,
             worker_runtime=runtime,
             epic_body=root.body,
+            enrollment_store=enrollment_store,
         )
         checkpoint.completed_children = list(buckets["completed"])
         checkpoint.active_children = list(buckets["active"])
@@ -1973,6 +2046,7 @@ def run_epic_pass(
                 gh=gh,
                 hermes=hermes,
                 worker_runtime=runtime,
+                enrollment_store=enrollment_store,
             )
             return checkpoint, report, graph
 
@@ -1993,6 +2067,7 @@ def run_epic_pass(
                 gh=gh,
                 hermes=hermes,
                 worker_runtime=runtime,
+                enrollment_store=enrollment_store,
             )
             return checkpoint, report, graph
 
@@ -2043,6 +2118,7 @@ def run_epic_pass(
                         if checkpoint.merge_mode_source.startswith("epic:")
                         else f"epic:{checkpoint.merge_mode_source}"
                     ),
+                    enrollment_store=enrollment_store,
                 )
                 checkpoint.child_invocations += 1
                 status_obj = result.get("status") if isinstance(result, dict) else None
@@ -2068,6 +2144,7 @@ def run_epic_pass(
                 ledger=ledger,
                 worker_runtime=runtime,
                 epic_body=root.body,
+                enrollment_store=enrollment_store,
             )
             checkpoint.completed_children = list(buckets["completed"])
             checkpoint.active_children = list(buckets["active"])
@@ -2103,6 +2180,7 @@ def run_epic_pass(
             gh=gh,
             hermes=hermes,
             worker_runtime=runtime,
+            enrollment_store=enrollment_store,
         )
         return checkpoint, report, graph
     except (HelmetEpicError, HelmetIssueError) as exc:
@@ -2160,6 +2238,7 @@ def build_epic_status(
     hermes: str = DEFAULT_HERMES,
     worker_runtime: Sequence[str] = (),
     persist_state: bool = False,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> EpicStatusReport:
     """Build status from the live graph + buckets.
 
@@ -2182,6 +2261,7 @@ def build_epic_status(
             ledger=ledger,
             worker_runtime=runtime,
             epic_body=graph.root.body,
+            enrollment_store=enrollment_store,
         )
 
     state = checkpoint.state
@@ -2271,6 +2351,7 @@ def status_epic(
     hermes: str = DEFAULT_HERMES,
     extra_child_urls: Sequence[str] = (),
     worker_runtime: Sequence[str] = (),
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> EpicStatusReport:
     """Read-oriented epic status. Rebuilds graph from GitHub; no child dispatch."""
 
@@ -2297,6 +2378,7 @@ def status_epic(
             runner,
             gh=gh,
             extra_child_urls=extra_child_urls,
+            enrollment_store=enrollment_store,
         )
         checkpoint.graph_fingerprint = graph.fingerprint
         return build_epic_status(
@@ -2309,6 +2391,7 @@ def status_epic(
             gh=gh,
             hermes=hermes,
             worker_runtime=runtime,
+            enrollment_store=enrollment_store,
         )
     except (HelmetEpicError, HelmetIssueError) as exc:
         code = str(exc)

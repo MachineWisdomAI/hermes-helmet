@@ -18,6 +18,17 @@ is resolved through the review workflow, not by editing approval records,
 switching to another actor's credentials, or weakening checks. Source policy
 changes remain subject to the existing review workflow until they are installed.
 
+## Named-request enrollment boundaries
+
+When a Captain's explicit named-repo request has enrolled a repository outside
+the static allowlist, the enrollment receipt is part of the accepted
+authority: review it against the current policy (allowed owner, Captain actor,
+and enrollment ceilings), but do not widen it. Review-only enrollment grants
+read/review scope, never dispatch or merge. Do not work around enrollment or
+allowlist stops by editing installed caches, checkpoints, or ledger history;
+resolve the gap through the supported `helmet prepare-repo` seam and the
+normal policy review workflow.
+
 ## Make the review converge
 
 A blocking finding identifies a supported failure, its material consequence,
