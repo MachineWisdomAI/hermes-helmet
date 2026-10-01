@@ -219,7 +219,9 @@ Completion: `pr_url` + head SHA known, or state `WAIT_PR` with truthful status.
    - **Material defects / unmet required acceptance** → formal GitHub review `REQUEST_CHANGES` as the Captain identity;
      record `--record-review changes_requested`; state becomes `WAIT_REPAIR`.
    - **Genuinely clean** → formal comment or approve only if policy allows;
-     record `--record-review clean`; state `READY`. Do not invent defects.
+     record `--record-review clean`; state `READY` when the associated epic
+     original-start window is still open. An expired managed parent fails
+     closed (not `READY`, no merge). Do not invent defects.
    - **Unsafe/ambiguous** → `--record-review blocked` with precise reason.
      Clears `clean_head`, sets `BLOCKED`, and is a hard merge stop until a newly
      accepted clean review (or a new head) recovers; unchanged-head resume must
@@ -248,6 +250,11 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
 ### 6. READY → MERGE_GATE → optional MERGE → VERIFY_MERGED
 
 1. Clean review of **current** head + required checks green + mergeable.
+   The associated parent epic original-start window is enforced on the
+   configured checkpoint directory by default (pass `--checkpoint-dir` for a
+   custom root). An expired managed parent fails closed; standalone issues
+   with no parent, missing unmanaged checkpoints, and actually completed
+   `DONE` truth are unchanged.
 2. Default: Captain may merge **once** for that exact head SHA.
 3. If the issue or parent epic has whole-line `Merge when clean: no` (see
    authority helpers), stop for explicit Captain approval. Policy `local-only`

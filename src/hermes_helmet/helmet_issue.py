@@ -16,7 +16,7 @@ authority and GitHub/ledger/Kanban integration points the skill must call.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -1976,7 +1976,8 @@ def evaluate_merge_gate(
     Policy ``local-only`` worker completion does not treat GitHub ``clean`` as
     independently verified required checks, and never grants unattended merge
     from checkless ``clean``; explicit Captain approval remains available.
-    When ``checkpoint_dir`` is provided, an associated parent epic whose
+    Omitted ``checkpoint_dir`` uses the configured default checkpoint directory
+    (same as the other issue interfaces). An associated parent epic whose
     original start has elapsed fails closed (no merge after the epic deadline).
     """
 
@@ -2061,6 +2062,8 @@ def evaluate_merge_gate(
     elif checkpoint.parent_epic_url:
         # Live Parent no longer matches saved association — clear stale link.
         checkpoint.parent_epic_url = None
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
     associated = associated_epic_budget_exhausted(
         policy,
         parent_epic_url=checkpoint.parent_epic_url,
@@ -2183,12 +2186,15 @@ def associated_epic_budget_exhausted(
     """Fail closed when the associated epic's original start has elapsed.
 
     Missing parent association or missing epic checkpoint is not a deadline
-    signal. An unreadable associated checkpoint fails closed.
+    signal. An unreadable associated checkpoint fails closed. Omitted
+    ``checkpoint_dir`` uses the configured default checkpoint directory.
     """
 
     url = (parent_epic_url or "").strip()
-    if not url or checkpoint_dir is None:
+    if not url:
         return None
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
     from hermes_helmet.helmet_epic import (
         HelmetEpicError,
         epic_checkpoint_path,
@@ -2323,7 +2329,7 @@ def status_issue(
     issue_url: str,
     *,
     ledger: Path = DEFAULT_LEDGER,
-    checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
+    checkpoint_dir: Path | None = None,
     runner: Runner | None = None,
     gh: str = DEFAULT_GH,
     hermes: str = DEFAULT_HERMES,
@@ -2332,6 +2338,8 @@ def status_issue(
 ) -> StatusReport:
     """Read-only status for an issue. Never mutates GitHub, ledger, or checkpoint."""
 
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
     runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
     path = checkpoint_path(checkpoint_dir, issue_url)
@@ -2383,6 +2391,23 @@ def status_issue(
             )
             if not ISSUE_URL_RE.fullmatch(issue_url or ""):
                 checkpoint.issue_url = "https://github.com/invalid/invalid/issues/0"
+    if (
+        checkpoint is not None
+        and checkpoint.state not in TERMINAL_STATES
+        and live_error is None
+    ):
+        associated = associated_epic_budget_exhausted(
+            policy,
+            parent_epic_url=checkpoint.parent_epic_url,
+            checkpoint_dir=checkpoint_dir,
+        )
+        if associated:
+            # In-memory overlay only: status must not write the checkpoint.
+            checkpoint = replace(
+                checkpoint,
+                state="FAILED",
+                last_blocker=associated,
+            )
     return build_status(
         policy,
         issue_url,
@@ -3080,7 +3105,7 @@ def apply_review_outcome(
     head_sha: str,
     outcome: str,
     summary: str = "",
-    checkpoint_dir: Path = DEFAULT_CHECKPOINT_DIR,
+    checkpoint_dir: Path | None = None,
     policy: Policy | None = None,
     ledger: Path = DEFAULT_LEDGER,
     runner: Runner | None = None,
@@ -3092,6 +3117,8 @@ def apply_review_outcome(
 ) -> Checkpoint:
     """Record a Captain review only after binding to live head + formal review."""
 
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
     if not head_sha or not str(head_sha).strip():
         raise HelmetIssueError(checkpoint_note("err", "head_sha_required"))
     head_sha = str(head_sha).strip()
@@ -3177,6 +3204,14 @@ def apply_review_outcome(
             review_event_id=review_event_id,
             review_submitted_at=review_submitted_at,
         )
+        if outcome == "clean":
+            associated = associated_epic_budget_exhausted(
+                policy,
+                parent_epic_url=checkpoint.parent_epic_url,
+                checkpoint_dir=checkpoint_dir,
+            )
+            if associated:
+                set_blocker(checkpoint, associated, fatal=True)
     save_checkpoint(path, checkpoint)
     return checkpoint
 

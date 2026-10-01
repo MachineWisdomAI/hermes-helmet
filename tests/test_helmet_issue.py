@@ -1669,6 +1669,233 @@ class OrchestrationPassTests(unittest.TestCase):
             self.assertEqual(runner.labels_posted, [])
             self.assertEqual(runner.created_tasks, [])
 
+    def test_default_checkpoint_dir_blocks_expired_parent_without_opt_in_merge_arg(
+        self,
+    ) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from hermes_helmet import helmet_epic as he
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+        parent_url = f"https://github.com/{FIXTURE_SLUG}/issues/42"
+        issue = hi.IssueRef(
+            repository=policy.repositories[0],
+            number=2,
+            title="x",
+            body=f"Ship it.\n\n## Parent\n\n- {parent_url}\n\nMerge when clean: yes\n",
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=ISSUE_URL,
+        )
+        pull = hi.PullRequestRef(
+            FIXTURE_SLUG,
+            10,
+            PR_URL,
+            "abc123deadbeef",
+            "automation/demo-repo-2",
+            "main",
+            WORKER,
+            "open",
+            False,
+            "clean",
+            False,
+        )
+        child = hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="READY",
+            started_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            clean_head="abc123deadbeef",
+            reviewed_head="abc123deadbeef",
+            parent_epic_url=parent_url,
+            pr_url=PR_URL,
+            pr_number=10,
+            merge_mode="unattended_when_clean",
+            root_task_id="t_root",
+        )
+        expired_start = (
+            datetime.now(timezone.utc) - timedelta(minutes=8641)
+        ).replace(microsecond=0).isoformat()
+        fresh_start = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+        def _write_parent(checkpoint_dir: Path, started_at: str, state: str = "WAITING") -> None:
+            he.save_epic_checkpoint(
+                he.epic_checkpoint_path(checkpoint_dir, parent_url),
+                he.EpicCheckpoint(
+                    version=1,
+                    epic_url=parent_url,
+                    state=state,
+                    started_at=started_at,
+                ),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            default_dir = Path(tmp) / "default-cp"
+            custom_dir = Path(tmp) / "custom-cp"
+            default_dir.mkdir()
+            custom_dir.mkdir()
+            hi.save_checkpoint(hi.checkpoint_path(default_dir, ISSUE_URL), child)
+            _write_parent(default_dir, expired_start)
+            runner = FakeRunner()
+            runner.reviews = [
+                {
+                    "id": 1,
+                    "user": {"login": CAPTAIN},
+                    "state": "APPROVED",
+                    "commit_id": "abc123deadbeef",
+                    "submitted_at": "2026-01-01T00:00:00Z",
+                }
+            ]
+            merge_puts = {"n": 0}
+            original_run = runner.run
+
+            def run_counting(command: list[str]) -> str:
+                joined = " ".join(command)
+                if "--method" in command and "/merge" in joined:
+                    merge_puts["n"] += 1
+                    return json.dumps({"merged": True, "sha": "abc123deadbeef"})
+                return original_run(command)
+
+            runner.run = run_counting  # type: ignore[method-assign]
+            ledger = Path(tmp) / "ledger.sqlite3"
+            _ledger_with_root(ledger)
+            with mock.patch.object(hi, "DEFAULT_CHECKPOINT_DIR", default_dir):
+                decision, blocker = hi.evaluate_merge_gate(
+                    policy,
+                    issue,
+                    pull,
+                    child,
+                    required_checks_green=True,
+                    mergeable=True,
+                )
+                self.assertEqual(decision, "not_ready")
+                self.assertIn("max_epic_runtime_minutes", blocker or "")
+                if decision == "merge_allowed":
+                    hi.merge_pull_request(pull, runner, gh="gh")
+                self.assertEqual(merge_puts["n"], 0)
+
+                status = hi.status_issue(
+                    policy,
+                    ISSUE_URL,
+                    ledger=ledger,
+                    runner=runner,
+                    gh="gh",
+                    hermes="hermes",
+                )
+                self.assertNotEqual(status.state, "READY")
+                self.assertEqual(status.state, "FAILED")
+                self.assertIn("max_epic_runtime_minutes", status.blocker or "")
+                self.assertNotIn(":ready", status.merge_gate)
+                on_disk_ready = hi.load_checkpoint(
+                    hi.checkpoint_path(default_dir, ISSUE_URL),
+                    expected_issue_url=ISSUE_URL,
+                    default_merge_mode=policy.merge_default_mode,
+                )
+                self.assertIsNotNone(on_disk_ready)
+                assert on_disk_ready is not None
+                self.assertEqual(on_disk_ready.state, "READY")
+
+                recorded = hi.apply_review_outcome(
+                    ISSUE_URL,
+                    head_sha="abc123deadbeef",
+                    outcome="clean",
+                    summary="lgtm",
+                    policy=policy,
+                    ledger=ledger,
+                    runner=runner,
+                    gh="gh",
+                    hermes="hermes",
+                )
+                self.assertNotEqual(recorded.state, "READY")
+                self.assertEqual(recorded.state, "FAILED")
+                self.assertIn("max_epic_runtime_minutes", recorded.last_blocker or "")
+                self.assertEqual(recorded.clean_head, "abc123deadbeef")
+                on_disk = hi.load_checkpoint(
+                    hi.checkpoint_path(default_dir, ISSUE_URL),
+                    expected_issue_url=ISSUE_URL,
+                    default_merge_mode=policy.merge_default_mode,
+                )
+                self.assertIsNotNone(on_disk)
+                assert on_disk is not None
+                self.assertEqual(on_disk.state, "FAILED")
+
+                _write_parent(default_dir, fresh_start)
+                fresh_child = hi.Checkpoint(
+                    version=1,
+                    issue_url=ISSUE_URL,
+                    state="READY",
+                    started_at=fresh_start,
+                    clean_head="abc123deadbeef",
+                    reviewed_head="abc123deadbeef",
+                    parent_epic_url=parent_url,
+                    merge_mode="unattended_when_clean",
+                )
+                allowed, allowed_blocker = hi.evaluate_merge_gate(
+                    policy,
+                    issue,
+                    pull,
+                    fresh_child,
+                    required_checks_green=True,
+                    mergeable=True,
+                )
+                self.assertEqual(allowed, "merge_allowed")
+                self.assertIsNone(allowed_blocker)
+
+                _write_parent(custom_dir, expired_start)
+                custom_child = hi.Checkpoint(
+                    version=1,
+                    issue_url=ISSUE_URL,
+                    state="READY",
+                    started_at=fresh_start,
+                    clean_head="abc123deadbeef",
+                    reviewed_head="abc123deadbeef",
+                    parent_epic_url=parent_url,
+                    merge_mode="unattended_when_clean",
+                )
+                custom_decision, custom_blocker = hi.evaluate_merge_gate(
+                    policy,
+                    issue,
+                    pull,
+                    custom_child,
+                    required_checks_green=True,
+                    mergeable=True,
+                    checkpoint_dir=custom_dir,
+                )
+                self.assertEqual(custom_decision, "not_ready")
+                self.assertIn("max_epic_runtime_minutes", custom_blocker or "")
+
+                done_child = hi.Checkpoint(
+                    version=1,
+                    issue_url=ISSUE_URL,
+                    state="DONE",
+                    started_at=fresh_start,
+                    clean_head="abc123deadbeef",
+                    reviewed_head="abc123deadbeef",
+                    parent_epic_url=parent_url,
+                    pr_url=PR_URL,
+                    pr_number=10,
+                    merge_mode="unattended_when_clean",
+                    root_task_id="t_root",
+                )
+                hi.save_checkpoint(hi.checkpoint_path(default_dir, ISSUE_URL), done_child)
+                _write_parent(default_dir, expired_start)
+                done_status = hi.status_issue(
+                    policy,
+                    ISSUE_URL,
+                    ledger=ledger,
+                    runner=runner,
+                    gh="gh",
+                    hermes="hermes",
+                )
+                self.assertEqual(done_status.state, "DONE")
+                self.assertTrue(done_status.terminal)
+
     def test_legacy_effective_mode_revalidates_against_current_authority(self) -> None:
         def write_legacy(checkpoint_dir: Path) -> None:
             path = hi.checkpoint_path(checkpoint_dir, ISSUE_URL)

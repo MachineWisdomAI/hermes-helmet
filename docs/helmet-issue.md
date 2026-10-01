@@ -45,8 +45,12 @@ merge stop (clears clean authority), reviews each head from a separate
 first-officer checkout, and posts formal GitHub review findings. The issue
 poller (`github-issue-poller`) creates same-PR repair work. The worker never
 merges. Default merge mode permits the Captain to merge that exact clean head
-without another prompt. A whole-line `Merge when clean: no` on the issue (or an
-inheriting parent epic) requires separate explicit approval.
+without another prompt, after the associated epic original-start window is
+rechecked on the configured checkpoint directory (custom `--checkpoint-dir`
+when used). An expired managed parent fails closed; standalone issues and
+actually completed `DONE` truth stay as they are. A whole-line `Merge when
+clean: no` on the issue (or an inheriting parent epic) requires separate
+explicit approval.
 
 Interactive session hosts ask once before dispatch when no valid persisted
 choice exists. `helmet issue --merge-mode …` stores the choice, source, and
