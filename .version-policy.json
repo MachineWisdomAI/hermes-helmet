@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "units": [
+    {
+      "name": "repo",
+      "paths": [
+        "**"
+      ],
+      "files": [
+        {
+          "path": "pyproject.toml",
+          "kind": "toml",
+          "format": "pep440"
+        },
+        {
+          "path": "src/hermes_helmet/__init__.py",
+          "kind": "python",
+          "format": "pep440"
+        },
+        {
+          "path": ".claude-plugin/plugin.json",
+          "kind": "json"
+        },
+        {
+          "path": ".codex-plugin/plugin.json",
+          "kind": "json"
+        }
+      ]
+    }
+  ]
+}
