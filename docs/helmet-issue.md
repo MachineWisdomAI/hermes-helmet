@@ -45,8 +45,12 @@ merge stop (clears clean authority), reviews each head from a separate
 first-officer checkout, and posts formal GitHub review findings. The issue
 poller (`github-issue-poller`) creates same-PR repair work. The worker never
 merges. Default merge mode permits the Captain to merge that exact clean head
-without another prompt. A whole-line `Merge when clean: no` on the issue (or an
-inheriting parent epic) requires separate explicit approval.
+without another prompt, after the associated epic original-start window is
+rechecked on the configured checkpoint directory (custom `--checkpoint-dir`
+when used). An expired managed parent fails closed; standalone issues and
+actually completed `DONE` truth stay as they are. A whole-line `Merge when
+clean: no` on the issue (or an inheriting parent epic) requires separate
+explicit approval.
 
 Interactive session hosts ask once before dispatch when no valid persisted
 choice exists. `helmet issue --merge-mode …` stores the choice, source, and
@@ -118,7 +122,7 @@ Non-secret JSON under `~/.hermes-helmet/checkpoints/` by default (override with
 `HERMES_HELMET_CHECKPOINT_DIR` or `--checkpoint-dir`), keyed by issue URL digest.
 Stores state, root task id, PR URL, reviewed/clean head SHAs, repair round count,
 effective merge mode, persisted choice/source, authority fingerprint,
-`merge_choice_required`, and structured blocker/operation codes. Never stores tokens, raw
+`merge_choice_required`, original `started_at`, and structured blocker/operation codes. Never stores tokens, raw
 command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,

@@ -152,10 +152,15 @@ helmet install-skills --target hermes
    delegation for that exact repo: an optional merge-mode consultation must not
    block unattended continuation; the effective permitted policy default is
    persisted (source `named_request`) and used instead of a fresh question.
-3. At startup, report the effective merge mode and continuation mechanism. For
-   a session host, keep exactly one bounded `helmet wait ISSUE_URL
-   --timeout-seconds 1800` handle and reconcile after meaningful wakes or
-   timeouts; do not emit repeated unchanged updates or create duplicate waiters.
+3. At startup, report the effective Captain issue window, worker wall-clock and
+   turn quotas, repair limit, merge mode, and continuation mechanism from
+   `helmet status --json` (`details.budget_announcement`, `details.budgets`,
+   `details.budget_window`). Announce the actual policy values; do not promise
+   six days when the effective window is shorter. These are bounded elapsed
+   windows, not uninterrupted CPU or unlimited model spend. For a session host,
+   keep exactly one bounded `helmet wait ISSUE_URL --timeout-seconds 1800`
+   handle and reconcile after meaningful wakes or timeouts; do not emit repeated
+   unchanged budget announcements or create duplicate waiters.
 4. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
    allowlist/enrollment, open issue state, ready/dispatch labels, and budgets
    are checked.
@@ -214,7 +219,9 @@ Completion: `pr_url` + head SHA known, or state `WAIT_PR` with truthful status.
    - **Material defects / unmet required acceptance** → formal GitHub review `REQUEST_CHANGES` as the Captain identity;
      record `--record-review changes_requested`; state becomes `WAIT_REPAIR`.
    - **Genuinely clean** → formal comment or approve only if policy allows;
-     record `--record-review clean`; state `READY`. Do not invent defects.
+     record `--record-review clean`; state `READY` when the associated epic
+     original-start window is still open. An expired managed parent fails
+     closed (not `READY`, no merge). Do not invent defects.
    - **Unsafe/ambiguous** → `--record-review blocked` with precise reason.
      Clears `clean_head`, sets `BLOCKED`, and is a hard merge stop until a newly
      accepted clean review (or a new head) recovers; unchanged-head resume must
@@ -243,6 +250,11 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
 ### 6. READY → MERGE_GATE → optional MERGE → VERIFY_MERGED
 
 1. Clean review of **current** head + required checks green + mergeable.
+   The associated parent epic original-start window is enforced on the
+   configured checkpoint directory by default (pass `--checkpoint-dir` for a
+   custom root). An expired managed parent fails closed; standalone issues
+   with no parent, missing unmanaged checkpoints, and actually completed
+   `DONE` truth are unchanged.
 2. Default: Captain may merge **once** for that exact head SHA.
 3. If the issue or parent epic has whole-line `Merge when clean: no` (see
    authority helpers), stop for explicit Captain approval. Policy `local-only`

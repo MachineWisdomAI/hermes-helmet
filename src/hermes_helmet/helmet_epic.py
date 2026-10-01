@@ -29,6 +29,8 @@ from hermes_helmet.authority import (
     EXPLICIT_CAPTAIN_APPROVAL_MODE,
     Policy,
     UNATTENDED_MERGE_MODE,
+    budget_elapsed_exceeds,
+    captain_budget_status_details,
     merge_authority_fingerprint,
     merge_authority_for,
     merge_mode_source_is_valid,
@@ -1663,6 +1665,40 @@ def compute_resume_children(buckets: dict[str, list[str]]) -> list[str]:
     return list(buckets.get("active") or [])
 
 
+def epic_budget_exhausted(checkpoint: EpicCheckpoint, policy: Policy) -> str | None:
+    """True elapsed epic window, ignoring a stale DONE checkpoint flag.
+
+    Actual completion is decided by live child buckets before this helper is
+    consulted. A prior DONE snapshot must not exempt an incomplete/reopened
+    graph from the original-start deadline.
+    """
+
+    if budget_elapsed_exceeds(
+        checkpoint.started_at, policy.budgets.max_epic_runtime_minutes
+    ):
+        return checkpoint_note("err", "budget", "max_epic_runtime_minutes")
+    return None
+
+
+def _epic_continuation(checkpoint: EpicCheckpoint) -> str:
+    if checkpoint.one_pass_only or checkpoint.host_continuation in {"none", "unknown"}:
+        return "one_pass_only:continuation_unavailable"
+    return checkpoint.host_continuation or "managed"
+
+
+def _epic_budget_details(
+    policy: Policy, checkpoint: EpicCheckpoint
+) -> dict[str, object]:
+    return captain_budget_status_details(
+        policy,
+        started_at=checkpoint.started_at,
+        merge_mode=checkpoint.epic_merge_mode,
+        merge_source=checkpoint.merge_mode_source,
+        continuation=_epic_continuation(checkpoint),
+        scope="epic",
+    )
+
+
 def preflight_epic(
     policy: Policy,
     epic_url: str,
@@ -1680,6 +1716,12 @@ def preflight_epic(
     if policy.captain_github_login.casefold() == policy.github_identity.casefold():
         raise HelmetEpicError(checkpoint_note("err", "captain_worker_must_differ"))
     if policy.budgets.max_issue_runtime_minutes < 1 or policy.budgets.max_repair_rounds < 1:
+        raise HelmetEpicError(checkpoint_note("err", "policy_budgets_invalid"))
+    if (
+        policy.budgets.max_epic_runtime_minutes < 1
+        or policy.budgets.worker_max_runtime_seconds < 1
+        or policy.worker_max_turns < 1
+    ):
         raise HelmetEpicError(checkpoint_note("err", "policy_budgets_invalid"))
     if policy.max_epic_parallelism < 1:
         raise HelmetEpicError(checkpoint_note("err", "max_epic_parallelism_invalid"))
@@ -1825,6 +1867,11 @@ def run_epic_pass(
         else max(1, int(policy.max_epic_parallelism))
     )
     checkpoint.max_parallelism = parallelism
+    if not checkpoint.started_at:
+        checkpoint.started_at = _utc_now()
+    announced = checkpoint_note("op", "budget_announced")
+    if announced not in checkpoint.notes:
+        checkpoint.notes.append(announced)
 
     graph: EpicGraph | None = None
     try:
@@ -2050,6 +2097,27 @@ def run_epic_pass(
             )
             return checkpoint, report, graph
 
+        exhausted = epic_budget_exhausted(checkpoint, policy)
+        if exhausted:
+            checkpoint.state = "FAILED"
+            checkpoint.last_blocker = exhausted
+            if exhausted not in checkpoint.notes:
+                checkpoint.notes.append(exhausted)
+            save_epic_checkpoint(path, checkpoint)
+            report = build_epic_status(
+                policy,
+                graph,
+                checkpoint,
+                buckets=buckets,
+                ledger=ledger,
+                checkpoint_dir=checkpoint_dir,
+                runner=runner,
+                gh=gh,
+                hermes=hermes,
+                worker_runtime=runtime,
+            )
+            return checkpoint, report, graph
+
         if buckets["failed"] and not continue_independent_branches:
             checkpoint.state = "FAILED"
             checkpoint.last_blocker = checkpoint_note(
@@ -2087,9 +2155,17 @@ def run_epic_pass(
             to_invoke.append(child_url)
 
         invoker = child_invoker or invoke_child_issue
+        deadline_hit: str | None = None
         if apply_dispatch and to_invoke and checkpoint.state != "GRAPH_CHANGED":
             checkpoint.state = "DISPATCHING"
             for child_url in to_invoke:
+                deadline_hit = epic_budget_exhausted(checkpoint, policy)
+                if deadline_hit:
+                    checkpoint.state = "FAILED"
+                    checkpoint.last_blocker = deadline_hit
+                    if deadline_hit not in checkpoint.notes:
+                        checkpoint.notes.append(deadline_hit)
+                    break
                 # Never allow root URL into child invoker.
                 if child_url == epic_url:
                     raise HelmetEpicError(
@@ -2133,6 +2209,22 @@ def run_epic_pass(
                         child_state,
                     )
                 )
+            if deadline_hit:
+                save_epic_checkpoint(path, checkpoint)
+                report = build_epic_status(
+                    policy,
+                    graph,
+                    checkpoint,
+                    buckets=buckets,
+                    ledger=ledger,
+                    checkpoint_dir=checkpoint_dir,
+                    runner=runner,
+                    gh=gh,
+                    hermes=hermes,
+                    worker_runtime=runtime,
+                    enrollment_store=enrollment_store,
+                )
+                return checkpoint, report, graph
             # Reclassify after invocations.
             buckets = classify_children(
                 policy,
@@ -2220,7 +2312,11 @@ def run_epic_pass(
             root_open=True,
             blocker=code,
             terminal=False,
-            details={"error": code, "checkpoint_state": historical},
+            details={
+                "error": code,
+                "checkpoint_state": historical,
+                **_epic_budget_details(policy, checkpoint),
+            },
         )
         return checkpoint, report, graph
 
@@ -2310,6 +2406,11 @@ def build_epic_status(
             if state not in {"GRAPH_CHANGED", "DISPATCHING", "FAILED", "BLOCKED"}:
                 state = "WAITING" if state != "PREFLIGHT" else state
 
+    exhausted = epic_budget_exhausted(checkpoint, policy)
+    if exhausted and state != "DONE":
+        state = "FAILED"
+        blocker = exhausted
+
     return EpicStatusReport(
         epic_url=graph.root_url,
         state=state,
@@ -2336,6 +2437,7 @@ def build_epic_status(
             "accepted_fingerprint": checkpoint.accepted_fingerprint,
             "child_invocations": checkpoint.child_invocations,
             "checkpoint_state": checkpoint.state,
+            **_epic_budget_details(policy, checkpoint),
         },
     )
 
@@ -2417,5 +2519,9 @@ def status_epic(
             root_open=True,
             blocker=code,
             terminal=False,
-            details={"error": code, "checkpoint_state": checkpoint.state},
+            details={
+                "error": code,
+                "checkpoint_state": checkpoint.state,
+                **_epic_budget_details(policy, checkpoint),
+            },
         )

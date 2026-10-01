@@ -64,7 +64,7 @@ ambiguous multi-Parent sets. Review-only enrolled children are never dispatched.
 Non-secret JSON under `~/.hermes-helmet/checkpoints/` (override with
 `HERMES_HELMET_CHECKPOINT_DIR` or `--checkpoint-dir`), keyed as `epic__…`.
 Stores graph fingerprint, accepted fingerprint, active/completed/failed buckets,
-parallelism, and structured notes. Never stores tokens or free-form secrets.
+parallelism, original `started_at`, and structured notes. Never stores tokens or free-form secrets.
 
 Graph fingerprint changes set state `GRAPH_CHANGED` and pause new child dispatch
 until `--accept-graph`.
@@ -80,7 +80,8 @@ until `--accept-graph`.
 - failed
 - awaiting_human
 
-plus root_open, fingerprint, max_parallelism, blocker, and terminal flag.
+plus root_open, fingerprint, max_parallelism, blocker, terminal flag, and
+effective budgets (`started_at`, `deadline`, epic/child windows, worker quota).
 
 ## Merge inheritance
 

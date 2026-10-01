@@ -657,6 +657,387 @@ class FrontierAndPassTests(unittest.TestCase):
                 [("unattended_when_clean", "epic:cli")],
             )
 
+    def test_default_epic_window_stays_active_after_seven_hours(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        invoked: list[str] = []
+
+        def invoker(policy, child_url, **kwargs):
+            invoked.append(child_url)
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        raw = _policy_dict()
+        raw.pop("budgets", None)
+        policy = policy_from_mapping(raw)
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp)
+            first, report, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            original_start = first.started_at
+            self.assertTrue(original_start)
+            self.assertIn(he.checkpoint_note("op", "budget_announced"), first.notes)
+            self.assertEqual(report.details["budgets"]["max_epic_runtime_minutes"], 8640)
+            self.assertIn("8640 minutes (6 days)", report.details["budget_announcement"])
+            path = he.epic_checkpoint_path(checkpoint_dir, EPIC_URL)
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            loaded["started_at"] = (
+                datetime.now(timezone.utc) - timedelta(hours=7)
+            ).replace(microsecond=0).isoformat()
+            path.write_text(json.dumps(loaded), encoding="utf-8")
+            invoked.clear()
+            resumed, resumed_report, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            self.assertEqual(resumed.started_at, loaded["started_at"])
+            self.assertNotEqual(resumed.state, "FAILED")
+            self.assertEqual(invoked, [CHILD_A])
+            self.assertEqual(
+                first.notes.count(he.checkpoint_note("op", "budget_announced")), 1
+            )
+            self.assertEqual(
+                resumed.notes.count(he.checkpoint_note("op", "budget_announced")), 1
+            )
+            self.assertEqual(
+                resumed_report.details["budget_window"]["started_at"],
+                loaded["started_at"],
+            )
+
+    def test_expired_epic_does_not_dispatch_and_completed_stays_done(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        invoked: list[str] = []
+
+        def invoker(policy, child_url, **kwargs):
+            invoked.append(child_url)
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp)
+            first, _, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            path = he.epic_checkpoint_path(checkpoint_dir, EPIC_URL)
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            loaded["started_at"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=8641)
+            ).replace(microsecond=0).isoformat()
+            path.write_text(json.dumps(loaded), encoding="utf-8")
+            invoked.clear()
+            expired, report, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            self.assertEqual(expired.state, "FAILED")
+            self.assertIn("max_epic_runtime_minutes", str(expired.last_blocker))
+            self.assertEqual(invoked, [])
+            self.assertEqual(report.state, "FAILED")
+            self.assertTrue(report.terminal)
+
+    def test_expired_completed_epic_stays_done(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        invoked: list[str] = []
+
+        def invoker(policy, child_url, **kwargs):
+            invoked.append(child_url)
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+        for number in (100, 101, 102):
+            self.runner.issues[number]["state"] = "closed"
+            self.runner.issues[number]["state_reason"] = "completed"
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp)
+            first, report, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A, CHILD_B, CHILD_C],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            self.assertEqual(first.state, "DONE")
+            self.assertTrue(report.terminal)
+            self.assertEqual(invoked, [])
+            path = he.epic_checkpoint_path(checkpoint_dir, EPIC_URL)
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            loaded["started_at"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=8641)
+            ).replace(microsecond=0).isoformat()
+            path.write_text(json.dumps(loaded), encoding="utf-8")
+            done, done_report, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A, CHILD_B, CHILD_C],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            self.assertEqual(done.state, "DONE")
+            self.assertEqual(done_report.state, "DONE")
+            self.assertTrue(done_report.terminal)
+            self.assertEqual(invoked, [])
+            self.assertNotIn("max_epic_runtime_minutes", str(done.last_blocker or ""))
+
+    def test_stale_done_expired_epic_does_not_resume_ready_child(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        invoked: list[str] = []
+
+        def invoker(policy, child_url, **kwargs):
+            invoked.append(child_url)
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp)
+            he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                accept_graph=True,
+            )
+            path = he.epic_checkpoint_path(checkpoint_dir, EPIC_URL)
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            loaded["state"] = "DONE"
+            loaded["started_at"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=8641)
+            ).replace(microsecond=0).isoformat()
+            path.write_text(json.dumps(loaded), encoding="utf-8")
+            invoked.clear()
+            resumed, report, _ = he.run_epic_pass(
+                policy,
+                EPIC_URL,
+                checkpoint_dir=checkpoint_dir,
+                runner=self.runner,
+                extra_child_urls=[CHILD_A],
+                child_invoker=invoker,
+                accept_graph=False,
+            )
+            self.assertEqual(invoked, [])
+            self.assertEqual(resumed.state, "FAILED")
+            self.assertIn("max_epic_runtime_minutes", str(resumed.last_blocker or ""))
+            self.assertEqual(report.state, "FAILED")
+
+    def test_epic_deadline_rechecked_before_each_child_invocation(self) -> None:
+        invoked: list[str] = []
+
+        def invoker(policy, child_url, **kwargs):
+            invoked.append(child_url)
+            return {
+                "issue_url": child_url,
+                "checkpoint": {"state": "DISPATCH"},
+                "status": {"state": "DISPATCH"},
+            }
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+
+        def elapsed_after_first(started_at, minutes, *, now=None):
+            del started_at, minutes, now
+            return len(invoked) >= 1
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(he, "budget_elapsed_exceeds", elapsed_after_first):
+                checkpoint, report, _ = he.run_epic_pass(
+                    policy,
+                    EPIC_URL,
+                    checkpoint_dir=Path(tmp),
+                    runner=self.runner,
+                    extra_child_urls=[CHILD_A, CHILD_C],
+                    child_invoker=invoker,
+                    accept_graph=True,
+                    max_parallelism=2,
+                )
+        self.assertEqual(invoked, [CHILD_A])
+        self.assertEqual(checkpoint.state, "FAILED")
+        self.assertIn("max_epic_runtime_minutes", str(checkpoint.last_blocker or ""))
+        self.assertEqual(report.state, "FAILED")
+
+    def test_expired_parent_blocks_fresh_child_merge_without_put(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+        self.runner.parent_of[100] = dict(self.runner.issues[42])
+        self.runner.sub_issues[42] = [{"html_url": CHILD_A}]
+        issue = hi.IssueRef(
+            repository=self.policy.repositories[0],
+            number=100,
+            title="Child A",
+            body=str(self.runner.issues[100]["body"]),
+            state="open",
+            labels=("ready-for-agent",),
+            html_url=CHILD_A,
+        )
+        pull = hi.PullRequestRef(
+            FIXTURE_SLUG,
+            10,
+            f"https://github.com/{FIXTURE_SLUG}/pull/10",
+            "abc123deadbeef",
+            "automation/demo-repo-100",
+            "main",
+            WORKER,
+            "open",
+            False,
+            "clean",
+            False,
+        )
+        child = hi.Checkpoint(
+            version=1,
+            issue_url=CHILD_A,
+            state="READY",
+            started_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            clean_head="abc123deadbeef",
+            parent_epic_url=EPIC_URL,
+        )
+        pr_payload = {
+            "number": 10,
+            "html_url": pull.url,
+            "state": "open",
+            "merged": False,
+            "draft": False,
+            "mergeable_state": "clean",
+            "body": f"Closes #100\n{CHILD_A}\n",
+            "user": {"login": WORKER},
+            "head": {"sha": "abc123deadbeef", "ref": "automation/demo-repo-100"},
+            "base": {"ref": "main"},
+        }
+        reviews = [
+            {
+                "id": 1,
+                "user": {"login": CAPTAIN},
+                "state": "APPROVED",
+                "commit_id": "abc123deadbeef",
+                "submitted_at": "2026-01-01T00:00:00Z",
+                "body": "clean",
+            }
+        ]
+        original_run = self.runner.run
+        merge_puts = {"n": 0}
+
+        def run_with_pr(command: list[str]) -> str:
+            joined = " ".join(command)
+            if "--method" in command and "/merge" in joined:
+                merge_puts["n"] += 1
+                return json.dumps({"merged": True, "sha": "abc123deadbeef"})
+            endpoint = command[-1] if command else ""
+            path = endpoint.split("?", 1)[0]
+            if path == f"repos/{FIXTURE_SLUG}/pulls/10":
+                return json.dumps(pr_payload)
+            if path.startswith(f"repos/{FIXTURE_SLUG}/pulls/10/reviews"):
+                return json.dumps(reviews)
+            return original_run(command)
+
+        self.runner.run = run_with_pr  # type: ignore[method-assign]
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp)
+            he.save_epic_checkpoint(
+                he.epic_checkpoint_path(checkpoint_dir, EPIC_URL),
+                he.EpicCheckpoint(
+                    version=1,
+                    epic_url=EPIC_URL,
+                    state="WAITING",
+                    started_at=(
+                        datetime.now(timezone.utc) - timedelta(minutes=8641)
+                    ).replace(microsecond=0).isoformat(),
+                    accepted_fingerprint="kept",
+                ),
+            )
+            decision, blocker = hi.evaluate_merge_gate(
+                policy,
+                issue,
+                pull,
+                child,
+                required_checks_green=True,
+                mergeable=True,
+                runner=self.runner,
+                gh="gh",
+                epic_body="Epic\n\nMerge when clean: yes\n",
+                checkpoint_dir=checkpoint_dir,
+            )
+            self.assertNotEqual(decision, "merge_allowed")
+            self.assertEqual(decision, "not_ready")
+            self.assertIn("max_epic_runtime_minutes", blocker or "")
+            if decision == "merge_allowed":
+                hi.merge_pull_request(pull, self.runner, gh="gh")
+            self.assertEqual(merge_puts["n"], 0)
+        self.runner.run = original_run  # type: ignore[method-assign]
+
     def test_epic_marker_propagates_authority_provenance_to_child(self) -> None:
         propagated: list[tuple[str | None, str]] = []
         self.runner.issues[42]["body"] = "Epic\n\nMerge when clean: no\n"
