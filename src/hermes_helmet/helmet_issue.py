@@ -1961,6 +1961,7 @@ def evaluate_merge_gate(
     runner: Runner | None = None,
     gh: str = DEFAULT_GH,
     epic_body: str | None = None,
+    checkpoint_dir: Path | None = None,
 ) -> tuple[str, str | None]:
     """Return (decision, blocker).
 
@@ -1975,6 +1976,8 @@ def evaluate_merge_gate(
     Policy ``local-only`` worker completion does not treat GitHub ``clean`` as
     independently verified required checks, and never grants unattended merge
     from checkless ``clean``; explicit Captain approval remains available.
+    When ``checkpoint_dir`` is provided, an associated parent epic whose
+    original start has elapsed fails closed (no merge after the epic deadline).
     """
 
     if issue.enrollment_purpose == repo_enroll.PURPOSE_REVIEW:
@@ -2058,6 +2061,13 @@ def evaluate_merge_gate(
     elif checkpoint.parent_epic_url:
         # Live Parent no longer matches saved association — clear stale link.
         checkpoint.parent_epic_url = None
+    associated = associated_epic_budget_exhausted(
+        policy,
+        parent_epic_url=checkpoint.parent_epic_url,
+        checkpoint_dir=checkpoint_dir,
+    )
+    if associated:
+        return "not_ready", associated
     mode = merge_authority_for(
         policy,
         issue_body=issue.body,
@@ -2161,6 +2171,39 @@ def budget_exhausted(checkpoint: Checkpoint, policy: Policy) -> str | None:
         checkpoint.started_at, policy.budgets.max_issue_runtime_minutes
     ):
         return checkpoint_note("err", "budget", "max_issue_runtime_minutes")
+    return None
+
+
+def associated_epic_budget_exhausted(
+    policy: Policy,
+    *,
+    parent_epic_url: str | None,
+    checkpoint_dir: Path | None = None,
+) -> str | None:
+    """Fail closed when the associated epic's original start has elapsed.
+
+    Missing parent association or missing epic checkpoint is not a deadline
+    signal. An unreadable associated checkpoint fails closed.
+    """
+
+    url = (parent_epic_url or "").strip()
+    if not url or checkpoint_dir is None:
+        return None
+    from hermes_helmet.helmet_epic import (
+        HelmetEpicError,
+        epic_checkpoint_path,
+        load_epic_checkpoint,
+    )
+
+    path = epic_checkpoint_path(checkpoint_dir, url)
+    try:
+        epic = load_epic_checkpoint(path, expected_epic_url=url)
+    except HelmetEpicError:
+        return checkpoint_note("err", "budget", "max_epic_runtime_minutes")
+    if epic is None or not epic.started_at:
+        return None
+    if budget_elapsed_exceeds(epic.started_at, policy.budgets.max_epic_runtime_minutes):
+        return checkpoint_note("err", "budget", "max_epic_runtime_minutes")
     return None
 
 
@@ -2589,6 +2632,24 @@ def run_preflight_and_adopt(
                 )
                 return checkpoint, report
             raise HelmetIssueError(checkpoint_note("err", "issue_not_open"))
+
+        associated = associated_epic_budget_exhausted(
+            policy,
+            parent_epic_url=checkpoint.parent_epic_url,
+            checkpoint_dir=checkpoint_dir,
+        )
+        if associated:
+            set_blocker(checkpoint, associated, fatal=True)
+            save_checkpoint(path, checkpoint)
+            report = build_status(
+                policy,
+                issue_url,
+                checkpoint,
+                root_task_id=root_task_id,
+                pull=pull,
+                repair_task_id=repair_id,
+            )
+            return checkpoint, report
 
         known = {label.casefold() for label in issue.labels}
         if (

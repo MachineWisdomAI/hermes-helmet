@@ -1610,6 +1610,65 @@ class HeadAndMergeTests(unittest.TestCase):
 
 
 class OrchestrationPassTests(unittest.TestCase):
+    def test_expired_parent_epic_blocks_direct_child_resume(self) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from hermes_helmet import helmet_epic as he
+
+        policy = _policy(
+            budgets={
+                "max_issue_runtime_minutes": 120,
+                "max_epic_runtime_minutes": 8640,
+                "max_repair_rounds": 10,
+            }
+        )
+        parent_url = f"https://github.com/{FIXTURE_SLUG}/issues/42"
+
+        class Parent404Runner(FakeRunner):
+            def run(self, command: list[str]) -> str:
+                endpoint = command[-1] if command else ""
+                if endpoint == f"repos/{FIXTURE_SLUG}/issues/2/parent":
+                    raise hi.HelmetIssueError("err:command_failed:http404")
+                if "sub_issues" in endpoint:
+                    raise hi.HelmetIssueError("err:command_failed:http404")
+                return super().run(command)
+
+        runner = Parent404Runner()
+        runner.issue = dict(runner.issue)
+        runner.issue["body"] = f"Ship it.\n\n## Parent\n\n- {parent_url}\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.sqlite3"
+            _ledger_with_root(ledger)
+            checkpoint_dir = Path(tmp) / "cp"
+            he.save_epic_checkpoint(
+                he.epic_checkpoint_path(checkpoint_dir, parent_url),
+                he.EpicCheckpoint(
+                    version=1,
+                    epic_url=parent_url,
+                    state="WAITING",
+                    started_at=(
+                        datetime.now(timezone.utc) - timedelta(minutes=8641)
+                    ).replace(microsecond=0).isoformat(),
+                ),
+            )
+            checkpoint, _report = hi.run_preflight_and_adopt(
+                policy,
+                ISSUE_URL,
+                ledger=ledger,
+                checkpoint_dir=checkpoint_dir,
+                runner=runner,
+                gh="gh",
+                hermes="hermes",
+                apply_dispatch=True,
+                worker_runtime=(),
+                parent_epic_url=parent_url,
+                epic_body="Epic\n\nMerge when clean: yes\n",
+            )
+            self.assertEqual(checkpoint.state, "FAILED")
+            self.assertIn("max_epic_runtime_minutes", checkpoint.last_blocker or "")
+            self.assertEqual(runner.labels_posted, [])
+            self.assertEqual(runner.created_tasks, [])
+
     def test_legacy_effective_mode_revalidates_against_current_authority(self) -> None:
         def write_legacy(checkpoint_dir: Path) -> None:
             path = hi.checkpoint_path(checkpoint_dir, ISSUE_URL)

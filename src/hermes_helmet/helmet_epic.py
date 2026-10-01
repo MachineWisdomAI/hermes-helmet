@@ -1666,8 +1666,13 @@ def compute_resume_children(buckets: dict[str, list[str]]) -> list[str]:
 
 
 def epic_budget_exhausted(checkpoint: EpicCheckpoint, policy: Policy) -> str | None:
-    if checkpoint.state == "DONE":
-        return None
+    """True elapsed epic window, ignoring a stale DONE checkpoint flag.
+
+    Actual completion is decided by live child buckets before this helper is
+    consulted. A prior DONE snapshot must not exempt an incomplete/reopened
+    graph from the original-start deadline.
+    """
+
     if budget_elapsed_exceeds(
         checkpoint.started_at, policy.budgets.max_epic_runtime_minutes
     ):
@@ -2150,9 +2155,17 @@ def run_epic_pass(
             to_invoke.append(child_url)
 
         invoker = child_invoker or invoke_child_issue
+        deadline_hit: str | None = None
         if apply_dispatch and to_invoke and checkpoint.state != "GRAPH_CHANGED":
             checkpoint.state = "DISPATCHING"
             for child_url in to_invoke:
+                deadline_hit = epic_budget_exhausted(checkpoint, policy)
+                if deadline_hit:
+                    checkpoint.state = "FAILED"
+                    checkpoint.last_blocker = deadline_hit
+                    if deadline_hit not in checkpoint.notes:
+                        checkpoint.notes.append(deadline_hit)
+                    break
                 # Never allow root URL into child invoker.
                 if child_url == epic_url:
                     raise HelmetEpicError(
@@ -2196,6 +2209,22 @@ def run_epic_pass(
                         child_state,
                     )
                 )
+            if deadline_hit:
+                save_epic_checkpoint(path, checkpoint)
+                report = build_epic_status(
+                    policy,
+                    graph,
+                    checkpoint,
+                    buckets=buckets,
+                    ledger=ledger,
+                    checkpoint_dir=checkpoint_dir,
+                    runner=runner,
+                    gh=gh,
+                    hermes=hermes,
+                    worker_runtime=runtime,
+                    enrollment_store=enrollment_store,
+                )
+                return checkpoint, report, graph
             # Reclassify after invocations.
             buckets = classify_children(
                 policy,
