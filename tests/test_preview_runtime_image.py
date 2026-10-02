@@ -195,7 +195,7 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
         verify = VERIFY.read_text(encoding="utf-8")
         for action in (
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435",
+            "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
             "docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83",
             "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
             "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
