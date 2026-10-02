@@ -11,7 +11,7 @@
   "assignee": "builder",
   "inference_provider": "openai",
   "inference_model": "gpt-4.1",
-  "worker_max_turns": 100,
+  "worker_max_turns": 2000,
   "ready_label": "ready-for-agent",
   "dispatch_label": "hermes-kanban-go",
   "github_owners": [

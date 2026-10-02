@@ -189,7 +189,14 @@ helmet install-skills --target hermes
    delegation for that exact repo: an optional consultation must not block
    unattended continuation; the effective permitted policy default is persisted
    (source `named_request`) and used instead of a fresh question.
-3. Report the effective merge mode and continuation mechanism at startup.
+3. Report the effective epic and child Captain windows, worker wall-clock/turn
+   quotas, repair limit, merge mode, and continuation mechanism at startup from
+   `helmet epic-status --json` (`details.budget_announcement`, `details.budgets`,
+   `details.budget_window`). Announce actual explicit overrides rather than
+   promising six days when policy is shorter. These are bounded elapsed windows,
+   not uninterrupted CPU or unlimited model spend. Do not repeat an unchanged
+   announcement during managed waits. Keep one event-driven waiter per child
+   with a 1,800-second wait bound.
 4. Verify observed GitHub login is Captain and differs from worker.
 5. Load epic root: must be open; must **not** carry `dispatch_label`.
 6. Stop on authority mismatch, closed root, missing label config, or bad budgets.

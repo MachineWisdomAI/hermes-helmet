@@ -235,7 +235,8 @@ available, with explicit `Parent` and `Blocked by` links as the fallback.
 
 Each child follows the same issue, review, repair, and merge workflow.
 `max_epic_parallelism` bounds concurrent work, while runtime and repair budgets
-bound each issue. Independent children can continue when another is blocked.
+bound each issue and the epic as a whole (defaults: 6-day Captain windows, 24-hour
+worker attempts). Independent children can continue when another is blocked.
 A changed dependency graph is presented for acceptance before new dispatch,
 and the parent remains open for your closeout. See the
 [epic guide](docs/helmet-epic.md).
