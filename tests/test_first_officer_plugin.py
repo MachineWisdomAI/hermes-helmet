@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -48,7 +50,13 @@ class FirstOfficerPluginTests(unittest.TestCase):
             claude["version"],
             r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
         )
-        self.assertIn('version = "0.1.0rc5"', pyproject)
+        package_version = tomllib.loads(pyproject)["project"]["version"]
+        plugin_version = re.sub(
+            r"^(\d+\.\d+\.\d+)(a|b|rc)(\d+)$",
+            lambda match: match[1] + "-" + {"a": "alpha", "b": "beta", "rc": "rc"}[match[2]] + "." + match[3],
+            package_version,
+        )
+        self.assertEqual(claude["version"], plugin_version)
         self.assertNotEqual(claude["version"], "0.1.0rc1")
         self.assertNotEqual(claude["version"], "0.1.0-rc.3")
         self.assertEqual(claude["license"], "Apache-2.0")
