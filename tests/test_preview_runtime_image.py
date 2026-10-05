@@ -198,7 +198,7 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
             "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069",
             "docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83",
             "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
-            "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
             "docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772",
         ):
