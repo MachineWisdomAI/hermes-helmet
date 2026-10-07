@@ -200,7 +200,7 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
             "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
             "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
-            "docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772",
+            "docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
         ):
             self.assertIn(action, self.workflow)
         for match in USES_RE.finditer(self.workflow):
