@@ -186,8 +186,8 @@ assert entrypoint.index("unset GH_TOKEN") < entrypoint.index("run_company_skills
 assert entrypoint.index("run_company_skills_import") < entrypoint.index(upstream)
 # Canonical Hermes base pin: immutable tag+digest, no latest/main.
 expected_base = (
-    "nousresearch/hermes-agent:v2026.9.24@"
-    "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7"
+    "nousresearch/hermes-agent:v0.21.6@"
+    "sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909"
 )
 assert f"ARG HERMES_BASE_IMAGE={expected_base}" in dockerfile
 assert f"HERMES_BASE_IMAGE: ${{HERMES_BASE_IMAGE:-{expected_base}}}" in text

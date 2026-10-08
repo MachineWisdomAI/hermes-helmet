@@ -15,8 +15,8 @@ VERIFY = ROOT / ".github" / "workflows" / "verify.yml"
 PINNED_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 USES_RE = re.compile(r"^\s+uses:\s+(\S+)", re.MULTILINE)
 BASE_IMAGE = (
-    "nousresearch/hermes-agent:v2026.9.24@"
-    "sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7"
+    "nousresearch/hermes-agent:v0.21.6@"
+    "sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909"
 )
 BASE_AMD64 = (
     "nousresearch/hermes-agent@"
