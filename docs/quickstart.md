@@ -33,7 +33,7 @@ built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. See
 [runtime-image.md](runtime-image.md). Development builds still pin the official
 Hermes Agent base
 `nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909`
-(Hermes Agent 0.21.5). Override only with another immutable tag+digest; do not
+(Hermes Agent 0.21.6). Override only with another immutable tag+digest; do not
 use `latest` or `main`.
 
 ## Install the CLI
