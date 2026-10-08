@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-helmet"
-version = "0.1.5"
+version = "0.1.6"
 description = "Open-source software factory for coding agents: delegation, review, and repair"
 readme = "README.md"
 requires-python = ">=3.11"
