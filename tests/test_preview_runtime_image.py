@@ -20,11 +20,11 @@ BASE_IMAGE = (
 )
 BASE_AMD64 = (
     "nousresearch/hermes-agent@"
-    "sha256:2fd023efbb8d3d2b0ce1a73d028b07370cff34f567cfe0e999553e8c327ea283"
+    "sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22"
 )
 BASE_ARM64 = (
     "nousresearch/hermes-agent@"
-    "sha256:93b4e2877a2f48f4474b6dd2b99386ae32c4c552d32639df1a869b3f13c50b5a"
+    "sha256:93b295a42bdb6003e06fb9ce316bd6d4f4c09a93a7a89d263701ec6b1a79b208"
 )
 RUNTIME = "ghcr.io/machinewisdomai/hermes-helmet/runtime"
 
