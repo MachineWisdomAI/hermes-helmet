@@ -260,5 +260,96 @@ class CompareTrivyReportsTests(unittest.TestCase):
                 MODULE._java_database_sha256(java_evidence)
 
 
+def gh_stdlib_report() -> dict:
+    derived = report(derived=True)
+    derived["Results"].append(
+        {
+            "Target": "usr/local/libexec/hermes-helmet/gh",
+            "Class": "lang-pkgs",
+            "Type": "gobinary",
+            "Vulnerabilities": [
+                {
+                    "VulnerabilityID": "CVE-EXCEPTED",
+                    "PkgName": "stdlib",
+                    "InstalledVersion": "v1.27.1",
+                    "FixedVersion": "1.27.2",
+                    "Severity": "HIGH",
+                }
+            ],
+        }
+    )
+    return derived
+
+
+EXCEPTION = {
+    "id": "CVE-EXCEPTED",
+    "package": "stdlib",
+    "installed_version": "v1.27.1",
+    "target": "usr/local/libexec/hermes-helmet/gh",
+    "expires": "2026-11-08",
+    "reason": "test exception",
+}
+
+
+class WrapperExceptionTests(unittest.TestCase):
+    def compare(self, derived: dict, *, exception: dict, today: str):
+        return MODULE.compare(
+            report(), derived,
+            expected_platform="linux/amd64", expected_base_ref=BASE_REF,
+            database_sha256=DATABASE_SHA256,
+            java_database_sha256="absent",
+            exceptions=(exception,),
+            today=MODULE.datetime.date.fromisoformat(today),
+        )
+
+    def test_unexpired_exact_exception_passes_and_is_recorded(self) -> None:
+        summary, failures = self.compare(
+            gh_stdlib_report(), exception=EXCEPTION, today="2026-11-08"
+        )
+        self.assertEqual(failures, [])
+        self.assertEqual(summary["delta"]["added_high_or_critical"], [])
+        excepted = summary["delta"]["excepted_high_or_critical"]
+        self.assertEqual([item["id"] for item in excepted], ["CVE-EXCEPTED"])
+        self.assertEqual(excepted[0]["exception_expires"], "2026-11-08")
+        self.assertEqual(summary["policy"]["wrapper_exceptions"], [EXCEPTION])
+
+    def test_expired_exception_fails_again(self) -> None:
+        summary, failures = self.compare(
+            gh_stdlib_report(), exception=EXCEPTION, today="2026-11-09"
+        )
+        self.assertEqual(len(summary["delta"]["added_high_or_critical"]), 1)
+        self.assertEqual(summary["delta"]["excepted_high_or_critical"], [])
+        self.assertTrue(any("wrapper adds 1" in failure for failure in failures))
+
+    def test_exception_does_not_cover_other_targets_or_versions(self) -> None:
+        for field, value in (
+            ("target", "usr/local/libexec/hermes-helmet/claude"),
+            ("installed_version", "v1.27.0"),
+            ("package", "golang.org/x/net"),
+            ("id", "CVE-OTHER"),
+        ):
+            with self.subTest(field=field):
+                summary, failures = self.compare(
+                    gh_stdlib_report(),
+                    exception={**EXCEPTION, field: value},
+                    today="2026-10-09",
+                )
+                self.assertEqual(len(summary["delta"]["added_high_or_critical"]), 1)
+                self.assertTrue(any("wrapper adds 1" in failure for failure in failures))
+
+    def test_shipped_exceptions_are_narrow_and_dated(self) -> None:
+        self.assertTrue(MODULE.WRAPPER_EXCEPTIONS)
+        for exception in MODULE.WRAPPER_EXCEPTIONS:
+            with self.subTest(exception=exception["id"]):
+                self.assertEqual(
+                    set(exception),
+                    {"id", "package", "installed_version", "target", "expires", "reason"},
+                )
+                self.assertRegex(exception["id"], r"^CVE-\d{4}-\d+$")
+                self.assertEqual(exception["target"], "usr/local/libexec/hermes-helmet/gh")
+                MODULE.datetime.date.fromisoformat(exception["expires"])
+                self.assertTrue(exception["reason"].strip())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,11 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   Hermes starts; `/usr/local/bin/claude` hands it to each CLI run, matching the
   worker PAT's handling. The image smoke test checks both tokens stay out of
   process environments.
+- Unblock the preview image build on Hermes 0.21.6: the smoke readiness probe
+  now matches the 0.21.6 gateway process, and the wrapper scan gate accepts
+  two Go 1.27.1 standard-library denial-of-service CVEs in the pinned `gh`
+  binary (CVE-2026-78667, CVE-2026-97031) until 2026-11-08. No `gh` release is
+  built with the fixed Go 1.27.2 yet.
 
 ### 0.1.7
 

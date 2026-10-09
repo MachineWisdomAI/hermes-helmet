@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import re
 import sys
@@ -15,6 +16,26 @@ from typing import Any
 BLOCKING_SEVERITIES = frozenset({"HIGH", "CRITICAL"})
 BASE_LABEL = "org.opencontainers.image.base.name"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# Reviewed wrapper-added findings that may pass the gate until their expiry.
+# Each entry matches one exact vulnerability, package, installed version, and
+# file target. An expired entry stops matching, so the finding fails again.
+WRAPPER_EXCEPTIONS: tuple[dict[str, str], ...] = tuple(
+    {
+        "id": identifier,
+        "package": "stdlib",
+        "installed_version": "v1.27.1",
+        "target": "usr/local/libexec/hermes-helmet/gh",
+        "expires": "2026-11-08",
+        "reason": (
+            "Denial-of-service fix in Go 1.27.2; gh 2.101.0 and the latest "
+            "gh 2.102.0 are both built with Go 1.27.1. gh runs only as an "
+            "outbound client for one authorized command. Remove once a gh "
+            "release built with Go 1.27.2 or newer is pinned."
+        ),
+    }
+    for identifier in ("CVE-2026-78667", "CVE-2026-97031")
+)
 
 
 class ReportError(RuntimeError):
@@ -165,6 +186,22 @@ def _secrets(report: dict[str, Any]) -> list[dict[str, Any]]:
     return findings
 
 
+def _matching_exception(
+    finding: dict[str, Any],
+    exceptions: Iterable[dict[str, str]],
+    today: datetime.date,
+) -> dict[str, str] | None:
+    for exception in exceptions:
+        if datetime.date.fromisoformat(exception["expires"]) < today:
+            continue
+        if all(
+            finding.get(field) == exception[field]
+            for field in ("id", "package", "installed_version", "target")
+        ):
+            return exception
+    return None
+
+
 def _ordered(findings: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         findings,
@@ -185,6 +222,8 @@ def compare(
     expected_base_ref: str,
     database_sha256: str,
     java_database_sha256: str,
+    exceptions: Iterable[dict[str, str]] = WRAPPER_EXCEPTIONS,
+    today: datetime.date | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     if not SHA256_RE.fullmatch(database_sha256):
         raise ReportError("invalid Trivy database SHA-256")
@@ -238,7 +277,22 @@ def compare(
     added_keys = set(derived_vulnerabilities) - set(base_vulnerabilities)
     removed_keys = set(base_vulnerabilities) - set(derived_vulnerabilities)
     inherited_keys = set(base_vulnerabilities) & set(derived_vulnerabilities)
-    added = _ordered(derived_vulnerabilities[key] for key in added_keys)
+    exceptions = tuple(exceptions)
+    today = today or datetime.datetime.now(datetime.timezone.utc).date()
+    added = []
+    excepted = []
+    for finding in _ordered(derived_vulnerabilities[key] for key in added_keys):
+        exception = _matching_exception(finding, exceptions, today)
+        if exception is None:
+            added.append(finding)
+        else:
+            excepted.append(
+                {
+                    **finding,
+                    "exception_expires": exception["expires"],
+                    "exception_reason": exception["reason"],
+                }
+            )
     removed = _ordered(base_vulnerabilities[key] for key in removed_keys)
     inherited = _ordered(derived_vulnerabilities[key] for key in inherited_keys)
     secrets = _secrets(derived)
@@ -252,6 +306,7 @@ def compare(
             "blocking_severities": sorted(BLOCKING_SEVERITIES),
             "wrapper_added_findings_allowed": 0,
             "secret_findings_allowed": 0,
+            "wrapper_exceptions": list(exceptions),
         },
         "platform": expected_platform,
         "expected_base_ref": expected_base_ref,
@@ -273,6 +328,7 @@ def compare(
         },
         "delta": {
             "added_high_or_critical": added,
+            "excepted_high_or_critical": excepted,
             "removed_high_or_critical": removed,
             "inherited_high_or_critical": inherited,
         },
@@ -315,7 +371,13 @@ def main() -> int:
         for failure in failures:
             print(f"supply-chain gate: {failure}", file=sys.stderr)
         return 1
-    inherited = (summary.get("delta") or {}).get("inherited_high_or_critical") or []
+    delta = summary.get("delta") or {}
+    inherited = delta.get("inherited_high_or_critical") or []
+    for finding in delta.get("excepted_high_or_critical") or []:
+        print(
+            "supply-chain gate: excepted "
+            f"{finding['id']} in {finding['target']} until {finding['exception_expires']}"
+        )
     print(
         "supply-chain gate: clean wrapper delta; "
         f"{len(inherited)} inherited HIGH/CRITICAL findings still in the candidate"

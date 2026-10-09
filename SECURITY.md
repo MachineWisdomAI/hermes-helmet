@@ -45,7 +45,11 @@ GitHub CLI download by architecture and checksum. Review dependency and base-
 image updates through the normal pull-request workflow before deployment.
 
 Preview runtime images are built for `linux/amd64` and `linux/arm64`, scanned
-against the pinned base, and smoke-tested before publication. Manual publication
+against the pinned base, and smoke-tested before publication. The scan fails on
+any HIGH or CRITICAL finding the Hermes Helmet layers add, except entries in
+`WRAPPER_EXCEPTIONS` in `scripts/compare_trivy_reports.py`. Each entry names one
+vulnerability, package version, and file, records why it is accepted, and stops
+matching after its expiry date. Manual publication
 uses an explicit full commit SHA on protected `main` and tags
 `ghcr.io/machinewisdomai/hermes-helmet/runtime:preview-<sha>`. These images are
 not `latest` or `stable` releases. The first package is created private; the
