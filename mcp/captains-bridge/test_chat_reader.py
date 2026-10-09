@@ -34,7 +34,7 @@ class SavedChatReader(unittest.TestCase):
             self.item({'type': 'AgentMessage', 'id': 'report', 'phase': 'final_answer', 'content': [{'type': 'Text', 'text': 'The handoff was repaired'}]}),
             self.item({'type': 'Reasoning', 'id': 'private', 'raw_content': ['do not expose']}),
             self.item({'type': 'CommandExecution', 'id': 'command', 'command': 'check', 'aggregated_output': 'failed', 'exit_code': 1, 'status': 'completed'}),
-            self.item({'type': 'McpToolCall', 'id': 'viewer', 'server': 'helmet_observation_spike', 'tool': 'present_chat_work', 'result': {'content': [{'type': 'text', 'text': 'recursive viewer data'}]}}),
+            self.item({'type': 'McpToolCall', 'id': 'viewer', 'server': 'hermes_helmet_captains_bridge', 'tool': 'present_chat_work', 'result': {'content': [{'type': 'text', 'text': 'recursive viewer data'}]}}),
             self.event('task_complete', turn_id='turn-one', started_at=10, completed_at=20, duration_ms=10000),
             self.event('task_started', turn_id='turn-open', started_at=30),
         ]
@@ -105,6 +105,41 @@ class SavedChatReader(unittest.TestCase):
         self.assertIn("echo 'two words'", by_id['args']['text'])
         self.assertEqual(data['turns'][0]['files'], ['src/app.py'])
         self.assertEqual(data['turns'][0]['delegations'][0]['agents'], [OTHER])
+
+    def only_items(self, *items):
+        self.events = [self.events[0]] + [self.item(i) for i in items]
+        self.save()
+
+    def test_refuses_history_with_only_unknown_item_kinds(self):
+        self.only_items({'type': 'NewCompletedItem', 'id': 'new'})
+        with self.assertRaisesRegex(ValueError, 'not support'):
+            chat_reader.read_chat(CHAT)
+
+    def test_refuses_malformed_item_shapes_with_tool_error_not_crash(self):
+        for bad in ([], 'text', None, {'id': 'x'}, {'type': 'AgentMessage', 'id': 'a', 'content': 'oops'},
+                    {'type': 'UserMessage', 'id': 'u', 'content': [1]}):
+            with self.subTest(item=bad):
+                self.only_items(bad)
+                with self.assertRaises(ValueError):
+                    chat_reader.read_chat(CHAT)
+
+    def test_refuses_malformed_event_and_payload_shapes(self):
+        for bad in ([], {'type': 'event_msg', 'payload': []}):
+            with self.subTest(event=bad):
+                self.events = [self.events[0], bad]
+                self.save()
+                with self.assertRaises(ValueError):
+                    chat_reader.read_chat(CHAT)
+
+    def test_only_excluded_records_are_not_usable_history(self):
+        self.only_items({'type': 'Reasoning', 'id': 'private'})
+        with self.assertRaisesRegex(ValueError, 'no completed item'):
+            chat_reader.read_chat(CHAT)
+
+    def test_unknown_kind_beside_supported_records_keeps_usable_history(self):
+        self.events.append(self.item({'type': 'NewCompletedItem', 'id': 'new'}))
+        self.save()
+        self.assertEqual([r['id'] for r in chat_reader.read_chat(CHAT)['records']], ['request', 'report', 'command'])
 
     def test_refresh_sees_new_items_without_replacing_source_ids(self):
         original = chat_reader.read_chat(CHAT)

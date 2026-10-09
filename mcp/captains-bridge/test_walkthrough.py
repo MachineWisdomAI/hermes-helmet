@@ -12,7 +12,7 @@ class WalkthroughTests(unittest.TestCase):
             {'id': 'command', 'type': 'commandExecution', 'command': 'change_setting', 'aggregatedOutput': '30 -> 10', 'exitCode': 0},
             {'id': 'report', 'type': 'agentMessage', 'phase': 'final_answer', 'text': 'Changed the setting. https://github.com/example/repo/pull/1'},
             {'id': 'reason', 'type': 'reasoning', 'summary': ['private reasoning']},
-            {'id': 'viewer', 'type': 'mcpToolCall', 'server': 'helmet_observation_spike', 'tool': 'present_chat_work', 'result': {'content': [{'type': 'text', 'text': 'Recursive data'}]}}
+            {'id': 'viewer', 'type': 'mcpToolCall', 'server': 'hermes_helmet_captains_bridge', 'tool': 'present_chat_work', 'result': {'content': [{'type': 'text', 'text': 'Recursive data'}]}}
         ]}]}
         self.data = summarize(self.thread)
         self.account = {'objective': 'Change the setting.', 'summary': 'The setting was changed.', 'evidence': ['request', 'command'], 'items': [
