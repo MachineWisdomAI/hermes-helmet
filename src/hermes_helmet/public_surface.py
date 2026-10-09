@@ -63,6 +63,7 @@ ALLOWED_TOKENS = [
     ),
 ]
 SCAN_ROOTS = (
+    "prototypes",
     "config",
     "src",
     "tests",

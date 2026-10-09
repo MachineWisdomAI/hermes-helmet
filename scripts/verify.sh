@@ -154,6 +154,23 @@ fi
 # Behavioral parity suite.
 PYTHONPATH=src "$PYTHON_BIN" -m unittest discover -s tests -v
 
+# Captain's Bridge prototype source and its synthetic checks. The view checks
+# read view.html relative to the prototype directory.
+(
+    cd prototypes/captains-bridge
+    "$PYTHON_BIN" -B -m unittest discover -s . -p 'test_*.py' -v
+    if command -v node >/dev/null 2>&1; then
+        for check in test_view.cjs test_delivery.cjs test_actions.cjs; do
+            node "$check"
+        done
+    elif [ -n "${CI:-}" ]; then
+        echo "verify: node is required in CI for Captain's Bridge view checks" >&2
+        exit 1
+    else
+        echo "verify: skipped Captain's Bridge view checks (node not found)" >&2
+    fi
+)
+
 # Compose file must parse as YAML-ish structure (no docker required).
 "$PYTHON_BIN" - <<'PY'
 from pathlib import Path

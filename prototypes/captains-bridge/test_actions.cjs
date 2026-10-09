@@ -1,0 +1,58 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+class Element{
+  constructor(tag){this.tagName=tag;this.children=[];this.textContent='';this.hidden=false;this.disabled=false;this.style={setProperty(){}}}
+  append(c){this.children.push(c)} prepend(c){this.children.unshift(c)} replaceChildren(...c){this.children=c} focus(){}
+}
+const roots=Object.fromEntries(['app','error','connect','connection','request-status'].map(k=>[k,new Element(k)]));
+const document={getElementById:id=>roots[id],createElement:t=>new Element(t),documentElement:new Element('html')};
+let listener;
+const messages=[];
+const parent={postMessage(message){if(message.method==='ui/message')messages.push(message)}};
+const context=vm.createContext({document,parent,window:{scrollY:0,scrollTo(){}},setTimeout,clearTimeout,requestAnimationFrame:f=>f(),addEventListener:(type,fn)=>{if(type==='message')listener=fn},console});
+vm.runInContext(fs.readFileSync('view.html','utf8').match(/<script>([\s\S]*)<\/script>/)[1],context);
+const chat='11111111-1111-4111-8111-111111111111';
+const work={id:'handoff',title:'Worker handoff',group:'changed',status:'Recorded',summary:'A reviewed handoff.',detail:'Recorded work.',evidence:['record'],steps:[],links:[],change:{before:'Waiting',after:'Reviewed',explanation:'Review completed.',evidence:['record']}};
+const deck={threadId:chat,title:'Test chat',turns:[],records:[],walkthrough:{objective:'Understand delegated work.',summary:'Review completed.',evidence:['record'],items:[work]}};
+context.payload={_meta:{deck,view:{threadId:chat}}};
+const run=s=>vm.runInContext(s,context);
+const walk=e=>[e,...e.children.flatMap(walk)];
+const button=label=>{const found=walk(roots.app).find(e=>e.tagName==='button'&&e.textContent===label);assert.ok(found,`Missing action: ${label}`);return found};
+const reply=(request,error)=>listener({source:parent,data:{id:request.id,...(error?{error:{message:error}}:{result:{}})}});
+const text=request=>request.params.content[0].text;
+(async()=>{
+  run('receive(payload)');
+  assert.equal(messages.length,0,'Opening the view must never invoke a skill.');
+  const show=button('Show Me'),retro=button('Retro');
+  const first=show.onclick();
+  assert.equal(messages.length,1);
+  assert.match(text(messages[0]),/\$show-me/);
+  assert.match(text(messages[0]),new RegExp(chat));
+  assert.match(text(messages[0]),/CODEX_THREAD_ID/);
+  assert.match(text(messages[0]),/not installed|unavailable/);
+  assert.equal(messages[0].params.role,'user');
+  const duplicate=show.onclick();await duplicate;
+  assert.equal(messages.length,1,'A pending request must not submit twice.');
+  reply(messages[0]);await first;
+  assert.match(roots['request-status'].textContent,/requested in this chat/i);
+  const second=retro.onclick();
+  assert.equal(messages.length,2);
+  assert.match(text(messages[1]),/\$retro/);
+  assert.match(text(messages[1]),/suggestions|proposals/);
+  assert.match(text(messages[1]),/Do not apply/);
+  reply(messages[1],'Request rejected');await second;
+  assert.equal(roots.error.hidden,false);
+  assert.match(roots.error.textContent,/Request rejected/);
+  assert.equal(roots['request-status'].hidden,true,'A failed request must not leave a success notice.');
+  run("navigate({page:'work',id:'handoff'})");
+  button('View before and after');
+  const third=button('Show Me').onclick();
+  assert.match(text(messages[2]),/Worker handoff/);
+  assert.match(text(messages[2]),/record/);
+  assert.match(text(messages[2]),/reference material/i);
+  reply(messages[2]);await third;
+  context.payload._meta.deck.threadId=null;context.payload._meta.view=null;
+  run('receive(payload)');await button('Show Me').onclick();
+  assert.equal(messages.length,3,'A skill request requires the originating chat identity.');
+  assert.match(roots.error.textContent,/chat reference/i);
+  console.log('PASS: user-initiated Show Me and Retro, selected-work context, exact-chat guard, duplicate prevention, acknowledgement, failure and missing binding.');
+})().catch(error=>{console.error(error);process.exitCode=1});

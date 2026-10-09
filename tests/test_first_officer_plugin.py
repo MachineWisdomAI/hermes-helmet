@@ -181,6 +181,13 @@ class FirstOfficerPluginTests(unittest.TestCase):
         self.assertIn(".codex-plugin/plugin.json", verify)
         self.assertIn(INSTALL_GUIDE, verify)
 
+    def test_verify_runs_captains_bridge_prototype_checks(self) -> None:
+        verify = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
+        self.assertIn("cd prototypes/captains-bridge", verify)
+        for check in ("test_view.cjs", "test_delivery.cjs", "test_actions.cjs"):
+            self.assertIn(check, verify)
+            self.assertTrue((ROOT / "prototypes" / "captains-bridge" / check).is_file())
+
     def test_install_guide_is_linked_and_names_real_commands(self) -> None:
         guide = (ROOT / INSTALL_GUIDE).read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "helmet_observation_spike": {
+      "command": "python3",
+      "args": [
+        "-B",
+        "./server.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME",
+        "HOME",
+        "PATH"
+      ]
+    }
+  }
+}
