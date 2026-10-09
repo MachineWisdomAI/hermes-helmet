@@ -26,6 +26,10 @@ it is not the [September 23, 2026 wheel](https://github.com/MachineWisdomAI/herm
 The digest identifies the image built from that recorded source SHA.
 `/opt/hermes-helmet/SOURCE_COMMIT` inside the container is that SHA.
 
+Images built from current source also bundle the pinned Claude Code CLI and the
+Claude subscription model-provider plugin. This preview predates them; use the
+development build below for [Claude subscription workers](claude-subscription.md).
+
 ## Run the published image
 
 From a clone of this repository, after `deploy/.env` holds the worker token and

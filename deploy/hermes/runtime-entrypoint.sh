@@ -1,6 +1,7 @@
 #!/bin/sh
-# Bridge the runtime GitHub token into gh without exposing it to worker shells.
-# Always clear raw PAT env vars before exec'ing Hermes, and never stay root.
+# Bridge runtime GitHub and Claude Code tokens into their CLI wrappers without
+# exposing them to worker shells. Always clear raw token env vars before
+# exec'ing Hermes, and never stay root.
 set -eu
 
 export HOME="${HOME:-/opt/data}"
@@ -10,6 +11,7 @@ uid="${HERMES_UID:-10000}"
 gid="${HERMES_GID:-10000}"
 runtime_dir="${HERMES_HELMET_RUNTIME_DIR:-/run/hermes-helmet}"
 token_file="$runtime_dir/github-token"
+claude_token_file="$runtime_dir/claude-code-oauth-token"
 worker_home="$HERMES_HOME/home"
 policy_target="/opt/data/github-issue-poller/policy.json"
 
@@ -26,19 +28,26 @@ install_runtime_dirs() {
     chmod 700 "$runtime_dir" "$worker_home" 2>/dev/null || true
 }
 
-if [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
-    token="${GH_TOKEN:-$GITHUB_TOKEN}"
+write_runtime_token() {
     install_runtime_dirs
     umask 077
-    token_tmp="$runtime_dir/.github-token.$$"
+    token_tmp="$(dirname "$2")/.$(basename "$2").$$"
     trap 'rm -f "$token_tmp"' EXIT HUP INT TERM
-    printf '%s' "$token" > "$token_tmp"
-    mv "$token_tmp" "$token_file"
+    printf '%s' "$1" > "$token_tmp"
+    mv "$token_tmp" "$2"
     trap - EXIT HUP INT TERM
-    chmod 600 "$token_file" 2>/dev/null || true
+    chmod 600 "$2" 2>/dev/null || true
     if [ "$(id -u)" -eq 0 ]; then
-        chown "$uid:$gid" "$token_file" 2>/dev/null || true
+        chown "$uid:$gid" "$2" 2>/dev/null || true
     fi
+}
+
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+    write_runtime_token "$CLAUDE_CODE_OAUTH_TOKEN" "$claude_token_file"
+fi
+
+if [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
+    write_runtime_token "${GH_TOKEN:-$GITHUB_TOKEN}" "$token_file"
 
     if command -v git >/dev/null 2>&1; then
         HOME="$worker_home" git config --global --unset-all credential.helper 2>/dev/null || true
@@ -62,9 +71,10 @@ if [ -n "${HERMES_HELMET_POLICY_SOURCE:-}" ] && [ -f "$HERMES_HELMET_POLICY_SOUR
     fi
 fi
 
-# Preserve the file-backed gh wrapper; never leave the raw PAT in Hermes env.
+# Preserve the file-backed gh and claude wrappers; never leave raw tokens in Hermes env.
 unset GH_TOKEN || true
 unset GITHUB_TOKEN || true
+unset CLAUDE_CODE_OAUTH_TOKEN || true
 
 # Optional company skill-pack import on the supported startup path. Skip/reject
 # must never block upstream Hermes. Runs only after raw PAT env is cleared.

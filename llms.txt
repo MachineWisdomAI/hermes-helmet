@@ -9,6 +9,7 @@ The product name in prose is Hermes Helmet. The CLI is `helmet`. You are the Cap
 - [README](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/README.md): Product overview, roles, planning boundary, and documentation map.
 - [Quickstart](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/quickstart.md): Install the host CLI and start the published worker image. The CLI install does not pull or restart the worker.
 - [Published runtime](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/runtime-image.md): Canonical image pin, Compose selection, development builds, and upgrades.
+- [Claude subscription workers](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/claude-subscription.md): Run the Hermes worker on Claude Sonnet through a Claude Pro or Max subscription token.
 
 ## First-officer delivery
 
