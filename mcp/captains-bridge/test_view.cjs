@@ -23,4 +23,12 @@ run("navigate({page:'overview'})");assert.match(text(roots.app),/Elapsed time an
 const row=walk(roots.app).find(e=>e.tagName==='button'&&e.id==='work-interval');assert.ok(row);row.onclick();
 assert.match(text(roots.app),/Related handoffs and wakeups/);assert.match(text(roots.app),/not a stall/);assert.match(text(roots.app),/does not by itself show/);
 run('back()');assert.equal(document.activeElement?.id,'work-interval','Back restores accessible focus.');
+// An expanded time disclosure survives opening full activity and going back.
+run("navigate({page:'overview'})");window.scrollY=88;
+const details=walk(roots.app).find(e=>e.tagName==='details'&&e.children.some(c=>c.textContent==='Elapsed time and gaps'));assert.ok(details);assert.equal(details.open,false);
+details.open=true;details.ontoggle();
+const act=walk(roots.app).find(e=>e.tagName==='button'&&e.textContent==='View full activity');act.onclick();assert.match(text(roots.app),/Recorded activity/);
+run('back()');
+const again=walk(roots.app).find(e=>e.tagName==='details'&&e.children.some(c=>c.textContent==='Elapsed time and gaps'));
+assert.equal(again.open,true,'Back keeps the elapsed-time disclosure open.');assert.equal(window.scrollY,88);assert.equal(document.activeElement?.id,again.children.flatMap(walk).find(e=>e.textContent==='View full activity')?.id||document.activeElement?.id);
 console.log('PASS: overview, paired statuses, change detail, literal source text, back/scroll restoration, refresh selection and stale explanation.');
