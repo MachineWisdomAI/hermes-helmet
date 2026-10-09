@@ -270,7 +270,9 @@ behind the Hermes worker. The policy's `inference_provider` and
 the worker's task records and GitHub identity, and the first officer keeps its
 review responsibilities.
 See [provider and model configuration](docs/model-lanes.md) for hosted
-providers and compatible local endpoints.
+providers and compatible local endpoints, or
+[Claude subscription workers](docs/claude-subscription.md) to run the worker on
+a Claude Pro or Max subscription.
 
 GitHub preserves the feedback and acceptance history for each change. Optional
 memory integrations make context and accepted lessons available across clients:
@@ -303,6 +305,7 @@ Build and smoke-test a local development image with
 - [Quickstart](docs/quickstart.md) and [setup diagnostics](docs/setup-helmet.md)
 - [First-officer plugin](docs/first-officer-plugins.md)
 - [Published worker image](docs/runtime-image.md) and [company overlay](docs/private-overlay.md)
+- [Model configuration](docs/model-lanes.md) and [Claude subscription workers](docs/claude-subscription.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)

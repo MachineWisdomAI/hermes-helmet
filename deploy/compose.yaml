@@ -35,6 +35,10 @@ services:
       # before starting upstream s6/Hermes. The file-backed gh wrapper remains.
       GH_TOKEN: ${HERMES_GITHUB_TOKEN:?set HERMES_GITHUB_TOKEN in .env}
       GITHUB_TOKEN: ${HERMES_GITHUB_TOKEN:?set HERMES_GITHUB_TOKEN in .env}
+      # Optional Claude subscription token from `claude setup-token`. Handled like
+      # the PAT: moved to the tmpfs file read by the claude wrapper, then unset.
+      CLAUDE_CODE_OAUTH_TOKEN: ${HERMES_CLAUDE_CODE_OAUTH_TOKEN:-}
+      CLAUDE_CONFIG_DIR: /opt/data/claude-code
     ports:
       - "127.0.0.1:${HERMES_DASHBOARD_HOST_PORT:-9119}:9119"
     networks:

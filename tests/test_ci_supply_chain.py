@@ -164,6 +164,42 @@ class WorkflowSupplyChainTests(unittest.TestCase):
         self.assertIn("/usr/local/libexec/hermes-helmet/gh --version", dockerfile)
         self.assertIn("upstream_gh=/usr/local/libexec/hermes-helmet/gh", wrapper)
 
+    def test_claude_code_uses_checksummed_architecture_pin(self) -> None:
+        dockerfile = _read("deploy/Dockerfile")
+        wrapper = _read("deploy/hermes/claude-runtime-wrapper.sh")
+        smoke = _read("scripts/smoke-dev-image.sh")
+        version = re.search(r"(?m)^ARG CLAUDE_CODE_VERSION=(\d+\.\d+\.\d+)$", dockerfile)
+        self.assertIsNotNone(version)
+        for arch in ("AMD64", "ARM64"):
+            self.assertRegex(dockerfile, rf"(?m)^ARG CLAUDE_CODE_SHA256_{arch}=[0-9a-f]{{64}}$")
+        self.assertIn("amd64) claude_platform=linux-x64;", dockerfile)
+        self.assertIn("arm64) claude_platform=linux-arm64;", dockerfile)
+        self.assertIn('"${claude_sha256}" /tmp/claude | sha256sum -c -', dockerfile)
+        self.assertIn("install -m 0755 /tmp/claude /usr/local/libexec/hermes-helmet/claude", dockerfile)
+        self.assertIn('grep -F "${CLAUDE_CODE_VERSION}"', dockerfile)
+        self.assertIn("COPY deploy/hermes/claude-runtime-wrapper.sh /usr/local/bin/claude", dockerfile)
+        self.assertIn("ENV DISABLE_AUTOUPDATER=1", dockerfile)
+        self.assertIn("upstream_claude=/usr/local/libexec/hermes-helmet/claude", wrapper)
+        self.assertIn(f"*{version.group(1)}*", smoke)
+
+    def test_claude_subscription_plugin_is_pinned_to_full_commit(self) -> None:
+        dockerfile = _read("deploy/Dockerfile")
+        self.assertRegex(
+            dockerfile,
+            r"(?m)^ARG CLAUDE_SUBSCRIPTION_PLUGIN_COMMIT=[0-9a-f]{40}$",
+        )
+        self.assertIn("ARG CLAUDE_SUBSCRIPTION_PLUGIN_VERSION=0.3.3", dockerfile)
+        self.assertIn(
+            'test "$(git -C "$plugin_src" rev-parse HEAD)" = "${CLAUDE_SUBSCRIPTION_PLUGIN_COMMIT}"',
+            dockerfile,
+        )
+        self.assertIn('grep -qx "version: ${CLAUDE_SUBSCRIPTION_PLUGIN_VERSION}"', dockerfile)
+        self.assertIn(
+            "plugin_dir=/opt/hermes/plugins/model-providers/claude-subscription-directsdk-experimental",
+            dockerfile,
+        )
+        self.assertIn('chown -R root:root "$plugin_dir"', dockerfile)
+
     def test_every_third_party_action_is_pinned_to_a_commit_sha(self) -> None:
         texts = _workflow_texts()
         self.assertTrue(texts, "expected GitHub workflow files")
