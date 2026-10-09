@@ -60,6 +60,11 @@ spend subscription usage, just as it can invoke `gh`.
 Claude Code keeps its non-secret state in `CLAUDE_CONFIG_DIR`
 (`/opt/data/claude-code` on the worker volume).
 
+A [private overlay](private-overlay.md) Compose file needs the same two
+`environment` entries as `deploy/compose.yaml`:
+`CLAUDE_CODE_OAUTH_TOKEN: ${HERMES_CLAUDE_CODE_OAUTH_TOKEN:-}` and
+`CLAUDE_CONFIG_DIR: /opt/data/claude-code`.
+
 ## 2. Point the worker profile at Claude
 
 In [quickstart step 4](quickstart.md#4-create-the-worker-profile-and-complete-provider-login),

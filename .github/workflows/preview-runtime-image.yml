@@ -516,7 +516,7 @@ jobs:
             echo "- Version: \`${PACKAGE_VERSION}\`"
             echo "- Tag: \`${PREVIEW_TAG}\`"
             echo "- Repository: \`${IMAGE_REPOSITORY}\`"
-            echo "- Inherited findings: see \`delta.json\` \`inherited_high_or_critical\` for CVE/package/version/severity still in the candidate. Wrapper HIGH/CRITICAL additions and any secret finding are rejected. Raw Trivy JSON is not retained."
+            echo "- Inherited findings: see \`delta.json\` \`inherited_high_or_critical\` for CVE/package/version/severity still in the candidate. Wrapper HIGH/CRITICAL additions and any secret finding are rejected, except dated \`WRAPPER_EXCEPTIONS\` entries listed under \`excepted_high_or_critical\`. Raw Trivy JSON is not retained."
             echo "- Owner package-visibility step: the first package is created private. Decide public visibility from this exact candidate. This workflow does not change visibility. Check anonymous digest pull only after that decision."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -587,6 +587,11 @@ jobs:
                       f"(fixed: {fixed}, {item.get('severity')})"
                   )
               print(f"- wrapper-added HIGH/CRITICAL: {len(added)}")
+              for item in delta.get("delta", {}).get("excepted_high_or_critical") or []:
+                  print(
+                      f"- excepted `{item.get('id')}` in {item.get('target')} "
+                      f"until {item.get('exception_expires')}"
+                  )
           PY
               else
                 echo "- artifacts unavailable (build did not succeed)"
