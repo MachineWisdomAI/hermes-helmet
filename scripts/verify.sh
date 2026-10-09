@@ -38,6 +38,8 @@ for required in \
     docs/company-skills.md \
     docs/openviking.md \
     docs/model-lanes.md \
+    docs/claude-subscription.md \
+    deploy/hermes/claude-runtime-wrapper.sh \
     docs/first-officer-plugins.md \
     .claude-plugin/plugin.json \
     .claude-plugin/marketplace.json \

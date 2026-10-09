@@ -2156,23 +2156,22 @@ class RuntimeBoundaryTests(unittest.TestCase):
         self.assertEqual(default_host, (ROOT / "config/policy.json").resolve())
         self.assertTrue((ROOT / "config/policy.example.json").is_file())
 
-    def test_runtime_entrypoint_scrubs_tokens_before_upstream_init(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            runtime_dir = root / "run"
-            home = root / "data"
-            policy_source = root / "policy.source.json"
-            marker = root / "hermes-env.json"
-            init_marker = root / "init-env.json"
-            fake_init = root / "init"
-            fake_main_wrapper = root / "main-wrapper.sh"
-            hermes_bin = root / "opt" / "hermes" / ".venv" / "bin" / "hermes"
-            hermes_bin.parent.mkdir(parents=True)
-            runtime_dir.mkdir()
-            home.mkdir()
-            policy_source.write_text('{"version":1}\n', encoding="utf-8")
-            hermes_bin.write_text(
-                """#!/usr/bin/env python3
+    def _run_runtime_entrypoint(self, root: Path, token_env: dict[str, str]) -> dict[str, object]:
+        """Run a local copy of the entrypoint against fake upstream init and Hermes."""
+        runtime_dir = root / "run"
+        home = root / "data"
+        policy_source = root / "policy.source.json"
+        marker = root / "hermes-env.json"
+        init_marker = root / "init-env.json"
+        fake_init = root / "init"
+        fake_main_wrapper = root / "main-wrapper.sh"
+        hermes_bin = root / "opt" / "hermes" / ".venv" / "bin" / "hermes"
+        hermes_bin.parent.mkdir(parents=True)
+        runtime_dir.mkdir()
+        home.mkdir()
+        policy_source.write_text('{"version":1}\n', encoding="utf-8")
+        hermes_bin.write_text(
+            """#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
 Path(os.environ["TEST_MARKER"]).write_text(
@@ -2180,101 +2179,189 @@ Path(os.environ["TEST_MARKER"]).write_text(
         "uid": os.getuid(),
         "gh_token": os.environ.get("GH_TOKEN"),
         "github_token": os.environ.get("GITHUB_TOKEN"),
+        "claude_token": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"),
         "argv": sys.argv[1:],
     }),
     encoding="utf-8",
 )
 raise SystemExit(0)
 """,
-                encoding="utf-8",
-            )
-            hermes_bin.chmod(0o700)
-            fake_init.write_text(
-                f"""#!{sys.executable}
+            encoding="utf-8",
+        )
+        hermes_bin.chmod(0o700)
+        fake_init.write_text(
+            f"""#!{sys.executable}
 import json, os, sys
 from pathlib import Path
 Path(os.environ["TEST_INIT_MARKER"]).write_text(
     json.dumps({{
         "gh_token": os.environ.get("GH_TOKEN"),
         "github_token": os.environ.get("GITHUB_TOKEN"),
+        "claude_token": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"),
         "argv": sys.argv[1:],
     }}),
     encoding="utf-8",
 )
 os.execv(sys.argv[1], sys.argv[1:])
 """,
-                encoding="utf-8",
-            )
-            fake_init.chmod(0o700)
-            fake_main_wrapper.write_text(
-                "#!/bin/sh\nexec \"$TEST_HERMES_BIN\" \"$@\"\n",
-                encoding="utf-8",
-            )
-            fake_main_wrapper.chmod(0o700)
+            encoding="utf-8",
+        )
+        fake_init.chmod(0o700)
+        fake_main_wrapper.write_text(
+            "#!/bin/sh\nexec \"$TEST_HERMES_BIN\" \"$@\"\n",
+            encoding="utf-8",
+        )
+        fake_main_wrapper.chmod(0o700)
 
-            entrypoint = root / "runtime-entrypoint.sh"
-            entrypoint.write_text(
-                (ROOT / "deploy/hermes/runtime-entrypoint.sh").read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-            entrypoint.chmod(0o755)
+        entrypoint = root / "runtime-entrypoint.sh"
+        entrypoint.write_text(
+            (ROOT / "deploy/hermes/runtime-entrypoint.sh").read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        entrypoint.chmod(0o755)
 
-            # Point the entrypoint at the fake upstream init and main wrapper by
-            # rewriting their absolute paths in a local copy.
-            local = entrypoint.read_text(encoding="utf-8").replace(
-                "/opt/hermes/docker/main-wrapper.sh",
-                str(fake_main_wrapper),
-            ).replace(
-                "/init",
-                str(fake_init),
-            ).replace(
-                "/opt/data/github-issue-poller/policy.json",
-                str(home / "github-issue-poller" / "policy.json"),
-            )
-            entrypoint.write_text(local, encoding="utf-8")
+        # Point the entrypoint at the fake upstream init and main wrapper by
+        # rewriting their absolute paths in a local copy.
+        local = entrypoint.read_text(encoding="utf-8").replace(
+            "/opt/hermes/docker/main-wrapper.sh",
+            str(fake_main_wrapper),
+        ).replace(
+            "/init",
+            str(fake_init),
+        ).replace(
+            "/opt/data/github-issue-poller/policy.json",
+            str(home / "github-issue-poller" / "policy.json"),
+        )
+        entrypoint.write_text(local, encoding="utf-8")
 
-            env = {
-                **os.environ,
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"}
+        }
+        env.update(
+            {
                 "HOME": str(home),
                 "HERMES_HOME": str(home),
                 "HERMES_UID": str(os.getuid()),
                 "HERMES_GID": str(os.getgid()),
                 "HERMES_HELMET_RUNTIME_DIR": str(runtime_dir),
                 "HERMES_HELMET_POLICY_SOURCE": str(policy_source),
-                "GH_TOKEN": "secret-pat-value",
-                "GITHUB_TOKEN": "secret-pat-value",
                 "TEST_MARKER": str(marker),
                 "TEST_INIT_MARKER": str(init_marker),
                 "TEST_HERMES_BIN": str(hermes_bin),
+                **token_env,
             }
-            # Ensure a real git is available for the optional credential helper path.
-            completed = subprocess.run(
-                [str(entrypoint), "gateway", "run"],
-                text=True,
-                capture_output=True,
-                env=env,
+        )
+        # Ensure a real git is available for the optional credential helper path.
+        completed = subprocess.run(
+            [str(entrypoint), "gateway", "run"],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
+        return {
+            "hermes": json.loads(marker.read_text(encoding="utf-8")),
+            "init": json.loads(init_marker.read_text(encoding="utf-8")),
+            "runtime_dir": runtime_dir,
+            "home": home,
+            "fake_main_wrapper": fake_main_wrapper,
+        }
+
+    def test_runtime_entrypoint_scrubs_tokens_before_upstream_init(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = self._run_runtime_entrypoint(
+                Path(directory),
+                {
+                    "GH_TOKEN": "secret-pat-value",
+                    "GITHUB_TOKEN": "secret-pat-value",
+                    "CLAUDE_CODE_OAUTH_TOKEN": "secret-claude-token",
+                },
             )
-            self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
-            payload = json.loads(marker.read_text(encoding="utf-8"))
+            payload = result["hermes"]
             self.assertEqual(payload["uid"], os.getuid())
             self.assertNotEqual(payload["uid"], 0)
             self.assertIsNone(payload["gh_token"])
             self.assertIsNone(payload["github_token"])
+            self.assertIsNone(payload["claude_token"])
             self.assertEqual(payload["argv"], ["gateway", "run"])
-            init_payload = json.loads(init_marker.read_text(encoding="utf-8"))
+            init_payload = result["init"]
             self.assertIsNone(init_payload["gh_token"])
             self.assertIsNone(init_payload["github_token"])
+            self.assertIsNone(init_payload["claude_token"])
             self.assertEqual(
                 init_payload["argv"],
-                [str(fake_main_wrapper), "gateway", "run"],
+                [str(result["fake_main_wrapper"]), "gateway", "run"],
             )
-            token_file = runtime_dir / "github-token"
-            self.assertTrue(token_file.is_file())
-            self.assertEqual(token_file.read_text(encoding="utf-8"), "secret-pat-value")
-            self.assertEqual(stat_mode := (token_file.stat().st_mode & 0o777), 0o600, oct(stat_mode))
-            installed_policy = home / "github-issue-poller" / "policy.json"
+            runtime_dir = result["runtime_dir"]
+            for name, value in (
+                ("github-token", "secret-pat-value"),
+                ("claude-code-oauth-token", "secret-claude-token"),
+            ):
+                token_file = runtime_dir / name
+                self.assertTrue(token_file.is_file(), name)
+                self.assertEqual(token_file.read_text(encoding="utf-8"), value)
+                self.assertEqual(stat_mode := (token_file.stat().st_mode & 0o777), 0o600, oct(stat_mode))
+            self.assertEqual(sorted(path.name for path in runtime_dir.iterdir()), [
+                "claude-code-oauth-token",
+                "github-token",
+            ])
+            installed_policy = result["home"] / "github-issue-poller" / "policy.json"
             self.assertTrue(installed_policy.is_file())
             self.assertEqual(installed_policy.read_text(encoding="utf-8"), '{"version":1}\n')
+
+    def test_runtime_entrypoint_skips_claude_token_file_when_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = self._run_runtime_entrypoint(
+                Path(directory),
+                {"GH_TOKEN": "secret-pat-value", "CLAUDE_CODE_OAUTH_TOKEN": ""},
+            )
+            self.assertIsNone(result["hermes"]["claude_token"])
+            self.assertIsNone(result["init"]["claude_token"])
+            runtime_dir = result["runtime_dir"]
+            self.assertTrue((runtime_dir / "github-token").is_file())
+            self.assertFalse((runtime_dir / "claude-code-oauth-token").exists())
+
+    def _run_claude_wrapper(self, root: Path, token: str | None) -> subprocess.CompletedProcess[str]:
+        runtime_dir = root / "run"
+        runtime_dir.mkdir()
+        if token is not None:
+            (runtime_dir / "claude-code-oauth-token").write_text(token, encoding="utf-8")
+        fake_claude = root / "claude"
+        fake_claude.write_text(
+            "#!/bin/sh\nprintf '%s|%s' \"${CLAUDE_CODE_OAUTH_TOKEN-unset}\" \"$*\"\n",
+            encoding="utf-8",
+        )
+        fake_claude.chmod(0o700)
+        wrapper = root / "claude-runtime-wrapper.sh"
+        wrapper.write_text(
+            (ROOT / "deploy/hermes/claude-runtime-wrapper.sh")
+            .read_text(encoding="utf-8")
+            .replace("/usr/local/libexec/hermes-helmet/claude", str(fake_claude)),
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o700)
+        env = {key: value for key, value in os.environ.items() if key != "CLAUDE_CODE_OAUTH_TOKEN"}
+        env["HERMES_HELMET_RUNTIME_DIR"] = str(runtime_dir)
+        return subprocess.run(
+            [str(wrapper), "auth", "status"],
+            text=True,
+            capture_output=True,
+            env=env,
+        )
+
+    def test_claude_wrapper_exports_runtime_token_to_pinned_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            completed = self._run_claude_wrapper(Path(directory), "secret-claude-token")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "secret-claude-token|auth status")
+
+    def test_claude_wrapper_without_token_file_leaves_login_to_claude_code(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            completed = self._run_claude_wrapper(Path(directory), None)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "unset|auth status")
 
 
 if __name__ == "__main__":

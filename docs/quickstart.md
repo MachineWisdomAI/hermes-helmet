@@ -238,6 +238,11 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
   -q "Reply with the single word ready."
 ```
 
+To run the worker on a Claude Pro or Max subscription instead of an API key,
+use the token and profile commands in
+[Claude subscription workers](claude-subscription.md), then make the same
+smoke call.
+
 OpenViking, FAVA Trails, Signal, and company skill packs stay optional and
 remain disabled in the ExampleCo fixture. Do not enable them on this path.
 
