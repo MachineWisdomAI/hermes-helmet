@@ -54,10 +54,10 @@ release contains the `0.1.0rc2` Python package. Its original console command is
 the shorter `helmet` command.
 
 A later worker-image preview is published to GHCR from
-`c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. Pin it by digest as described in
-[runtime-image.md](runtime-image.md). That image carries the earlier `0.1.0rc1`
-package label from its source commit; it is not this September 29 wheel and it
-is not a stable release.
+`80726d21f11d3856e32d30c440123101c94f8664`. Pin it by digest as described in
+[runtime-image.md](runtime-image.md). That image carries the `0.2.0` package
+label from its source commit; it is not this September 29 wheel and it is not
+a stable release.
 
 ## What you provide
 
