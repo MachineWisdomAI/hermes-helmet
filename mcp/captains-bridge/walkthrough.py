@@ -4,6 +4,10 @@ import hashlib
 import json
 import re
 
+# Internal planning identifiers are not human-facing names.
+INTERNAL_ID = re.compile(r'\b(?:t_[0-9a-f]{6,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b', re.I)
+RELATION_KINDS = ('Handoff', 'Wakeup', 'Follow-up')
+
 
 def fingerprint(data):
     evidence = {'records': data.get('records', []), 'turns': [
@@ -26,6 +30,12 @@ def validate(account, data):
             raise ValueError('Conclusions need existing record IDs from this bound chat.')
         return list(dict.fromkeys(value))
 
+    def name(value, label, maximum):
+        text = prose(value, label, maximum)
+        if INTERNAL_ID.search(text):
+            raise ValueError(f'{label} must be a readable name, not an internal planning identifier.')
+        return text
+
     result = {'objective': prose(account.get('objective'), 'Objective', 600),
               'summary': prose(account.get('summary'), 'Summary', 1000),
               'evidence': refs(account.get('evidence')), 'items': []}
@@ -41,17 +51,26 @@ def validate(account, data):
         group = item.get('group')
         if group not in ('changed', 'unresolved', 'activity'):
             raise ValueError('Group must be changed, unresolved, or activity.')
-        out = {'id': key, 'group': group, 'title': prose(item.get('title'), 'Work title', 140),
+        out = {'id': key, 'group': group, 'title': name(item.get('title'), 'Work title', 140),
                'summary': prose(item.get('summary'), 'Work summary', 600),
                'detail': prose(item.get('detail'), 'Work explanation'),
                'status': prose(item.get('status'), 'Status', 60), 'evidence': refs(item.get('evidence')),
-               'steps': [], 'links': []}
+               'steps': [], 'links': [], 'relations': []}
         for step in item.get('steps', [])[:16]:
             actor = step.get('actor')
             if actor not in ('Captain', 'First officer', 'Hermes', 'Other agent'):
                 raise ValueError('Use the named actor roles.')
-            out['steps'].append({'actor': actor, 'label': prose(step.get('label'), 'Step', 140),
-                                 'detail': prose(step.get('detail'), 'Step detail', 1000), 'evidence': refs(step.get('evidence'))})
+            cited = refs(step.get('evidence'))
+            if actor == 'Hermes' and not any('hermes' in records[r]['text'].lower() for r in cited):
+                raise ValueError('Hermes activity must cite a record in this chat that explicitly mentions Hermes.')
+            out['steps'].append({'actor': actor, 'label': name(step.get('label'), 'Step', 140),
+                                 'detail': prose(step.get('detail'), 'Step detail', 1000), 'evidence': cited})
+        for rel in item.get('relations', [])[:8]:
+            kind = rel.get('kind')
+            if kind not in RELATION_KINDS:
+                raise ValueError('Relation kind must be Handoff, Wakeup, or Follow-up.')
+            out['relations'].append({'kind': kind, 'label': name(rel.get('label'), 'Relation', 140),
+                                     'detail': prose(rel.get('detail'), 'Relation detail', 1000), 'evidence': refs(rel.get('evidence'))})
         for field in ('reported', 'disposition'):
             if item.get(field):
                 val = item[field]
@@ -66,7 +85,7 @@ def validate(account, data):
             url = prose(link.get('url'), 'Source URL', 2000)
             if not re.match(r'^https://[^\s<>]+$', url) or not any(url in records[r]['text'] for r in source):
                 raise ValueError('Links must be HTTPS URLs in their cited records.')
-            out['links'].append({'label': prose(link.get('label'), 'Link label', 160), 'url': url, 'evidence': source})
+            out['links'].append({'label': name(link.get('label'), 'Link label', 160), 'url': url, 'evidence': source})
         result['items'].append(out)
     result['explainedAt'] = data['readAt']
     result['fingerprint'] = fingerprint(data)

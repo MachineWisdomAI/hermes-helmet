@@ -58,6 +58,12 @@ and what remains unresolved. `evidence`: record IDs supporting those statements.
 - `change`: optional `{before, after, explanation, evidence}` for a particular
   supported change, with a useful before/after representation. Do not invent a
   before state, a diff or runtime success. Plain comparisons are currently supported.
+- `relations`: optional `{kind, label, detail, evidence}` with kind `Handoff`,
+  `Wakeup`, or `Follow-up`, only where the chat explicitly records the
+  asynchronous relationship (including across turns). Never infer one from order
+  or timing alone. Use `Hermes` as actor only when a cited record mentions Hermes.
+  Titles, labels and link names must be readable; planning IDs and chat UUIDs are
+  rejected.
 - `links`: optional `{label, url, evidence}`. Use descriptive issue/PR/review names.
   URLs must occur in the cited records; never invent a destination.
 
