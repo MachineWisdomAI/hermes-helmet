@@ -28,7 +28,7 @@ WRAPPER_EXCEPTIONS: tuple[dict[str, str], ...] = tuple(
         "target": "usr/local/libexec/hermes-helmet/gh",
         "expires": "2026-11-08",
         "reason": (
-            "Denial-of-service fix in Go 1.27.2; gh 2.101.0 and the latest "
+            "Denial-of-service fix in Go 1.27.2; gh 2.101.0 and "
             "gh 2.102.0 are both built with Go 1.27.1. gh runs only as an "
             "outbound client for one authorized command. Remove once a gh "
             "release built with Go 1.27.2 or newer is pinned."

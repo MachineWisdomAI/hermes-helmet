@@ -5,6 +5,14 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.2.1
+
+- Point the quickstart, private-overlay examples, and Claude subscription guide
+  at the published 0.2.0 preview image from `80726d2`, including its immutable
+  digest and build record.
+- Clarify the bootstrap token comment and remove a time-sensitive claim from
+  the existing dated `gh` scan exception reason.
+
 ### 0.2.0
 
 - Bundle the Claude Code CLI 2.1.286 (sha256-pinned per architecture) and the
