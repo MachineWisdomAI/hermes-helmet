@@ -35,13 +35,26 @@ def indexed_chat(home, thread_id):
         raise ValueError('Codex’s saved chat index could not be read in read-only mode.') from error
 
 
+# Known record kinds that are intentionally not evidence sources.
+EXCLUDED_KINDS = {'Reasoning', 'RawResponse', 'RawResponseItem'}
+UNSUPPORTED_ITEM = 'This saved item format is not supported by Captain’s Bridge.'
+
+
+def _objects(value):
+    if not isinstance(value, list) or not all(isinstance(entry, dict) for entry in value):
+        raise ValueError(UNSUPPORTED_ITEM)
+    return value
+
+
 def normalize_item(item):
-    kind = item.get('type')
+    if not isinstance(item, dict) or not isinstance(item.get('type'), str):
+        raise ValueError(UNSUPPORTED_ITEM)
+    kind = item['type']
     common = {'id': item.get('id')}
     if kind == 'UserMessage':
-        return dict(common, type='userMessage', content=item.get('content', []))
+        return dict(common, type='userMessage', content=_objects(item.get('content', [])))
     if kind == 'AgentMessage':
-        text = '\n'.join(c.get('text', '') for c in item.get('content', []) if c.get('type', '').lower() == 'text')
+        text = '\n'.join(c.get('text', '') for c in _objects(item.get('content', [])) if str(c.get('type', '')).lower() == 'text')
         return dict(common, type='agentMessage', text=text, phase=item.get('phase'))
     if kind == 'CommandExecution':
         command = item.get('command')
@@ -59,8 +72,13 @@ def normalize_item(item):
     if kind == 'CollabAgentToolCall':
         return dict(common, type='collabAgentToolCall', tool=item.get('tool'), status=item.get('status'),
                     prompt=item.get('prompt'), receiverThreadIds=item.get('receiver_thread_ids', []))
-    # Reasoning, raw model responses, and viewer rendering events are not sources.
-    return None
+    if kind in EXCLUDED_KINDS:
+        return None
+    raise _Unsupported(kind)
+
+
+class _Unsupported(Exception):
+    """An item kind this adapter does not know; not counted as usable history."""
 
 
 def read_saved_chat(home, thread_id):
@@ -69,7 +87,7 @@ def read_saved_chat(home, thread_id):
     path = Path(row['rollout_path']).resolve()
     if not any(path.is_relative_to(home / directory) for directory in ('sessions', 'archived_sessions')):
         raise ValueError('This chat’s saved record is outside Codex’s session directories.')
-    turns, item_count, identity = {}, 0, None
+    turns, item_count, unsupported, identity = {}, 0, 0, None
 
     def turn_for(turn_id):
         if not isinstance(turn_id, str) or not turn_id:
@@ -90,7 +108,11 @@ def read_saved_chat(home, thread_id):
                 event = json.loads(line)
             except (ValueError, UnicodeDecodeError) as error:
                 raise ValueError('A saved chat record could not be decoded.') from error
+            if not isinstance(event, dict):
+                raise ValueError('A saved chat record has an unsupported shape.')
             payload = event.get('payload', {})
+            if not isinstance(payload, dict):
+                raise ValueError('A saved chat record has an unsupported shape.')
             if event.get('type') == 'session_meta':
                 identity = payload.get('id')
                 if identity != thread_id:
@@ -108,14 +130,20 @@ def read_saved_chat(home, thread_id):
                 turn_for(payload.get('turn_id')).update(status='completed', startedAt=payload.get('started_at'),
                                                        completedAt=payload.get('completed_at'), durationMs=payload.get('duration_ms'))
             elif kind == 'item_completed':
-                item_count += 1
-                item = normalize_item(payload.get('item', {}))
+                try:
+                    item = normalize_item(payload.get('item'))
+                except _Unsupported:
+                    unsupported += 1
+                    continue
                 if item is not None:
+                    item_count += 1
                     if not item.get('id'):
                         raise ValueError('A saved source record is missing its identity.')
                     turn_for(payload.get('turn_id'))['items'][item['id']] = item
     if identity != thread_id:
         raise ValueError('The saved chat identity could not be verified.')
+    if not item_count and unsupported:
+        raise ValueError('This saved chat uses item records that Captain’s Bridge does not support, so it cannot build its walkthrough.')
     if not item_count:
         raise ValueError('This saved chat format has no completed item records yet. Captain’s Bridge cannot build its walkthrough.')
     for turn in turns.values():
