@@ -5,6 +5,19 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.5.0
+
+- Captain’s Bridge Refresh records now rereads the exact bound chat directly
+  through its read-only app tool, with no agent message, background explanation
+  or project task. Selection and navigation are kept, cited records are
+  validated against the chat as it is now, and “Records read” is shown apart
+  from “Explanation prepared from records read”. New records mark the
+  explanation older without changing its conclusions or restamping it. Read
+  errors, unsupported formats, missing evidence, timeouts, foreign and
+  out-of-order responses keep the last useful view and report the limitation;
+  a partially written final record is flagged rather than shown as a complete
+  chat.
+
 ### 0.4.0
 
 - Captain’s Bridge now presents the Changes First layout: purpose and outcome

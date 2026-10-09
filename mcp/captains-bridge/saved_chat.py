@@ -87,7 +87,7 @@ def read_saved_chat(home, thread_id):
     path = Path(row['rollout_path']).resolve()
     if not any(path.is_relative_to(home / directory) for directory in ('sessions', 'archived_sessions')):
         raise ValueError('This chat’s saved record is outside Codex’s session directories.')
-    turns, item_count, unsupported, identity = {}, 0, 0, None
+    turns, item_count, unsupported, identity, partial = {}, 0, 0, None, False
 
     def turn_for(turn_id):
         if not isinstance(turn_id, str) or not turn_id:
@@ -103,6 +103,7 @@ def read_saved_chat(home, thread_id):
             line = stream.readline(remaining)
             remaining -= len(line)
             if not line or not line.endswith(b'\n'):
+                partial = bool(line)
                 break
             try:
                 event = json.loads(line)
@@ -149,4 +150,4 @@ def read_saved_chat(home, thread_id):
     for turn in turns.values():
         turn['items'] = list(turn['items'].values())
     return {'name': row.get('name'), 'createdAt': row.get('created_at'), 'updatedAt': row.get('updated_at'),
-            'turns': list(turns.values())}
+            'turns': list(turns.values()), 'partialAppend': partial}
