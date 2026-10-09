@@ -13,7 +13,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   restores selection, scroll and focus, and elapsed time and gaps are collapsed
   on the overview. Explicit handoff and wakeup relations are recorded without
   implying causation or stalls; Hermes steps and readable names are validated
-  against the selected chat.
+  against the selected chat. The panel paints its own foreground and
+  background and follows the host's light or dark theme, so headings, strong
+  text and buttons stay readable in a dark Codex panel.
 
 ### 0.3.0
 
