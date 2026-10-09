@@ -5,6 +5,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.1.7
+
+- Update the immutable Hermes Agent runtime base to v0.21.6, including the upstream October 8 security fixes.
+
 ### 0.1.0rc5 candidate
 
 - Default Captain issue and epic windows to 8,640 minutes (6 days) from the
