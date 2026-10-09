@@ -42,6 +42,26 @@ class WalkthroughTests(unittest.TestCase):
             self.account['items'][0]['links'][0]['url'] = url
             with self.assertRaises(ValueError): validate(self.account, self.data)
 
+    def test_internal_planning_ids_are_not_names(self):
+        for bad in ('Task t_f889e671', 'Chat 11111111-1111-4111-8111-111111111111'):
+            self.account['items'][0]['title'] = bad
+            with self.assertRaises(ValueError): validate(self.account, self.data)
+
+    def test_hermes_steps_need_explicit_hermes_record(self):
+        step = {'actor': 'Hermes', 'label': 'Worker ran', 'detail': 'Ran.', 'evidence': ['command']}
+        self.account['items'][0]['steps'] = [step]
+        with self.assertRaises(ValueError): validate(self.account, self.data)
+        self.data['records'][1]['text'] += ' Hermes worker finished'
+        self.assertEqual(validate(self.account, self.data)['items'][0]['steps'][0]['actor'], 'Hermes')
+
+    def test_explicit_async_relations_are_grounded(self):
+        rel = {'kind': 'Wakeup', 'label': 'Review resumed later', 'detail': 'Woken after the report.', 'evidence': ['report']}
+        self.account['items'][0]['relations'] = [rel]
+        self.assertEqual(validate(self.account, self.data)['items'][0]['relations'][0]['kind'], 'Wakeup')
+        for bad in ({**rel, 'kind': 'Caused'}, {**rel, 'evidence': ['elsewhere']}):
+            self.account['items'][0]['relations'] = [bad]
+            with self.assertRaises(ValueError): validate(self.account, self.data)
+
     def test_app_view_checks_evidence_in_exact_chat(self):
         account = validate(self.account, self.data)
         original = server.read_chat
