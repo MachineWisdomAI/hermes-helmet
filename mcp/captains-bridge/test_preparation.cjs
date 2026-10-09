@@ -22,13 +22,16 @@ const visible=e=>e.textContent+' '+e.children.map(visible).join(' ');
 const button=label=>walk(roots.app).find(e=>e.tagName==='button'&&e.textContent===label);
 const tick=()=>new Promise(r=>setImmediate(r));
 const request=(id)=>({requestId:id,threadId:chat,snapshot:{fingerprint:'b'.repeat(64),readAt:'then',recordCount:3}});
-let capture=0,failCapture=false;
+let capture=0,failCapture=false,failMessages=false,holdAcks=false;const pendingAcks=[];
 const answer=(message,result)=>listener({source:parent,data:{jsonrpc:'2.0',id:message.id,result}});
 const pump=async()=>{ // answer app tool calls and ui/message acknowledgements
   for(let i=0;i<20;i++){await tick();for(const m of sent.splice(0)){
     if(m.method==='tools/call'&&m.params.name==='request_walkthrough_update'){
       capture++;answer(m,failCapture?{isError:true,content:[{type:'text',text:'Capture failed.'}]}:{structuredContent:{request:request('request-identity-'+String(capture).padStart(4,'0'))}})}
-    else if(m.method==='ui/message'){messages.push(m);answer(m,{})}
+    else if(m.method==='ui/message'){messages.push(m);
+      if(holdAcks)pendingAcks.push(m);
+      else if(failMessages)listener({source:parent,data:{jsonrpc:'2.0',id:m.id,error:{message:'Host refused'}}});
+      else answer(m,{})}
     else if(m.method==='tools/call')answer(m,{structuredContent:{}})}}};
 const messages=[];
 const deliver=(id,title,outcome='delivered',message)=>listener({source:parent,data:{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:
@@ -98,11 +101,47 @@ process.on('exit',()=>{if(!globalThis.__done){console.error('STALLED at step',gl
   const fifth=run('explain()');await pump();await fifth;
   const timer=timers.filter(t=>t.fn&&t.ms===600000).pop();
   assert.ok(timer,'A bounded attempt needs a timeout.');
-  timer.fn();
+  const beforeTimeout=messages.length;
+  const timedOut=timer.fn();
+  assert.equal(button('Cancel update'),undefined,'Timeout invalidates the request at once.');
+  deliver('request-identity-0005','Too late');await pump();await timedOut;
   assert.match(roots.error.textContent,/took too long/);
-  deliver('request-identity-0005','Too late');await pump();
+  assert.equal(messages.length,beforeTimeout+1,'Timeout must hand a stop request to the first officer.');
+  assert.match(messages.at(-1).params.content[0].text,/Cancel .*request-identity-0005.*timed out/);
+  assert.match(messages.at(-1).params.content[0].text,/Interrupt its read-only subagent/);
+  assert.match(roots.error.textContent,/asked to stop it; the stop is not confirmed/,'A requested stop is not reported as confirmed.');
   assert.doesNotMatch(visible(roots.app),/Too late/);
   assert.match(visible(roots.app),/Fresh/);
+
+  // A failed stop handoff after timeout is reported honestly and still discards the work.
+  const sixthA=run('explain()');await pump();await sixthA;
+  const timerB=timers.filter(t=>t.fn&&t.ms===600000).pop();
+  assert.ok(timerB);
+  failMessages=true;
+  const timedOutB=timerB.fn();await pump();await timedOutB;failMessages=false;
+  assert.match(roots.error.textContent,/could not be told to stop it/);
+  assert.match(roots.error.textContent,/may still be running/);
+  deliver('request-identity-0006','Too late again');await pump();
+  assert.doesNotMatch(visible(roots.app),/Too late again/);
+
+  // Late acknowledgement failure for cancelled request A must not clear newer request B.
+  failMessages=false;holdAcks=true;
+  const A=run('explain()');await pump();
+  assert.ok(pendingAcks.length>=1,'A dispatch acknowledgement is unresolved.');
+  const ackA=pendingAcks.shift();
+  const cancelA=run('cancelPrep()');await pump();
+  const B=run('explain()');await pump();
+  holdAcks=false;
+  for(const a of pendingAcks.splice(0))answer(a,{});
+  await pump();
+  assert.ok(button('Cancel update'),'B is active before the stale acknowledgement fails.');
+  listener({source:parent,data:{jsonrpc:'2.0',id:ackA.id,error:{message:'Late A failure'}}});
+  await pump();await A;await cancelA;await B;
+  assert.ok(button('Cancel update'),'A late failure of A must not clear B or its cancel control.');
+  assert.doesNotMatch(roots.error.textContent,/Late A failure/);
+  const idB=run('prep.request.requestId');
+  deliver(idB,'From B');await pump();
+  assert.match(visible(roots.app),/From B/,'B still settles after A fails late.');
 
   // Capture failure sends nothing to the first officer.
   failCapture=true;const before=messages.length;

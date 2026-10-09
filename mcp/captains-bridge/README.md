@@ -49,8 +49,15 @@ Bridge never starts it.
 3. Deliver: the subagent calls `deliver_walkthrough_update` once with the request
    unchanged, or with `failure`. Citations are validated against the snapshot’s
    records only; the result keeps the snapshot’s fingerprint and read time, so a
-   later chat change marks it older instead of fresh. A request naming no valid
-   chat, or a forged snapshot, is rejected.
+   later chat change marks it older instead of fresh. The snapshot also carries a
+   digest of the exact captured records and a seal over every snapshot field. On
+   delivery the server rereads the chat and rejects the request if a captured
+   record has changed, if the digests are inconsistent, or if the chat names no
+   valid chat; records appended later are allowed and only mark the result older.
+   The seal is a consistency check, not authentication: the server keeps no
+   secret or state, so it does not stop a caller who can read the chat from
+   building a consistent snapshot. It also does not preserve the captured text;
+   it detects that the text changed.
 4. Settle: the panel owns the single active request. It accepts a delivery only
    when `requestId` matches and the request is still active, and ignores every
    other result. Delivery, failure, cancel, supersession or the 10-minute timeout
@@ -58,7 +65,12 @@ Bridge never starts it.
    for a settled request is dropped. The panel never retries.
 5. Cancel: “Cancel update” ends the request at once and asks the first officer to
    interrupt the subagent. If the host cannot be told, the panel says so and still
-   discards any later result. A substantive new instruction from the Captain
+   discards any later result. The 10-minute timeout does the same: it invalidates
+   the request at once, then asks the first officer to interrupt the subagent. The
+   panel says the stop was requested, not confirmed, and says so plainly if the
+   host could not be told. Each async effect (acknowledgement failure, timeout
+   handoff) applies only to the request that owns it, so a late failure of a
+   cancelled request never clears a newer one. A substantive new instruction from the Captain
    supersedes the request the same way unless the Captain says to keep it.
 
 Unsupported boundaries, reported rather than hidden: the server cannot itself stop

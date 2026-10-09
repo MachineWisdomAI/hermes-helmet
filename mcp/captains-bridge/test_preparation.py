@@ -96,6 +96,35 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.call('deliver_walkthrough_update', {'request': foreign, 'walkthrough': self.account})
 
+    def test_changed_captured_record_is_rejected_even_with_same_ids_and_count(self):
+        request = self.request()
+        self.data['records'][0]['text'] = 'Rewritten after capture'
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            self.call('deliver_walkthrough_update', {'request': request, 'walkthrough': self.account})
+
+    def test_inconsistent_digest_is_rejected(self):
+        request = self.request()
+        for field in ('fingerprint', 'evidence', 'readAt', 'recordCount'):
+            forged = copy.deepcopy(request)
+            forged['snapshot'][field] = '0' * 64 if field in ('fingerprint', 'evidence') else (
+                'yesterday' if field == 'readAt' else request['snapshot']['recordCount'])
+            if field == 'recordCount':
+                forged['snapshot'][field] += 1
+            with self.assertRaises(ValueError, msg=field):
+                self.call('deliver_walkthrough_update', {'request': forged, 'walkthrough': self.account})
+        # A consistently re-sealed fingerprint that does not match the chat is still refused.
+        resealed = copy.deepcopy(request)
+        resealed['snapshot']['fingerprint'] = '0' * 64
+        resealed['snapshot']['seal'] = preparation.seal(resealed['requestId'], resealed['threadId'], resealed['snapshot'])
+        with self.assertRaisesRegex(ValueError, 'fingerprint'):
+            self.call('deliver_walkthrough_update', {'request': resealed, 'walkthrough': self.account})
+
+    def test_appended_records_do_not_reject_unchanged_snapshot(self):
+        request = self.request()
+        self.data['records'].append({'id': 'later', 'kind': 'report', 'actor': 'First officer', 'text': 'More', 'turnId': 'turn-a'})
+        result = self.call('deliver_walkthrough_update', {'request': request, 'walkthrough': self.account})
+        self.assertEqual(result['structuredContent']['preparation']['outcome'], 'delivered')
+
     def test_failure_report_delivers_no_explanation(self):
         request = self.request()
         for args in ({'failure': 'Could not read'}, {}):

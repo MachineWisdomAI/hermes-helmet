@@ -55,27 +55,42 @@ async function connectChat(){try{await rpc('ui/message',{role:'user',content:[{t
 let prep=null,prepTimer=null,capturing=false;
 const PREP_MS=600000;
 function clearPrep(){clearTimeout(prepTimer);prep=null}
-function prepText(request){return 'Prepare an updated Captain’s Bridge walkthrough in the background; this is optional and a new instruction from me ends it. Do not wait or poll for the result, and do not pause or change already-authorized project work. Dispatch exactly one read-only subagent, once, with no retry. The subagent reads only chat '+request.threadId+' (codex://threads/'+request.threadId+') and never substitutes its own chat. It must not run project tasks or repair the viewer. It uses the observe-chat skill and read_chat_work with that thread_id, cites only record IDs from that read, then calls deliver_walkthrough_update once with the request below unchanged (or with a failure message). Present its delivery briefly at the next available boundary. If I cancel this request, interrupt the subagent and discard any result.\n\nRequest:\n'+JSON.stringify(request)}
+function prepText(request){return 'Prepare an updated Captain’s Bridge walkthrough in the background; this is optional and a new instruction from me ends it. Do not wait or poll for the result, and do not pause or change already-authorized project work. Dispatch exactly one read-only subagent, once, with no retry. The subagent reads only chat '+request.threadId+' (codex://threads/'+request.threadId+') and never substitutes its own chat. It must not run project tasks or repair the viewer. It uses the observe-chat skill and read_chat_work with that thread_id, cites only record IDs from that read, then calls deliver_walkthrough_update once with the request below unchanged (or with a failure message). Present its delivery briefly at the next available boundary. If I cancel this request or it times out, interrupt the subagent and discard any result.\n\nRequest:\n'+JSON.stringify(request)}
 async function explain(){
  if(prep||capturing)return;
  if(!portableView?.threadId){error('This view has no chat reference. Open its walkthrough before requesting an update.');return}
-  try{
+ let mine=null;
+ try{
   error('');capturing=true;
   const captured=toolResult(await rpc('tools/call',{name:'request_walkthrough_update',arguments:{view:portableView}}));
   if(captured?.isError)throw Error(captured.content?.find(c=>c.type==='text')?.text||'The update could not be requested.');
   const request=captured?.structuredContent?.request;
   if(!request?.requestId)throw Error('Codex returned no request identity. The current view is preserved.');
-  capturing=false;
+  capturing=false;mine=request.requestId;
   prep={request,state:'sending'};render();
-  const mine=request.requestId;
   const sent=await rpc('ui/message',{role:'user',content:[{type:'text',text:prepText(request)}]});
   if(sent?.isError)throw Error(sent.content?.find(c=>c.type==='text')?.text||'The request could not be sent.');
-  if(prep?.request.requestId===mine){prep.state='preparing';clearTimeout(prepTimer);prepTimer=setTimeout(()=>{if(prep?.request.requestId===mine){clearPrep();error('The update took too long and was stopped. Your current view is preserved.');render()}},PREP_MS);render()}
- }catch(e){capturing=false;clearPrep();error(e.message);render()}
+  if(owns(mine)){prep.state='preparing';clearTimeout(prepTimer);prepTimer=setTimeout(()=>timeoutPrep(mine),PREP_MS);render()}
+ }catch(e){
+  if(mine===null)capturing=false; // capture failed; no request exists yet
+  else if(!owns(mine))return; // cancelled, timed out or replaced: a late failure belongs to a dead attempt
+  else clearPrep();
+  error(e.message);render()}
 }
+const owns=id=>prep?.request.requestId===id;
+async function stopRequest(id,why){
+ try{await rpc('ui/message',{role:'user',content:[{type:'text',text:'Cancel Captain’s Bridge walkthrough request '+id+' ('+why+'). Interrupt its read-only subagent if it is still running and discard any result. Do not start another and do not change project work.'}]});return true}catch(e){return e.message||'unknown error'}}
+async function timeoutPrep(id){
+ if(!owns(id))return;clearPrep();
+ error('The update took too long. Asking Codex to stop it. Your current view is preserved.');render();
+ const stopped=await stopRequest(id,'timed out after 10 minutes');
+ if(prep||capturing)return; // a newer attempt owns the panel
+ error(stopped===true?'The update took too long. Codex was asked to stop it; the stop is not confirmed, and any result is ignored. Your current view is preserved.'
+  :'The update took too long, and Codex could not be told to stop it ('+stopped+'). It may still be running; any result is ignored. Your current view is preserved.');render()}
 async function cancelPrep(){
  if(!prep)return;const id=prep.request.requestId;clearPrep();render();
- try{await rpc('ui/message',{role:'user',content:[{type:'text',text:'Cancel Captain’s Bridge walkthrough request '+id+'. Interrupt its read-only subagent if it is still running and discard any result. Do not start another and do not change project work.'}]})}catch(e){error('Cancelled in this view. Codex could not be told: '+e.message)}
+ const stopped=await stopRequest(id,'cancelled');
+ if(stopped!==true&&!prep&&!capturing){error('Cancelled in this view. Codex could not be told: '+stopped);render()}
 }
 function settle(preparation){
  if(!prep||!preparation||preparation.requestId!==prep.request.requestId)return false;

@@ -8,9 +8,11 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 ### 0.4.0
 
 - Captain’s Bridge can prepare an updated walkthrough in the background. The
-  panel captures the originating chat and an immutable snapshot, asks the first
+  panel captures the originating chat and a verifiable snapshot (delivery is
+  rejected if captured records changed or digests are inconsistent), asks the first
   officer to dispatch one bounded read-only agent without waiting, and keeps the
-  current walkthrough visible. Cancel, supersession, timeout, failure, duplicate
+  current walkthrough visible. A timeout asks the first officer to stop the agent
+  and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
   submission and late completion preserve the last useful view. Verified with
   synthetic protocol and panel tests only; acceptance in an installed Codex host
   is recorded separately in the pull request.
