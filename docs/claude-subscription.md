@@ -14,7 +14,7 @@ full-parity or production-readiness claim.
 | --- | --- |
 | Claude Code CLI | `2.1.286` native `linux-x64` / `linux-arm64` binary, sha256-checked |
 | Provider plugin | `0.3.3` at commit `4bc79c78031d1a042b5d8a7314ceea283db5c5e2` |
-| Hermes Agent base | `0.21.5` (the plugin requires `0.21.4` or newer) |
+| Hermes Agent base | `0.21.6` (the plugin requires `0.21.4` or newer) |
 
 The provider id is `claude-subscription-directsdk-experimental`. The plugin is
 installed root-owned under `/opt/hermes/plugins/model-providers/`, so every

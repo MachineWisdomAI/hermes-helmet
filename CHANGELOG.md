@@ -5,6 +5,19 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.2.0
+
+- Bundle the Claude Code CLI 2.1.286 (sha256-pinned per architecture) and the
+  experimental Claude Subscription DirectSDK model-provider plugin 0.3.3 in the
+  worker image, so the assignee profile can run on Claude Sonnet 5.5 through a
+  Claude Pro or Max subscription. See
+  [Claude subscription workers](docs/claude-subscription.md).
+- Accept an optional `HERMES_CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
+  The entrypoint moves it to the tmpfs runtime directory and clears it before
+  Hermes starts; `/usr/local/bin/claude` hands it to each CLI run, matching the
+  worker PAT's handling. The image smoke test checks both tokens stay out of
+  process environments.
+
 ### 0.1.7
 
 - Update the immutable Hermes Agent runtime base to v0.21.6, including the upstream October 8 security fixes.
