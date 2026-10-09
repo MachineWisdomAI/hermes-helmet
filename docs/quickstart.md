@@ -28,8 +28,8 @@ workflow.
 The published worker image is a separate installation from this CLI.
 Installing `helmet` does not pull GHCR or start Docker. The current preview
 digest is
-`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea`,
-built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. See
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122`,
+built from `80726d21f11d3856e32d30c440123101c94f8664`. See
 [runtime-image.md](runtime-image.md). Development builds still pin the official
 Hermes Agent base
 `nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909`
@@ -118,7 +118,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml pull hermes
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --no-build
 ```
 
-The image was built from `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`. Confirm
+The image was built from `80726d21f11d3856e32d30c440123101c94f8664`. Confirm
 the running container recorded that commit:
 
 ```sh

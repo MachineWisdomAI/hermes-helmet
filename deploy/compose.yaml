@@ -31,7 +31,7 @@ services:
       HERMES_GATEWAY_NO_SUPERVISE: "0"
       HERMES_DASHBOARD: ${HERMES_DASHBOARD:-0}
       HERMES_HELMET_POLICY_SOURCE: /opt/hermes-helmet/config/policy.mounted.json
-      # Injected only for entrypoint bootstrap; runtime-entrypoint.sh unsets both
+      # Injected only for entrypoint bootstrap; runtime-entrypoint.sh unsets these
       # before starting upstream s6/Hermes. The file-backed gh wrapper remains.
       GH_TOKEN: ${HERMES_GITHUB_TOKEN:?set HERMES_GITHUB_TOKEN in .env}
       GITHUB_TOKEN: ${HERMES_GITHUB_TOKEN:?set HERMES_GITHUB_TOKEN in .env}
