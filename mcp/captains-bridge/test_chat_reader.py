@@ -34,7 +34,7 @@ class SavedChatReader(unittest.TestCase):
             self.item({'type': 'AgentMessage', 'id': 'report', 'phase': 'final_answer', 'content': [{'type': 'Text', 'text': 'The handoff was repaired'}]}),
             self.item({'type': 'Reasoning', 'id': 'private', 'raw_content': ['do not expose']}),
             self.item({'type': 'CommandExecution', 'id': 'command', 'command': 'check', 'aggregated_output': 'failed', 'exit_code': 1, 'status': 'completed'}),
-            self.item({'type': 'McpToolCall', 'id': 'viewer', 'server': 'helmet_observation_spike', 'tool': 'present_chat_work', 'result': {'content': [{'type': 'text', 'text': 'recursive viewer data'}]}}),
+            self.item({'type': 'McpToolCall', 'id': 'viewer', 'server': 'hermes_helmet_captains_bridge', 'tool': 'present_chat_work', 'result': {'content': [{'type': 'text', 'text': 'recursive viewer data'}]}}),
             self.event('task_complete', turn_id='turn-one', started_at=10, completed_at=20, duration_ms=10000),
             self.event('task_started', turn_id='turn-open', started_at=30),
         ]

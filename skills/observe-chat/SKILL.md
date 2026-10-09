@@ -1,13 +1,13 @@
 ---
 name: observe-chat
-description: Open Captain’s Bridge for the current Codex chat: a source-grounded walkthrough of changes, handoffs, unresolved work, and particular changes.
+description: Codex only. Open Captain’s Bridge for the current Codex chat: a source-grounded walkthrough of changes, handoffs, unresolved work, and particular changes.
 ---
 
 # Captain’s Bridge
 
 Use this when the Captain asks to understand this chat’s work, open the bridge,
-refresh its explanation, or show a particular change. The feature is part of
-Hermes Helmet. It reads existing records; do not start or resume project work.
+refresh its explanation, or show a particular change. The feature is part of the
+`hermes-helmet` Codex plugin (Hermes Helmet). It reads existing records; do not start or resume project work.
 
 ## Read, explain, open
 

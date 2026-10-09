@@ -5,6 +5,15 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.3.0
+
+- Add Captain’s Bridge to the Codex plugin: a read-only panel for the invoking
+  chat that explains recorded work and opens its supporting records. It uses the
+  plugin's own MCP server (`codex.mcp.json`) and the `observe-chat` skill, reads
+  only the exact `CODEX_THREAD_ID`'s saved records, and writes nothing. The
+  Claude plugin and the setup, issue, and epic skills are unchanged. Background
+  preparation and cancellation are not included.
+
 ### 0.2.1
 
 - Point the quickstart, private-overlay examples, and Claude subscription guide

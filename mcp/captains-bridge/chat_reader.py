@@ -51,7 +51,7 @@ def summarize(thread):
                 counts['toolCalls'] += 1
                 result = item.get('result') or {}
                 # Exclude the viewer's own calls to avoid recursively copying its payload.
-                if 'observation_spike' not in str(item.get('server', '')):
+                if not any(name in str(item.get('server', '')) for name in ('captains_bridge', 'observation_spike')):
                     content = result.get('content', []) if isinstance(result, dict) else []
                     result_text = '\n'.join(c.get('text', '') for c in content if isinstance(c, dict) and c.get('type') == 'text')
                     record = {'actor': 'First officer', 'kind': 'tool', 'text': str(item.get('tool', 'Tool call')) + '\n' + result_text}

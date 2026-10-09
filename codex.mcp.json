@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "helmet_observation_spike": {
+    "hermes_helmet_captains_bridge": {
       "command": "python3",
       "args": [
         "-B",
-        "./server.py"
+        "./mcp/captains-bridge/server.py"
       ],
       "cwd": ".",
       "env_vars": [

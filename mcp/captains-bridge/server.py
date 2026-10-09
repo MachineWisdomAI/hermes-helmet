@@ -8,9 +8,9 @@ from chat_reader import read_chat
 from walkthrough import validate, fingerprint
 
 ROOT = Path(__file__).resolve().parent
-URI = 'ui://helmet-observation-spike/current-chat-v0.2.3'
+URI = 'ui://hermes-helmet/captains-bridge-v1'
 BINDINGS = {}
-VERSION = '0.2.3'
+VERSION = '1'
 
 
 def tool(name, title, description, properties, required=(), app=False, entry=False):
@@ -92,7 +92,7 @@ def read_view(view):
 
 def handle(method, params):
     if method == 'initialize':
-        return {'protocolVersion': params.get('protocolVersion', '2025-06-18'), 'capabilities': {'tools': {}, 'resources': {}}, 'serverInfo': {'name': 'helmet-observation-spike', 'version': VERSION}}
+        return {'protocolVersion': params.get('protocolVersion', '2025-06-18'), 'capabilities': {'tools': {}, 'resources': {}}, 'serverInfo': {'name': 'hermes-helmet-captains-bridge', 'version': VERSION}}
     if method == 'ping':
         return {}
     if method == 'tools/list':

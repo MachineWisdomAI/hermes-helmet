@@ -26,13 +26,15 @@ path. Do not delete unrelated host skills. Canonical behavior stays in
 
 ## Install
 
-Captain’s Bridge is being integrated under
-[issue #53](https://github.com/MachineWisdomAI/hermes-helmet/issues/53) for Codex
-and [issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55) for
-Claude Code. Its
-[implementation source and tests](../prototypes/captains-bridge/README.md) live
-in this repository. The plugin described below does not activate that prototype
-yet.
+The Codex plugin also carries Captain’s Bridge: a read-only panel that
+explains one recorded piece of work in the invoking chat and opens its
+supporting records. It is Codex-only and starts no second server beyond the
+plugin's own MCP server. Background preparation and cancellation are not part of
+this release. See the
+[source and test guide](../mcp/captains-bridge/README.md). The Claude Code port
+is tracked in
+[issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55); the
+Claude plugin does not load the Bridge.
 
 ### Claude Code
 

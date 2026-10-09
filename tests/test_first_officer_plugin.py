@@ -14,7 +14,7 @@ from hermes_helmet import public_surface
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILLS = ("setup-helmet", "helmet-issue", "helmet-epic")
+SKILLS = ("setup-helmet", "helmet-issue", "helmet-epic", "observe-chat")
 PLUGIN_NAME = "hermes-helmet"
 MARKETPLACE_NAME = "hermes-helmet"
 INSTALL_GUIDE = "docs/first-officer-plugins.md"
@@ -172,6 +172,25 @@ class FirstOfficerPluginTests(unittest.TestCase):
             ]
             self.assertEqual(extra, [], extra)
 
+    def test_codex_plugin_loads_captains_bridge_from_repository_source(self) -> None:
+        codex = _load_json(".codex-plugin/plugin.json")
+        claude = _load_json(".claude-plugin/plugin.json")
+        config_path = _resolve_inside(ROOT, codex["mcpServers"])
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(list(config["mcpServers"]), ["hermes_helmet_captains_bridge"])
+        server = config["mcpServers"]["hermes_helmet_captains_bridge"]
+        script = _resolve_inside(ROOT, server["args"][-1])
+        self.assertEqual(script, (ROOT / "mcp" / "captains-bridge" / "server.py").resolve())
+        self.assertTrue(script.is_file())
+        self.assertEqual(server["cwd"], ".")
+        self.assertEqual(set(server["env_vars"]), {"CODEX_HOME", "HOME", "PATH"})
+        text = config_path.read_text(encoding="utf-8")
+        for marker in ("/Users/", "/home/", "/opt/data", "spike", "marketplace"):
+            self.assertNotIn(marker, text)
+        # Claude plugin behavior is unchanged: no MCP server is loaded there.
+        self.assertNotIn("mcpServers", claude)
+        self.assertFalse((ROOT / "prototypes").exists())
+
     def test_public_surface_scan_covers_plugin_manifests(self) -> None:
         self.assertIn(".claude-plugin", public_surface.SCAN_ROOTS)
         self.assertIn(".codex-plugin", public_surface.SCAN_ROOTS)
@@ -181,12 +200,12 @@ class FirstOfficerPluginTests(unittest.TestCase):
         self.assertIn(".codex-plugin/plugin.json", verify)
         self.assertIn(INSTALL_GUIDE, verify)
 
-    def test_verify_runs_captains_bridge_prototype_checks(self) -> None:
+    def test_verify_runs_captains_bridge_checks(self) -> None:
         verify = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
-        self.assertIn("cd prototypes/captains-bridge", verify)
+        self.assertIn("cd mcp/captains-bridge", verify)
         for check in ("test_view.cjs", "test_delivery.cjs", "test_actions.cjs"):
             self.assertIn(check, verify)
-            self.assertTrue((ROOT / "prototypes" / "captains-bridge" / check).is_file())
+            self.assertTrue((ROOT / "mcp" / "captains-bridge" / check).is_file())
 
     def test_install_guide_is_linked_and_names_real_commands(self) -> None:
         guide = (ROOT / INSTALL_GUIDE).read_text(encoding="utf-8")

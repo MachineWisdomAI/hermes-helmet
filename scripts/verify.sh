@@ -47,6 +47,9 @@ for required in \
     skills/setup-helmet/SKILL.md \
     skills/helmet-issue/SKILL.md \
     skills/helmet-epic/SKILL.md \
+    skills/observe-chat/SKILL.md \
+    codex.mcp.json \
+    mcp/captains-bridge/server.py \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
     src/hermes_helmet/repo_enroll.py \
@@ -154,10 +157,10 @@ fi
 # Behavioral parity suite.
 PYTHONPATH=src "$PYTHON_BIN" -m unittest discover -s tests -v
 
-# Captain's Bridge prototype source and its synthetic checks. The view checks
-# read view.html relative to the prototype directory.
+# Captain Bridge MCP source and its synthetic checks. The view checks
+# read view.html relative to this directory.
 (
-    cd prototypes/captains-bridge
+    cd mcp/captains-bridge
     "$PYTHON_BIN" -B -m unittest discover -s . -p 'test_*.py' -v
     if command -v node >/dev/null 2>&1; then
         for check in test_view.cjs test_delivery.cjs test_actions.cjs; do
@@ -271,6 +274,7 @@ assert bundled.is_dir(), bundled
 assert (bundled / "helmet-issue" / "SKILL.md").is_file()
 assert (bundled / "helmet-epic" / "SKILL.md").is_file()
 assert (bundled / "setup-helmet" / "SKILL.md").is_file()
+assert (bundled / "observe-chat" / "SKILL.md").is_file()
 messages = static_validate_all_targets()
 assert any("helmet-issue" in item for item in messages), messages
 assert any("helmet-epic" in item for item in messages), messages
@@ -283,8 +287,8 @@ with tempfile.TemporaryDirectory() as tmp:
         targets=["codex", "claude", "hermes"],
         prefix=Path(tmp),
     )
-    # Three skills × three targets.
-    assert len(installed) == 9, installed
+    # Four skills × three targets.
+    assert len(installed) == 12, installed
 print("setup-helmet, helmet-issue, and helmet-epic validate for all targets")
 print("canonical skills validate; packaged sdist/wheel asset coverage runs in tests.test_packaged_release")
 PY
