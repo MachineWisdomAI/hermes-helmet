@@ -29,7 +29,7 @@ attempt=0
 while [ "$attempt" -lt 60 ]; do
     if docker exec --env GH_TOKEN= --env GITHUB_TOKEN= --env CLAUDE_CODE_OAUTH_TOKEN= "$container_name" \
         sh -c 'test "$(basename "$(readlink /proc/1/exe)")" = "s6-svscan"' \
-        && docker top "$container_name" -eo pid,args | grep -Fq 'hermes gateway run --replace'; then
+        && docker top "$container_name" -eo pid,args | grep -Fq 'gateway run --replace'; then
         break
     fi
     if [ "$(docker inspect --format '{{.State.Running}}' "$container_name")" != "true" ]; then
