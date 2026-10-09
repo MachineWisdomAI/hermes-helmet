@@ -5,6 +5,16 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.4.0
+
+- Captain’s Bridge now presents the Changes First layout: purpose and outcome
+  in prose, grouped work items, and details for handoffs, review, evidence and
+  before/after changes. Evidence opens the original referenced records, Back
+  restores selection, scroll and focus, and elapsed time and gaps are collapsed
+  on the overview. Explicit handoff and wakeup relations are recorded without
+  implying causation or stalls; Hermes steps and readable names are validated
+  against the selected chat.
+
 ### 0.3.0
 
 - Add Captain’s Bridge to the Codex plugin: a read-only panel for the invoking
