@@ -5,6 +5,14 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.2.1
+
+- Pin the published preview runtime image to
+  `ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122`,
+  built from `80726d21f11d3856e32d30c440123101c94f8664` (Hermes Agent 0.21.6,
+  package label `0.2.0`). This preview includes the Claude Code CLI and the
+  Claude subscription model-provider plugin.
+
 ### 0.2.0
 
 - Bundle the Claude Code CLI 2.1.286 (sha256-pinned per architecture) and the

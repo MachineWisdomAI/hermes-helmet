@@ -9,26 +9,26 @@ and does not start or restart the worker.
 Use the digest, not a mutable tag:
 
 ```text
-ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea
+ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122
 ```
 
 | Field | Value |
 | --- | --- |
-| Tag | `preview-c0fc5d883b56befcf1bd8354c6dab7c612ac6455` |
-| Source commit | `c0fc5d883b56befcf1bd8354c6dab7c612ac6455` |
+| Tag | `preview-80726d21f11d3856e32d30c440123101c94f8664` |
+| Source commit | `80726d21f11d3856e32d30c440123101c94f8664` |
 | Platforms | `linux/amd64`, `linux/arm64` |
-| Build record | [GitHub Actions run 36228558544](https://github.com/MachineWisdomAI/hermes-helmet/actions/runs/36228558544) |
+| Build record | [GitHub Actions run 37939434059](https://github.com/MachineWisdomAI/hermes-helmet/actions/runs/37939434059) |
 
-Anonymous pulls work. This image is a preview. Its `0.1.0rc1` package label is
-the version declared in that source commit; it is not a new stable release and
-it is not the [September 23, 2026 wheel](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23).
+Anonymous pulls work. This image is a preview running Hermes Agent 0.21.6. Its
+`0.2.0` package label is the version declared in that source commit; it is not
+a stable release and it is not the
+[September 23, 2026 wheel](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23).
 
 The digest identifies the image built from that recorded source SHA.
 `/opt/hermes-helmet/SOURCE_COMMIT` inside the container is that SHA.
 
-Images built from current source also bundle the pinned Claude Code CLI and the
-Claude subscription model-provider plugin. This preview predates them; use the
-development build below for [Claude subscription workers](claude-subscription.md).
+This preview bundles the pinned Claude Code CLI and the Claude subscription
+model-provider plugin used by [Claude subscription workers](claude-subscription.md).
 
 ## Run the published image
 
