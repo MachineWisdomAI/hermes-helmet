@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from chat_reader import read_chat
 from walkthrough import validate, fingerprint
+from preparation import new_request, check_request, prepared_walkthrough, settlement
 
 ROOT = Path(__file__).resolve().parent
 URI = 'ui://hermes-helmet/captains-bridge-v1'
@@ -40,6 +41,16 @@ VIEW = tool('get_chat_work_view', 'Load prepared walkthrough',
             'Read the exact chat in the portable view and validate the prepared explanation against its records. Never starts work.',
             {'view': {'type': 'object'}}, ('view',))
 VIEW['_meta'] = {'ui': {'visibility': ['app']}}
+
+
+REQUEST = tool('request_walkthrough_update', 'Capture walkthrough request',
+               'Read the exact chat in the portable view and capture an immutable preparation snapshot and request identity. Starts no work.',
+               {'view': {'type': 'object'}}, ('view',))
+REQUEST['_meta'] = {'ui': {'visibility': ['app']}}
+DELIVER = tool('deliver_walkthrough_update', 'Deliver prepared walkthrough',
+               'For a read-only preparation agent: deliver the explanation for one captured request, or report failure. Pass the request unchanged. Cites record IDs from the request chat only. Delivery is discarded by the panel unless the request is still active. Never retry.',
+               {'request': {'type': 'object'}, 'walkthrough': {'type': 'object'},
+                'failure': {'type': 'string', 'maxLength': 500}}, ('request',), app=True)
 
 
 def bind(thread_id):
@@ -90,13 +101,38 @@ def read_view(view):
     return {'thread_id': view['threadId'], 'data': data, 'walkthrough': account}
 
 
+def capture_request(view):
+    state = read_view(view)
+    request = new_request(state['thread_id'], state['data'])
+    text = 'Captured walkthrough request ' + request['requestId'] + '. No work was started.'
+    return {'content': [{'type': 'text', 'text': text}], 'structuredContent': {'request': request}}
+
+
+def deliver(args):
+    request = check_request(args.get('request'))
+    failure = args.get('failure')
+    if failure is not None or args.get('walkthrough') is None:
+        note = failure if isinstance(failure, str) and failure.strip() else 'The preparation agent returned no explanation.'
+        outcome = settlement(request, 'failed', note[:500])
+        return {'content': [{'type': 'text', 'text': 'Reported failure for request ' + request['requestId'] + '.'}],
+                'structuredContent': {'preparation': outcome}}
+    # The reader opens only the request's own chat; the child never picks one.
+    data = read_chat(request['threadId'])
+    account = prepared_walkthrough(request, args['walkthrough'], data)
+    state = {'thread_id': request['threadId'], 'data': data, 'walkthrough': account}
+    result = present(None, state)
+    result['structuredContent']['preparation'] = settlement(request, 'delivered')
+    result['_meta']['preparation'] = result['structuredContent']['preparation']
+    return result
+
+
 def handle(method, params):
     if method == 'initialize':
         return {'protocolVersion': params.get('protocolVersion', '2025-06-18'), 'capabilities': {'tools': {}, 'resources': {}}, 'serverInfo': {'name': 'hermes-helmet-captains-bridge', 'version': VERSION}}
     if method == 'ping':
         return {}
     if method == 'tools/list':
-        return {'tools': [OPEN, READ, PRESENT, REFRESH, VIEW]}
+        return {'tools': [OPEN, READ, PRESENT, REFRESH, VIEW, REQUEST, DELIVER]}
     if method == 'resources/list':
         return {'resources': [{'uri': URI, 'name': 'Captain’s Bridge', 'mimeType': 'text/html;profile=mcp-app'}]}
     if method == 'resources/templates/list':
@@ -106,6 +142,10 @@ def handle(method, params):
     if method != 'tools/call':
         raise ValueError('Unknown method or resource')
     args, name = params.get('arguments') or {}, params.get('name')
+    if name == REQUEST['name']:
+        return capture_request(args.get('view'))
+    if name == DELIVER['name']:
+        return deliver(args)
     if name in (VIEW['name'], REFRESH['name']):
         return present(None, read_view(args.get('view')), for_app=True)
     if name in (OPEN['name'], READ['name']) and args.get('thread_id'):
