@@ -8,7 +8,10 @@ synthetic regression tests. It contains no saved conversations or private
 acceptance evidence.
 
 [Issue #53](https://github.com/MachineWisdomAI/hermes-helmet/issues/53) owns the
-released implementation. The main Hermes Helmet plugin does not activate this
+released Codex implementation. [Issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)
+ports the same experience to a Claude Code mod: its record reader starts from
+`chat_reader.py` and `saved_chat.py`, and its explanation request from the
+observation skill. The main Hermes Helmet plugin does not activate this
 prototype yet. Its existing `helmet-observation-spike` identifiers and version
 are retained to preserve the tested starting point; they are not another
 Hermes Helmet release or a new public installation recommendation.
@@ -65,6 +68,9 @@ node test_view.cjs
 node test_delivery.cjs
 node test_actions.cjs
 ```
+
+`scripts/verify.sh` runs the same checks, so CI keeps this source working until
+it is integrated.
 
 The checks cover read-only access, exact chat identity, record normalization,
 source references, separate-process delivery, wrapped MCP results, freshness,
