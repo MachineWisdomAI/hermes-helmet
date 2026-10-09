@@ -25,9 +25,9 @@ permissions:
 
 env:
   IMAGE_REPOSITORY: ghcr.io/machinewisdomai/hermes-helmet/runtime
-  HERMES_BASE_IMAGE: nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
-  HERMES_BASE_AMD64_IMAGE: nousresearch/hermes-agent@sha256:2fd023efbb8d3d2b0ce1a73d028b07370cff34f567cfe0e999553e8c327ea283
-  HERMES_BASE_ARM64_IMAGE: nousresearch/hermes-agent@sha256:93b4e2877a2f48f4474b6dd2b99386ae32c4c552d32639df1a869b3f13c50b5a
+  HERMES_BASE_IMAGE: nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909
+  HERMES_BASE_AMD64_IMAGE: nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22
+  HERMES_BASE_ARM64_IMAGE: nousresearch/hermes-agent@sha256:93b295a42bdb6003e06fb9ce316bd6d4f4c09a93a7a89d263701ec6b1a79b208
 
 jobs:
   resolve-source:
