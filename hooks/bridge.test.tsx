@@ -274,7 +274,7 @@ describe('the overview', () => {
       expect(at('Other recorded activity')).toBeLessThan(at('5 of 5 records read'))
       const titles = await pane.findAll({ type: 'Button' })
       expect(titles.map((b: any) => b.key)).toEqual([
-        'item:widget', 'item:gadget', 'item:notes', 'refresh',
+        'item:widget', 'item:gadget', 'item:notes', 'refresh', 'update-explanation',
       ])
       // Claude Code 2.1.293 rejects a Button with anything but one string label.
       // The item Button carries title and status as one label, no nested Text.

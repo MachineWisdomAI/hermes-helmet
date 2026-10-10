@@ -1,11 +1,11 @@
 // Captain's Bridge: the Claude Code mod of the Hermes Helmet plugin.
 //
-// This slice reads the session's saved records with `helmet bridge read` and
-// draws the Changes First walkthrough: the overview, the full item detail,
-// Back with its place restored, and Refresh records. It sends no message,
-// starts no turn, calls no model and runs no timer. Preparing an explanation
-// is a later slice; until one exists the pane shows record counts and
-// coverage. State follows the contract in ../types.
+// It reads the session's saved records with `helmet bridge read`, draws the
+// Changes First walkthrough (overview, full item detail, Back with its place
+// restored, Refresh records), and prepares a new explanation in the background
+// with one tool-less model request. The request never starts a turn, submits a
+// prompt, calls a tool, spawns a subagent, waits or polls; the first officer's
+// task is never interrupted. State follows the contract in ../types.
 //
 // The calls this module makes are checked in CI against the read-only
 // allowlist from issue #55 (scripts/check_mod_calls.py).
@@ -15,6 +15,7 @@ import type {
   BridgeState,
   Coverage,
   RecordsSummary,
+  RequestStatus,
   SessionRecord,
   Walkthrough,
   WalkthroughItem,
@@ -36,6 +37,132 @@ export const READER_TIMEOUT_MS = 30000
 export const REPORT_BACKGROUND = '#2f3b4c'
 export const DISPOSITION_BACKGROUND = '#3b3a2f'
 
+// One bounded, tool-less explanation request. The instructions and the schema
+// go first and are cache-marked; the record summary is the last block.
+export const MAX_TOKENS = 16000
+export const DIFFICULT_MESSAGE = "The explanation didn't match the records"
+export const EMPTY_MESSAGE = 'The explanation came back empty'
+export const WALKTHROUGH_CONFLICT_MESSAGE =
+  'The explanation changed while it was being saved; press Update to try again'
+export const TIMEOUT_MESSAGE = 'The explanation request hit its time limit'
+export const RELOAD_MESSAGE = 'Interrupted by a plugin reload'
+
+export const EXPLANATION_INSTRUCTIONS = [
+  'You explain one Claude Code session to its Captain from the records you are given.',
+  'Answer with one JSON object and nothing else: no prose, no code fences.',
+  '',
+  'Rules:',
+  '- Make only claims the cited records support. Every conclusion, step, comparison and link cites record refs from this request.',
+  '- Keep the record text and your interpretation distinct. Never restate a record as if it were your own conclusion.',
+  '- Keep a reported completion separate from its acceptance. A finished turn, a successful command or a green run is not delivery or acceptance.',
+  '- Assign actors by actual responsibility: Captain, First officer, Hermes, or Other agent. Use Hermes only where a cited record attributes the work to the Hermes worker.',
+  '- Never treat a quiet interval or a gap as a stall.',
+  '- Never invent a before state, a diff, a link, a parent-child execution tree, or runtime success.',
+  '- Use readable, descriptive titles. Never use planning codes, task ids or raw UUIDs as names.',
+  '- Say where coverage is incomplete, at the affected item.',
+  '',
+  'The walkthrough shape is given as a JSON schema; the records follow as JSON.',
+].join('\n')
+
+export const WALKTHROUGH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['objective', 'summary', 'evidence', 'items'],
+  properties: {
+    objective: { type: 'string' },
+    summary: { type: 'string' },
+    evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+    items: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 24,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'title', 'group', 'status', 'summary', 'detail', 'evidence'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          group: { enum: ['changed', 'unresolved', 'activity'] },
+          status: { type: 'string' },
+          summary: { type: 'string' },
+          detail: { type: 'string' },
+          evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+          steps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['actor', 'label', 'detail', 'evidence'],
+              properties: {
+                actor: { enum: ['Captain', 'First officer', 'Hermes', 'Other agent'] },
+                label: { type: 'string' },
+                detail: { type: 'string' },
+                evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+              },
+            },
+          },
+          reported: { $ref: '#/$defs/note' },
+          disposition: { $ref: '#/$defs/note' },
+          change: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['before', 'after', 'explanation', 'evidence'],
+            properties: {
+              before: { type: 'string' },
+              after: { type: 'string' },
+              explanation: { type: 'string' },
+              evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+            },
+          },
+          links: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['label', 'url', 'evidence'],
+              properties: {
+                label: { type: 'string' },
+                url: { type: 'string' },
+                evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  $defs: {
+    note: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['label', 'actor', 'evidence'],
+      properties: {
+        label: { type: 'string' },
+        actor: { enum: ['Captain', 'First officer', 'Hermes', 'Other agent'] },
+        evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+      },
+    },
+  },
+}
+
+export type ExplanationOptions = { model: string; timeoutMs: number }
+
+export function explanationOptions(options: unknown): ExplanationOptions {
+  const bag = (options ?? {}) as Record<string, unknown>
+  const model =
+    typeof bag.explanationModel === 'string' && bag.explanationModel.trim() !== ''
+      ? bag.explanationModel.trim()
+      : 'sonnet'
+  const seconds =
+    typeof bag.explanationTimeoutSeconds === 'number' &&
+    Number.isFinite(bag.explanationTimeoutSeconds) &&
+    bag.explanationTimeoutSeconds > 0
+      ? bag.explanationTimeoutSeconds
+      : 180
+  return { model, timeoutMs: Math.round(seconds * 1000) }
+}
+
 const binding = atom({ plugin: 'hermes-helmet', key: 'binding' } as const, null)
 const records = atom({ plugin: 'hermes-helmet', key: 'records' } as const, null)
 const walkthrough = atom(
@@ -48,6 +175,11 @@ const request = atom(
 )
 const view = atom({ plugin: 'hermes-helmet', key: 'view' } as const, { stack: [] })
 const pending = atom({ plugin: 'hermes-helmet', key: 'pending' } as const, null)
+
+// One AbortController per live request, in module scope. A plugin reload
+// re-evaluates this module, so the controller is gone while `request.status`
+// stays `preparing` in state: that is the reload case below.
+let liveRequest: { generation: number; controller: AbortController } | null = null
 
 // Sources of a classic SessionStart that start a different conversation.
 const CHANGING_SOURCES = ['clear', 'resume', 'fork']
@@ -330,6 +462,463 @@ export async function refreshRecords($: any, helmetCommand: string): Promise<voi
 }
 
 // ---------------------------------------------------------------------------
+// Preparing an explanation. One bounded, tool-less model request over the
+// request's own immutable record snapshot. Nothing here submits a prompt,
+// starts a turn, calls a tool, spawns a subagent, waits, polls or retries.
+
+type RequestSnapshot = {
+  readAt: string
+  fingerprint: string
+  summary: RecordsSummary
+}
+
+// The source-bound validation ported from the approved spike: source is kept
+// separate from interpretation, support is required, and a link must appear
+// verbatim in a record the link itself cites.
+export function validateWalkthrough(value: any, summary: RecordsSummary): string | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'shape'
+  const seen = new Set(summary.records.map(rec => rec.ref))
+  const textOf = new Map(summary.records.map(rec => [rec.ref, rec.text]))
+  const prose = (v: unknown): boolean => typeof v === 'string' && v.trim() !== ''
+  const ACTORS = ['Captain', 'First officer', 'Hermes', 'Other agent']
+  const evidence = (v: unknown): string[] | null => {
+    if (!Array.isArray(v) || v.length === 0) return null
+    const refs: string[] = []
+    for (const ref of v) {
+      if (typeof ref !== 'string' || !seen.has(ref)) return null
+      refs.push(ref)
+    }
+    return refs
+  }
+  if (!prose(value.objective) || !prose(value.summary)) return 'prose'
+  if (evidence(value.evidence) === null) return 'evidence'
+  if (!Array.isArray(value.items) || value.items.length === 0) return 'items'
+  const ids = new Set<string>()
+  for (const item of value.items) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) return 'item'
+    if (
+      !prose(item.id) ||
+      !prose(item.title) ||
+      !prose(item.status) ||
+      !prose(item.summary) ||
+      !prose(item.detail)
+    ) {
+      return 'item-text'
+    }
+    if (!['changed', 'unresolved', 'activity'].includes(item.group)) return 'group'
+    if (ids.has(item.id)) return 'duplicate-id'
+    ids.add(item.id)
+    if (evidence(item.evidence) === null) return 'item-evidence'
+    if (item.steps !== undefined) {
+      if (!Array.isArray(item.steps)) return 'steps'
+      for (const step of item.steps) {
+        if (step === null || typeof step !== 'object') return 'step'
+        if (!prose(step.label) || !prose(step.detail)) return 'step-text'
+        if (!ACTORS.includes(step.actor)) return 'actor'
+        if (evidence(step.evidence) === null) return 'step-evidence'
+      }
+    }
+    for (const field of ['reported', 'disposition'] as const) {
+      const note = item[field]
+      if (note === undefined || note === null) continue
+      if (typeof note !== 'object') return field
+      if (!prose(note.label) || !ACTORS.includes(note.actor)) return field
+      if (evidence(note.evidence) === null) return `${field}-evidence`
+    }
+    if (item.change !== undefined && item.change !== null) {
+      const change = item.change
+      if (typeof change !== 'object') return 'change'
+      if (!prose(change.before) || !prose(change.after) || !prose(change.explanation)) {
+        return 'change-text'
+      }
+      if (evidence(change.evidence) === null) return 'change-evidence'
+    }
+    if (item.links !== undefined) {
+      if (!Array.isArray(item.links)) return 'links'
+      for (const link of item.links) {
+        if (link === null || typeof link !== 'object') return 'link'
+        if (!prose(link.label) || typeof link.url !== 'string') return 'link'
+        const source = evidence(link.evidence)
+        if (source === null) return 'link-evidence'
+        // The address must appear verbatim in a record the link cites.
+        if (!source.some(ref => (textOf.get(ref) ?? '').includes(link.url))) return 'link-source'
+      }
+    }
+  }
+  return null
+}
+
+export function statusLine(request: BridgeState['request']): string {
+  switch (request.status) {
+    case 'preparing':
+      return 'Preparing a new explanation in the background. The first officer keeps working.'
+    case 'cancelled':
+      return 'The explanation request was cancelled. The last explanation stays.'
+    case 'superseded':
+      return 'A new instruction superseded the explanation request. The last explanation stays.'
+    case 'timed-out':
+      return request.message ?? TIMEOUT_MESSAGE
+    case 'failed':
+      return request.message ?? 'The explanation request failed.'
+    default:
+      return request.message ?? ''
+  }
+}
+
+export function failureOf(error: unknown): { status: RequestStatus; message: string } {
+  const name =
+    error !== null && typeof error === 'object' && typeof (error as { name?: unknown }).name === 'string'
+      ? (error as { name: string }).name
+      : ''
+  const text = firstLine(String((error as { message?: unknown } | null)?.message ?? error ?? ''))
+  if (name === 'AbortError' || /deadline|time[ -]?out|abort/i.test(text)) {
+    return { status: 'timed-out', message: TIMEOUT_MESSAGE }
+  }
+  return {
+    status: 'failed',
+    message:
+      text === ''
+        ? 'The explanation request failed.'
+        : `The explanation request failed: ${text.slice(0, 160)}`,
+  }
+}
+
+// Compare-and-set the request only while the transition still owns it. A
+// competing write that lands between the read and the set (a Keep preparing
+// toggle, say) bumps the store version and makes the write miss without
+// changing the generation; the transition reads again and retries so a
+// settling request is never stranded. When the generation or status it
+// depends on no longer matches, a newer request or instruction owns the
+// request and the transition is discarded.
+async function settleRequest(
+  $: any,
+  next: (state: BridgeState['request']) => BridgeState['request'] | null,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+    const state = current?.value as BridgeState['request'] | null | undefined
+    if (state === null || state === undefined) return false
+    const value = next(state)
+    if (value === null) return false
+    const outcome = await $.state.set(
+      { plugin: 'hermes-helmet', key: 'request' },
+      value,
+      { ifVersion: current.version },
+    )
+    if (outcome?.isSet === true) return true
+  }
+  return false
+}
+
+// Settles the request only if it is still the preparing generation: a late
+// result of a cancelled or superseded request is discarded silently and the
+// walkthrough is never touched.
+async function failRequest(
+  $: any,
+  generation: number,
+  status: RequestStatus,
+  message: string | undefined,
+): Promise<void> {
+  await settleRequest($, state =>
+    state.generation === generation && state.status === 'preparing'
+      ? message === undefined
+        ? { generation, status, retain: state.retain === true }
+        : { generation, status, retain: state.retain === true, message }
+      : null,
+  )
+}
+
+async function installWalkthrough(
+  $: any,
+  generation: number,
+  body: Walkthrough,
+  snapshot: RequestSnapshot,
+): Promise<void> {
+  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const state = current?.value as BridgeState['request'] | null | undefined
+  if (state === null || state === undefined) return
+  if (state.generation !== generation || state.status !== 'preparing') return
+  // Adopt while this generation still owns the preparing request: the request
+  // stays `preparing` until the walkthrough write has landed, so a duplicate
+  // or newer Update cannot start a second preparation and race this write.
+  // Only then does the request settle idle, and only while it is still the
+  // preparing generation: a Cancel or supersession that won during the write
+  // leaves it alone.
+  //
+  // The walkthrough is written under compare-and-set against the version read
+  // here, so an older adoption can never overwrite a newer accepted
+  // explanation: its write misses and is discarded. A Cancel or supersession
+  // that wins while the write is in flight cannot stop it landing, so the
+  // adoption rechecks the request afterwards and restores the last useful view
+  // it replaced, only while its own write is still the current one.
+  const key = { plugin: 'hermes-helmet', key: 'walkthrough' }
+  const prior = await $.state.get(key)
+  const adopted = await $.state.set(
+    key,
+    {
+      body,
+      readAt: snapshot.readAt,
+      fingerprint: snapshot.fingerprint,
+      preparedAt: new Date().toISOString(),
+    },
+    { ifVersion: prior?.version ?? 0 },
+  )
+  if (adopted?.isSet !== true) {
+    // The walkthrough moved since it was read (a newer write or a cleanup
+    // restore). This generation may still own the preparing request, so settle
+    // it as a generation-qualified failure that keeps the current view rather
+    // than leaving it preparing; a request that is no longer the preparing
+    // generation is left alone.
+    await failRequest($, generation, 'failed', WALKTHROUGH_CONFLICT_MESSAGE)
+    return
+  }
+  const after = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const settled = after?.value as BridgeState['request'] | null | undefined
+  // Restore only while this adoption's own write is still the current one: the
+  // set is fenced to the version it returned, so a newer accepted explanation
+  // that landed since is never overwritten.
+  const restore = async () => {
+    await $.state.set(key, prior?.value ?? null, { ifVersion: adopted.version })
+  }
+  if (settled?.generation !== generation || settled?.status !== 'preparing') {
+    await restore()
+    return
+  }
+  const done = await settleRequest($, s =>
+    s.generation === generation && s.status === 'preparing'
+      ? { generation, status: 'idle', retain: s.retain === true }
+      : null,
+  )
+  // Cancellation or supersession won the final settlement: keep the last
+  // useful view rather than the replacement it cancelled.
+  if (!done) await restore()
+}
+
+// A resolved `api-error`: the engine carries the HTTP status and the kind it
+// classified the failure as, never the provider's own text.
+export function providerFailureMessage(result: any): string {
+  const kind = typeof result?.error === 'string' && result.error !== '' ? result.error : 'unknown'
+  const status = typeof result?.status === 'number' ? result.status : null
+  return status === null
+    ? `The explanation request failed: the provider answered ${kind} and no response arrived.`
+    : `The explanation request failed: the provider answered ${kind} (status ${status}).`
+}
+
+async function runPreparation(
+  $: any,
+  generation: number,
+  controller: AbortController,
+  snapshot: RequestSnapshot,
+  options: ExplanationOptions,
+): Promise<void> {
+  try {
+    // The AbortSignal is the call's own option (ModelCompleteOptions), not a
+    // request field: it is what actually cuts the in-flight call on Cancel.
+    // The engine never rejects over what the provider did; it resolves a
+    // result, and the request's own time limit arrives as `aborted`.
+    const result = await $.model.complete(
+      {
+        model: options.model,
+        prompt: [
+          { text: EXPLANATION_INSTRUCTIONS, cache: true },
+          { text: JSON.stringify(WALKTHROUGH_SCHEMA) },
+          { text: JSON.stringify(snapshot.summary) },
+        ],
+        maxTokens: MAX_TOKENS,
+        timeoutMs: options.timeoutMs,
+      },
+      { signal: controller.signal },
+    )
+    if (result?.isAnswered !== true) {
+      if (result?.reason === 'aborted') {
+        // Its time limit elapsed, or the call was cut: timed out.
+        await failRequest($, generation, 'timed-out', TIMEOUT_MESSAGE)
+      } else if (result?.reason === 'api-error') {
+        await failRequest($, generation, 'failed', providerFailureMessage(result))
+      } else {
+        // `empty-reply`, or a shape this release does not know.
+        await failRequest($, generation, 'failed', EMPTY_MESSAGE)
+      }
+      return
+    }
+    const text = typeof result.text === 'string' ? result.text.trim() : ''
+    if (text === '') {
+      await failRequest($, generation, 'failed', EMPTY_MESSAGE)
+      return
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      await failRequest($, generation, 'failed', DIFFICULT_MESSAGE)
+      return
+    }
+    if (validateWalkthrough(parsed, snapshot.summary) !== null) {
+      await failRequest($, generation, 'failed', DIFFICULT_MESSAGE)
+      return
+    }
+    await installWalkthrough($, generation, parsed as Walkthrough, snapshot)
+  } catch (error) {
+    const failure = failureOf(error)
+    await failRequest($, generation, failure.status, failure.message)
+  } finally {
+    if (liveRequest !== null && liveRequest.generation === generation) liveRequest = null
+  }
+}
+
+// The Update press: compare-and-set the request to a new preparing generation,
+// take one record snapshot, then start exactly one model request off the press
+// dispatch. A duplicate press while preparing is ignored.
+export async function pressUpdate(
+  $: any,
+  helmetCommand: string,
+  options: ExplanationOptions,
+): Promise<void> {
+  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const state = current?.value as BridgeState['request'] | null | undefined
+  if (state !== null && state !== undefined && state.status === 'preparing') return
+  const generation = ((state?.generation ?? 0) as number) + 1
+  const claimed = await $.state.set(
+    { plugin: 'hermes-helmet', key: 'request' },
+    {
+      generation,
+      status: 'preparing',
+      retain: state?.retain === true,
+      startedAt: new Date().toISOString(),
+    },
+    { ifVersion: current?.version ?? 0 },
+  )
+  if (claimed?.isSet !== true) return
+
+  // The preparation claims its live request now, before the reader: Cancel and
+  // a superseding instruction end a preparation by clearing this token and
+  // aborting its controller, so every await below rechecks it locally and a
+  // preparation that lost ownership adopts nothing and launches nothing.
+  const controller = new AbortController()
+  liveRequest = { generation, controller }
+  const owns = () => liveRequest !== null && liveRequest.generation === generation
+  const release = () => {
+    if (owns()) liveRequest = null
+  }
+
+  const bound = await read($, binding)
+  if (bound === null) {
+    release()
+    await failRequest($, generation, 'failed', 'No conversation is bound.')
+    return
+  }
+  const outcome = await runReader($, helmetCommand, bound)
+  // A Cancel or a new instruction during the reader ends this preparation.
+  if (!owns()) return
+  const stillBound = await read($, binding)
+  if (stillBound === null || stillBound.sessionId !== bound.sessionId) {
+    release()
+    return
+  }
+  if (!outcome.ok) {
+    release()
+    await failRequest($, generation, 'failed', outcome.text)
+    return
+  }
+  const summary = outcome.summary
+  const snapshot: RequestSnapshot = {
+    readAt: summary.readAt,
+    fingerprint: summary.fingerprint,
+    summary,
+  }
+  await update($, records, () => ({
+    fingerprint: summary.fingerprint,
+    readAt: summary.readAt,
+    coverage: coverageOf(summary),
+    summary,
+  }))
+
+  // One request, started off the press dispatch so the press returns at once.
+  // A Cancel or a superseding instruction between scheduling and the deferred
+  // start launches no stale request and never clobbers a newer controller.
+  Promise.resolve(
+    $.clock.after(0, () => {
+      if (!owns()) return
+      // The preparation runs in the background: its own failure is already
+      // settled into the request state, and a settlement that arrives after
+      // this plugin's environment is gone (a reload, a teardown) has nowhere
+      // left to go, so it is discarded rather than left unhandled.
+      void runPreparation($, generation, controller, snapshot, options).catch(() => {})
+    }),
+  ).catch(() => {})
+}
+
+// Cancel: abort, advance the generation and mark cancelled. The walkthrough is
+// untouched, and the aborted request's later failure is discarded.
+export async function pressCancel($: any): Promise<void> {
+  const controller = liveRequest === null ? null : liveRequest.controller
+  liveRequest = null
+  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const state = current?.value as BridgeState['request'] | null | undefined
+  if (state !== null && state !== undefined && state.status === 'preparing') {
+    // Bind the cancel to the generation it saw: a collision retries only while
+    // that same preparing generation still owns the request, so a newer
+    // request is never cancelled by accident.
+    const generation = state.generation
+    await settleRequest($, s =>
+      s.status === 'preparing' && s.generation === generation
+        ? { generation: generation + 1, status: 'cancelled', retain: s.retain === true }
+        : null,
+    )
+  }
+  if (controller !== null) controller.abort()
+}
+
+export async function toggleKeepPreparing($: any): Promise<void> {
+  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const state = current?.value as BridgeState['request'] | null | undefined
+  if (state === null || state === undefined) return
+  await $.state.set(
+    { plugin: 'hermes-helmet', key: 'request' },
+    { ...state, retain: state.retain !== true },
+    { ifVersion: current.version },
+  )
+}
+
+// A person's prompt while a request is preparing supersedes it, unless the
+// Captain chose Keep preparing. The prompt itself is never rewritten, blocked
+// or replaced: this only settles the request.
+export async function notePrompt($: any, e: any): Promise<void> {
+  const origin = e?.origin
+  const kind = origin !== null && typeof origin === 'object' ? origin.kind : undefined
+  if (kind === 'plugin') return
+  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const state = current?.value as BridgeState['request'] | null | undefined
+  if (state === null || state === undefined) return
+  if (state.status !== 'preparing' || state.retain === true) return
+  const generation = state.generation
+  const controller = liveRequest === null ? null : liveRequest.controller
+  liveRequest = null
+  await settleRequest($, s =>
+    s.status === 'preparing' && s.retain !== true && s.generation === generation
+      ? { generation: generation + 1, status: 'superseded', retain: false }
+      : null,
+  )
+  if (controller !== null) controller.abort()
+}
+
+// After a reload, a preparing request with no live controller can never
+// finish: it becomes failed, and the last useful walkthrough stays.
+export async function recoverAfterReload(
+  $: any,
+  state: BridgeState['request'] | null | undefined,
+  version: number | undefined,
+): Promise<void> {
+  if (state === null || state === undefined || state.status !== 'preparing') return
+  if (liveRequest !== null) return
+  await $.state.set(
+    { plugin: 'hermes-helmet', key: 'request' },
+    { ...state, status: 'failed', message: RELOAD_MESSAGE },
+    version === undefined ? {} : { ifVersion: version },
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Derived facts: time, actors, freshness. Everything comes from the saved
 // records; nothing here is a judgment about delivery or stalls.
 
@@ -469,6 +1058,9 @@ type Actions = {
   toggle: (section: 'change' | 'sources') => Promise<void>
   refresh: () => Promise<void>
   run: (action: Action) => Promise<void>
+  update: () => Promise<void>
+  cancel: () => Promise<void>
+  keep: () => Promise<void>
 }
 
 type Ctx = {
@@ -479,6 +1071,7 @@ type Ctx = {
   stack: Array<{ itemId?: string; scroll?: number; open?: string[] }>
   names: ActionNames
   busy: Action | null
+  request: BridgeState['request']
 }
 
 // Long text is cut into word-wrapped pieces, each its own block, so the
@@ -748,6 +1341,7 @@ function footerBlocks(ctx: Ctx, summary: RecordsSummary | null, hasBody: boolean
       </Text>,
     )
   }
+  const preparing = ctx.request.status === 'preparing'
   blocks.push(
     <Box key="actions" flexDirection="column" marginTop={1}>
       <Button
@@ -757,6 +1351,35 @@ function footerBlocks(ctx: Ctx, summary: RecordsSummary | null, hasBody: boolean
       >
         {summary === null ? 'Read records' : 'Refresh records'}
       </Button>
+      <Box key="explanation" flexDirection="column">
+        <Button key="update-explanation" onPress={() => ctx.act.update()}>
+          {preparing ? "Preparing explanation…" : 'Update explanation'}
+        </Button>
+        {preparing ? (
+          <Box key="preparing" flexDirection="column">
+            <Button key="cancel" onPress={() => ctx.act.cancel()}>
+              Cancel
+            </Button>
+            <Button key="keep-preparing" onPress={() => ctx.act.keep()}>
+              {ctx.request.retain === true ? 'Stop keeping the request' : 'Keep preparing'}
+            </Button>
+          </Box>
+        ) : null}
+        <Text
+          key="explanation-status"
+          dimColor={!preparing && ctx.request.message === undefined}
+          color={
+            ctx.request.status === 'failed' || ctx.request.status === 'timed-out'
+              ? 'error'
+              : ctx.request.status === 'cancelled' || ctx.request.status === 'superseded'
+                ? 'warning'
+                : undefined
+          }
+          wrap="wrap"
+        >
+          {statusLine(ctx.request)}
+        </Text>
+      </Box>
       {(['show-me', 'retro'] as Action[]).map(action =>
         actionBlock(
           { Box, Text, Button },
@@ -766,11 +1389,6 @@ function footerBlocks(ctx: Ctx, summary: RecordsSummary | null, hasBody: boolean
           () => ctx.act.run(action),
         ),
       )}
-      <Box key="update-explanation">
-        <Text dimColor wrap="wrap">
-          Update explanation: not available in this release. No model is called and nothing is sent.
-        </Text>
-      </Box>
     </Box>,
   )
   return blocks
@@ -963,6 +1581,7 @@ let drawsPanes = true
 export const register: Register = (on, options) => {
   const configured = (options as Record<string, unknown> | undefined)?.helmetCommand
   const names = actionNames(options)
+  const explanation = explanationOptions(options)
   const helmetCommand =
     typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : 'helmet'
 
@@ -978,11 +1597,24 @@ export const register: Register = (on, options) => {
     // A binding ended by clear/resume/fork/end stays ended through a reload
     // until an explicit /captains-bridge command (which clears the message).
     const id = await $.session.id()
-    const ended = (await read($, request)).message === CHANGED_MESSAGE
+    const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+    const request = (current?.value ?? null) as BridgeState['request'] | null
+    const ended = request?.message === CHANGED_MESSAGE
+    // A reload re-evaluates this module, so a preparing request whose live
+    // controller is gone can never finish. It becomes failed here.
+    await recoverAfterReload($, request, current?.version)
     await update($, binding, current => {
       if (current === null) return ended ? null : { sessionId: id }
       return current.sessionId === id ? current : null
     })
+    return next(e)
+  })
+
+  // A person's prompt while an explanation is preparing supersedes it, unless
+  // the Captain chose Keep preparing. The prompt always passes through
+  // unchanged: this hook never blocks, rewrites or replaces it.
+  on('prompt.submit', async ($, e, next) => {
+    await notePrompt($, e)
     return next(e)
   })
 
@@ -1103,6 +1735,9 @@ export const register: Register = (on, options) => {
         await refreshRecords($, helmetCommand)
       },
       run: action => runAction($, action, names[action]),
+      update: () => pressUpdate($, helmetCommand, explanation),
+      cancel: () => pressCancel($),
+      keep: () => toggleKeepPreparing($),
     }
     if (availability === null) await discoverCommands($, names)
     const busy = await read($, pending)
@@ -1114,6 +1749,7 @@ export const register: Register = (on, options) => {
       stack,
       names,
       busy: busy === null ? null : busy.action,
+      request: status,
     }
 
     // Header: identity, read freshness, the stale note, coverage warnings and

@@ -5,6 +5,40 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.13.0
+
+- Prepare and cancel a source-bound explanation in the background from the
+  Claude Captain's Bridge mod
+  ([#70](https://github.com/MachineWisdomAI/hermes-helmet/issues/70), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  **Update explanation** takes one record snapshot with the reader, then makes
+  exactly one tool-less `$.model.complete` request started off the press
+  dispatch with `$.clock.after(0, …)`: the configured model,
+  `explanationTimeoutSeconds` × 1000, 16000 tokens, the fixed instructions with
+  `cache: true`, the walkthrough schema and the record summary. It starts no
+  turn, submits no prompt, calls no tool or subagent, sends nothing, polls
+  nothing and never retries. The pane shows Cancel and Keep preparing while it
+  prepares; a duplicate press is ignored. Cancel cuts the in-flight call
+  through the call's own `{ signal }` option (never a request field, which the
+  engine ignores), and a Cancel or a superseding instruction that lands while
+  the reader is still running is re-checked before the deferred start, so it
+  launches no request and never replaces a newer request's controller. The
+  result installs only when the request generation still matches under
+  compare-and-set, so a late, cancelled or superseded result is discarded
+  silently. A person's prompt supersedes the request unless Keep preparing is
+  on, and always passes through unchanged. The engine resolves an outcome
+  rather than rejecting over what the provider did: `aborted` (the time limit,
+  or the call cut) becomes timed-out; `api-error` becomes failed, naming the
+  HTTP status and classified kind; `empty-reply` becomes failed and empty; only
+  an engine refusal rejects. A non-JSON or wrongly shaped reply, empty
+  top-level or item evidence, an unknown ref, or a link absent from a cited
+  record becomes failed with "The explanation didn't match the records",
+  keeping the last walkthrough. A plugin reload that leaves a preparing request
+  with no live controller becomes failed with "Interrupted by a plugin
+  reload". Tests drive `claude plugin test` seams with synthetic delayed model
+  stand-ins on the mocked clock, and CI keeps the mod's calls inside the
+  read-only allowlist.
+
 ### 0.12.0
 
 - Verify and document installing and updating the complete Captain’s Bridge

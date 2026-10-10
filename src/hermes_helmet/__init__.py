@@ -7,7 +7,7 @@ if sys.version_info < (3, 11):
 
 from hermes_helmet.authority import Policy, load_authority, load_policy, render_crew_contract
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 __all__ = [
     "Policy",

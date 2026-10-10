@@ -54,6 +54,7 @@ for required in \
     hooks/register.test.tsx \
     hooks/bridge.test.tsx \
     hooks/actions.test.tsx \
+    hooks/explanation.test.tsx \
     types/index.d.ts \
     src/hermes_helmet/claude_mod_toolchain.py \
     tests/test_claude_mod_toolchain.py \
