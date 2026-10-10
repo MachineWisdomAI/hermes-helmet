@@ -87,7 +87,7 @@ async function timeoutPrep(id){
  error('The update took too long. Asking Codex to stop it. Your current view is preserved.');render();
  const stopped=await stopRequest(id,'timed out after 10 minutes');
  if(prep||capturing)return; // a newer attempt owns the panel
- error(stopped===true?'The update took too long. Codex was asked to stop it; the stop is not confirmed, and any result is ignored. Your current view is preserved.'
+ error(stopped===true?'The update took too long. Codex was asked to stop it; the stop is not confirmed, and any result is ignored. If the agent had already finished, its result reached the server but this panel cannot show it. Your current view is preserved.'
   :'The update took too long, and Codex could not be told to stop it ('+stopped+'). It may still be running; any result is ignored. Your current view is preserved.');render()}
 async function cancelPrep(){
  if(!prep)return;const id=prep.request.requestId;clearPrep();render();
@@ -102,7 +102,7 @@ function settle(preparation){
  return true}
 function prepNotice(main){
  if(!prep)return;const n=el('div',null,'notice');
- append(n,el('span',prep.state==='sending'?'Requesting an update…':'Updating the walkthrough in the background. This view stays as it is, and project work is not paused.'),button('Cancel update',cancelPrep));
+ append(n,el('span',prep.state==='sending'?'Requesting an update…':'Update requested in the background. This view stays as it is, and project work is not paused. Codex may not show a result here if the chat turn has already finished; cancel to stop waiting.'),button('Cancel update',cancelPrep));
  append(main,n)}
 let refreshSeq=0,refreshing=false;
 function newerOrSame(next){const a=Date.parse(next?.readAt),b=Date.parse(deck?.readAt);return !(Number.isFinite(a)&&Number.isFinite(b))||a>=b}
