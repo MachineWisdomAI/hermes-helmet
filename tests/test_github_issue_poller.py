@@ -1210,7 +1210,11 @@ class GitHubIssuePollerTests(unittest.TestCase):
                 result.errors,
                 [
                     "Failed to list open pull requests for example-org/demo-repo: "
-                    "GitHub unavailable"
+                    "GitHub unavailable",
+                    # Review intake lists the same open pull requests and reports
+                    # the same failure through the existing error path.
+                    "Failed to list review requests for example-org/demo-repo: "
+                    "GitHub unavailable",
                 ],
             )
             self.assertFalse(any(call[0] == poller.HERMES for call in runner.calls))
@@ -1699,7 +1703,13 @@ class GitHubIssuePollerTests(unittest.TestCase):
             )
             self.assertEqual(
                 result.errors,
-                ["Failed to list example-org/bad: GitHub API returned a non-list page"],
+                [
+                    "Failed to list example-org/bad: GitHub API returned a non-list page",
+                    # Review intake lists pull requests for the same repository
+                    # set and fails the same way for the malformed repository.
+                    "Failed to list review requests for example-org/bad: "
+                    "GitHub API returned a non-list page",
+                ],
             )
 
     def test_example_policy_is_generic_and_explicit(self) -> None:

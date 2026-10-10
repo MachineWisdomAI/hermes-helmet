@@ -48,6 +48,7 @@ for required in \
     skills/helmet-issue/SKILL.md \
     skills/helmet-epic/SKILL.md \
     skills/observe-chat/SKILL.md \
+    skills/helmet-review/SKILL.md \
     codex.mcp.json \
     hooks/hooks.json \
     hooks/register.tsx \
@@ -298,6 +299,7 @@ assert (bundled / "helmet-issue" / "SKILL.md").is_file()
 assert (bundled / "helmet-epic" / "SKILL.md").is_file()
 assert (bundled / "setup-helmet" / "SKILL.md").is_file()
 assert (bundled / "observe-chat" / "SKILL.md").is_file()
+assert (bundled / "helmet-review" / "SKILL.md").is_file()
 messages = static_validate_all_targets()
 assert any("helmet-issue" in item for item in messages), messages
 assert any("helmet-epic" in item for item in messages), messages
@@ -310,8 +312,8 @@ with tempfile.TemporaryDirectory() as tmp:
         targets=["codex", "claude", "hermes"],
         prefix=Path(tmp),
     )
-    # Four skills × three targets.
-    assert len(installed) == 12, installed
+    # Five skills × three targets.
+    assert len(installed) == 15, installed
 print("setup-helmet, helmet-issue, and helmet-epic validate for all targets")
 print("canonical skills validate; packaged sdist/wheel asset coverage runs in tests.test_packaged_release")
 PY

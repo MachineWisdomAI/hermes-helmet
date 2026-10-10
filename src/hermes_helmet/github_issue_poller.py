@@ -30,6 +30,7 @@ from hermes_helmet.authority import (
     load_policy as load_authority_policy,
     render_issue_task_body,
     render_repair_task_body,
+    render_review_task_body,
     verify_worker_identity,
 )
 
@@ -873,6 +874,184 @@ def create_task_once(issue: Issue, policy: Policy, ledger: Path, runner: Runner)
         connection.close()
 
 
+@dataclass(frozen=True)
+class ReviewRequest:
+    repository: Repository
+    pull_number: int
+    head_sha: str
+    request_id: int
+
+    @property
+    def pull_url(self) -> str:
+        return f"https://github.com/{self.repository.slug}/pull/{self.pull_number}"
+
+    @property
+    def request_url(self) -> str:
+        return f"{self.pull_url}#event-{self.request_id}"
+
+    @property
+    def branch(self) -> str:
+        name = self.repository.slug.rsplit("/", 1)[1].lower()
+        return f"review/{name}-pr-{self.pull_number}-{self.request_id}"
+
+    @property
+    def idempotency_key(self) -> str:
+        # GitHub's native review_requested event id identifies the request, so
+        # a renewed request at an unchanged SHA is distinct from the old one.
+        return (
+            f"github-pr-review-request:{self.repository.slug}:"
+            f"{self.pull_number}:{self.request_id}"
+        )
+
+
+def _requests_worker(raw: dict[str, object], identity: str) -> bool:
+    reviewers = raw.get("requested_reviewers")
+    if not isinstance(reviewers, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and isinstance(item.get("login"), str)
+        and item["login"].casefold() == identity.casefold()
+        for item in reviewers
+    )
+
+
+def _latest_request_id(
+    repository: Repository, pull_number: int, identity: str, runner: Runner
+) -> int:
+    records = _github_api(
+        runner,
+        f"repos/{repository.slug}/issues/{pull_number}/events?per_page=100",
+    )
+    latest = 0
+    for raw in records:
+        if not isinstance(raw, dict) or raw.get("event") != "review_requested":
+            continue
+        reviewer = raw.get("requested_reviewer")
+        event_id = raw.get("id")
+        if (
+            isinstance(reviewer, dict)
+            and isinstance(reviewer.get("login"), str)
+            and reviewer["login"].casefold() == identity.casefold()
+            and isinstance(event_id, int)
+            and not isinstance(event_id, bool)
+        ):
+            latest = max(latest, event_id)
+    if latest < 1:
+        raise PollerError(
+            f"no review-request event for {identity} on {repository.slug}#{pull_number}"
+        )
+    return latest
+
+
+def list_review_requests(
+    policy: Policy, runner: Runner
+) -> tuple[list[ReviewRequest], list[str], list[str]]:
+    """Find open allowlisted PRs with a pending request for the worker."""
+
+    requests: list[ReviewRequest] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+    for repository in policy.repositories:
+        query = urlencode({"state": "open", "per_page": "100"})
+        try:
+            records = _github_api(runner, f"repos/{repository.slug}/pulls?{query}")
+        except PollerError as exc:
+            errors.append(f"Failed to list review requests for {repository.slug}: {exc}")
+            continue
+        for raw in records:
+            if (
+                not isinstance(raw, dict)
+                or raw.get("state") != "open"
+                or not _requests_worker(raw, policy.github_identity)
+            ):
+                continue
+            number = raw.get("number")
+            head = raw.get("head")
+            sha = head.get("sha") if isinstance(head, dict) else None
+            if (
+                not isinstance(number, int)
+                or isinstance(number, bool)
+                or number < 1
+                or not isinstance(sha, str)
+                or not re.fullmatch(r"[0-9a-fA-F]{40}", sha)
+            ):
+                warnings.append(f"Skipped malformed review request from {repository.slug}.")
+                continue
+            try:
+                request_id = _latest_request_id(
+                    repository, number, policy.github_identity, runner
+                )
+            except PollerError as exc:
+                errors.append(f"Failed to read review request for {repository.slug}#{number}: {exc}")
+                continue
+            requests.append(ReviewRequest(repository, number, sha.lower(), request_id))
+    return requests, warnings, errors
+
+
+def create_review_task(request: ReviewRequest, policy: Policy, runner: Runner) -> str:
+    """Submit one ordinary Kanban review task; the idempotency key reuses it."""
+
+    repository = request.repository
+    if not repository.worktree.is_dir():
+        raise PollerError(f"allowlisted worktree is unavailable: {repository.worktree}")
+    git_state = runner.run(
+        ["git", "-C", str(repository.worktree), "rev-parse", "--is-inside-work-tree"]
+    ).strip()
+    if git_state != "true":
+        raise PollerError(f"allowlisted worktree is not a Git repository: {repository.worktree}")
+    # No --completion-contract: a review returns a verdict, not a published PR.
+    output = runner.run(
+        [
+            HERMES,
+            "kanban",
+            "--board",
+            policy.board,
+            "create",
+            f"{repository.slug}: review PR #{request.pull_number}",
+            "--body",
+            render_review_task_body(
+                pull_url=request.pull_url,
+                head_sha=request.head_sha,
+                request_url=request.request_url,
+                policy=policy,
+            ),
+            "--assignee",
+            policy.assignee,
+            "--created-by",
+            CREATED_BY,
+            "--workspace",
+            f"worktree:{repository.worktree}",
+            "--branch",
+            request.branch,
+            *_kanban_max_runtime_args(policy),
+            "--idempotency-key",
+            request.idempotency_key,
+            "--json",
+        ]
+    )
+    try:
+        task_id = json.loads(output)["id"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise PollerError(f"Kanban create returned invalid task JSON for {request.pull_url}") from exc
+    if not isinstance(task_id, str) or not task_id:
+        raise PollerError(f"Kanban create returned invalid task id for {request.pull_url}")
+    return task_id
+
+
+def reconcile_review_requests(
+    policy: Policy, runner: Runner
+) -> tuple[list[tuple[ReviewRequest, str]], list[str], list[str]]:
+    requests, warnings, errors = list_review_requests(policy, runner)
+    assigned: list[tuple[ReviewRequest, str]] = []
+    for request in requests:
+        try:
+            assigned.append((request, create_review_task(request, policy, runner)))
+        except PollerError as exc:
+            errors.append(f"Failed to queue review of {request.pull_url}: {exc}")
+    return assigned, warnings, errors
+
+
 def run_once(policy: Policy, ledger: Path, runner: Runner) -> PollResult:
     verify_identity(policy, runner)
     issues, warnings, errors = list_eligible_issues(policy, runner)
@@ -887,6 +1066,9 @@ def run_once(policy: Policy, ledger: Path, runner: Runner) -> PollResult:
             created.append((issue, task_id))
     _, review_errors = reconcile_review_tasks(policy, ledger, runner)
     errors.extend(review_errors)
+    _, request_warnings, request_errors = reconcile_review_requests(policy, runner)
+    warnings.extend(request_warnings)
+    errors.extend(request_errors)
     return PollResult(created=created, warnings=warnings, errors=errors)
 
 

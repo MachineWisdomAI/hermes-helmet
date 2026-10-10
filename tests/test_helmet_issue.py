@@ -2820,9 +2820,9 @@ class InstallSkillsTests(unittest.TestCase):
                 targets=["codex", "claude", "hermes"],
                 prefix=prefix,
             )
-            # Four bundled skills and all reference assets reach every target.
-            self.assertEqual(len(installed), 12)
-            for skill_name in ("helmet-issue", "helmet-epic", "setup-helmet", "observe-chat"):
+            # Five bundled skills and all reference assets reach every target.
+            self.assertEqual(len(installed), 15)
+            for skill_name in ("helmet-issue", "helmet-epic", "setup-helmet", "observe-chat", "helmet-review"):
                 source = ROOT / "skills" / skill_name
                 bundled = skills.default_skills_source() / skill_name
                 expected = {
