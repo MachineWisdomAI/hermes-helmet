@@ -431,6 +431,27 @@ def cmd_prepare_repo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_bridge_read(args: argparse.Namespace) -> int:
+    """Read one Claude Code session's records (read-only); JSON on stdout."""
+    from hermes_helmet import claude_bridge
+
+    try:
+        if args.max_bytes < 1:
+            raise claude_bridge.BridgeReadError(
+                "unreadable", "--max-bytes must be a positive integer."
+            )
+        payload = claude_bridge.read_session(
+            args.session,
+            transcript=args.transcript,
+            max_bytes=args.max_bytes,
+        )
+    except claude_bridge.BridgeReadError as exc:
+        print(json.dumps(claude_bridge.error_payload(exc.code, exc.message), indent=2))
+        return 2
+    sys.stdout.write(claude_bridge.render(payload))
+    return 0
+
+
 def cmd_install_skills(args: argparse.Namespace) -> int:
     try:
         results = install_skills(
@@ -1343,6 +1364,33 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     prep_p.set_defaults(func=cmd_prepare_repo)
+
+    bridge_p = sub.add_parser(
+        "bridge",
+        help="Captain's Bridge record helpers (read-only)",
+    )
+    bridge_sub = bridge_p.add_subparsers(dest="bridge_command", required=True)
+    bridge_read = bridge_sub.add_parser(
+        "read",
+        help=(
+            "Read one Claude Code session's saved records as a bounded JSON "
+            "summary (never writes, launches Claude Code or exports)"
+        ),
+    )
+    bridge_read.add_argument("--session", required=True, help="Exact Claude Code session id")
+    bridge_read.add_argument(
+        "--transcript",
+        type=Path,
+        default=None,
+        help="Explicit session transcript path (else found by exact session id)",
+    )
+    bridge_read.add_argument(
+        "--max-bytes",
+        type=int,
+        default=600000,
+        help="Summary budget in bytes (default: 600000)",
+    )
+    bridge_read.set_defaults(func=cmd_bridge_read)
 
     setup_p = sub.add_parser(
         "setup",
