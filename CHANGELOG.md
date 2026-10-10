@@ -5,6 +5,23 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.12.0
+
+- Verify and document installing and updating the complete Captain’s Bridge
+  from the existing Codex plugin distribution
+  ([#61](https://github.com/MachineWisdomAI/hermes-helmet/issues/61), part of
+  [#53](https://github.com/MachineWisdomAI/hermes-helmet/issues/53)): Codex
+  update/activation (one new session, no restart loop), host/storage
+  compatibility and failure states in `docs/first-officer-plugins.md`. The
+  background “Update walkthrough” stays the measured unsupported-host
+  boundary on installed Codex.
+- The wrapper scan gate accepts the two additional records for the vendor
+  `gh` 2.101.0 finding CVE-2026-78669 (Go stdlib v1.27.1 and
+  golang.org/x/net v0.58.0, GO-2026-6611) until 2026-11-08, through the
+  existing exact-match `WRAPPER_EXCEPTIONS`; remove on a fixed `gh`. A test
+  runs the gate against retained real arm64 base/derived reports when
+  `HERMES_HELMET_TRIVY_REPORTS` points at them (not committed).
+
 ### 0.11.0
 
 - Show the Captain’s Bridge Changes First view in the Claude mod
