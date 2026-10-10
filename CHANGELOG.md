@@ -16,8 +16,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   submission and late completion preserve the last useful view. Verified with
   synthetic protocol and panel tests only; acceptance in an installed Codex host
   is recorded separately in the pull request. Measured Codex limit: after the
-  parent turn finishes, a delivery reaches the server but the originating panel does
-  not render it, so the panel now says so instead of implying background success.
+  parent turn finishes, the originating panel does not render a delivery, so a
+  request on the installed host now ends with an unsupported-boundary message
+  (no capture, dispatch or timer) unless the host advertises background delivery.
 
 ### 0.5.0
 

@@ -44,6 +44,21 @@ process.on('exit',()=>{if(!globalThis.__done){console.error('STALLED at step',gl
   assert.equal(sent.length+messages.length,0,'Opening the Bridge must not start work.');
   assert.match(visible(roots.app),/Current/);
 
+  globalThis.__step='unsupported';
+  // Installed Codex does not advertise background delivery: the attempt ends before capture, dispatch or any timer.
+  const timersBefore=timers.length;
+  await run('explain()');await pump();
+  assert.equal(capture,0,'The unsupported route must not capture a snapshot.');
+  assert.equal(messages.length,0,'The unsupported route must not dispatch an agent.');
+  assert.equal(timers.length,timersBefore,'The unsupported route must not start a progress timer.');
+  assert.equal(button('Cancel update'),undefined,'No progress lifecycle on the unsupported route.');
+  assert.match(roots.error.textContent,/not supported in this Codex chat/);
+  assert.doesNotMatch(roots.error.textContent,/reached the server/);
+  assert.match(visible(roots.app),/Current/,'The last view is preserved.');
+  roots.error.textContent='';
+  listener({source:parent,data:{id:1,result:{hostCapabilities:{backgroundWalkthroughDelivery:true}}}});
+  sent.splice(0);
+
   globalThis.__step='request';
   // Request, then duplicate submission is ignored.
   const first=run('explain()');run('explain()');await pump();await first;
@@ -110,7 +125,7 @@ process.on('exit',()=>{if(!globalThis.__done){console.error('STALLED at step',gl
   assert.match(messages.at(-1).params.content[0].text,/Cancel .*request-identity-0005.*timed out/);
   assert.match(messages.at(-1).params.content[0].text,/Interrupt its read-only subagent/);
   assert.match(roots.error.textContent,/asked to stop it; the stop is not confirmed/,'A requested stop is not reported as confirmed.');
-  assert.match(roots.error.textContent,/cannot show it/,'The timeout names the undeliverable-result boundary.');
+  assert.doesNotMatch(roots.error.textContent,/reached the server/,'Agent completion is not claimed to mean delivery.');
   assert.doesNotMatch(visible(roots.app),/Too late/);
   assert.match(visible(roots.app),/Fresh/);
 
