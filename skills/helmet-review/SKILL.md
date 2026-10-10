@@ -50,10 +50,12 @@ under `worker_github_login`. You write no per-PR instructions.
 - **Renewed review** (including at the same commit, or after changing the
   model): remove and re-request the worker. Each new request is a fresh full
   review that no earlier approval satisfies. If an attempt is still active, the
-  renewed request is queued behind it on a later poll cycle.
+  renewed request is recorded at once as a task behind it (a Kanban child), so
+  it is not lost when the earlier review is submitted.
 - **Interrupted attempt.** Use the existing Kanban unblock/retry facilities on
   the task. If GitHub already accepted this request's review, the retried
-  worker adopts it and records it without posting again. No manual
+  worker adopts the formal verdict carrying this request's
+  `Helmet-Review-Request` line and records it without posting again. No manual
   instructions and no separate polling loop.
 
 ```sh

@@ -13,11 +13,14 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   while a request is pending keeps a single task and the worker reviews the
   live head, binding the review to the commit it examined; a push after a
   completed review starts nothing; a renewed request (including at the same
-  commit) is a fresh full review that no earlier approval satisfies, held
-  behind any still-active attempt for the same pull request through the
-  existing Kanban list. The review task carries the request time so a retried
-  worker adopts a review GitHub already accepted for that request instead of
-  posting again. No new dispatcher, queue, ledger, retry controller, or hook.
+  commit) is a fresh full review that no earlier approval satisfies. A renewed
+  request is recorded when observed, as a Kanban child of any unfinished
+  (running, queued, or blocked-but-recoverable) attempt for the same pull
+  request, so it survives GitHub clearing the pending request and never runs
+  beside a recovered predecessor. A retried worker adopts only a submitted
+  APPROVED/CHANGES_REQUESTED review whose body carries that request's
+  correlation line, never one chosen by timestamp. No new dispatcher, queue,
+  ledger, retry controller, or hook.
 
 ### 0.15.0
 

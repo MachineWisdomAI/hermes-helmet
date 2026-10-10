@@ -108,15 +108,18 @@ Repeating and recovering a review use the same path:
   the worker for a fresh full review, including at the same commit; each
   `review_requested` event id is a new request, so an earlier approval never
   satisfies it. The runtime's currently configured model is used.
-- The poller keeps at most one active review task per pull request (existing
-  Kanban `list`). A renewed request arriving while an earlier attempt is
-  active is submitted on the first later cycle after that attempt is done or
-  blocked.
+- The poller records each observed request as its own Kanban task at once, so
+  it survives GitHub clearing the pending request when an earlier review is
+  submitted. Unfinished earlier tasks for the same pull request (running,
+  queued, or blocked) are its Kanban parents, so only one attempt is
+  executable at a time and an unblocked predecessor never runs beside it.
 - An interrupted attempt recovers through the existing Kanban retry/unblock
-  facilities. The task carries the request time; the retried worker lists the
-  pull request's reviews and, if one by the worker identity was submitted at or
-  after that time, adopts it and records its URL, verdict, and commit without
-  posting again. Reviews from before the request time are never reused.
+  facilities. Each worker puts `Helmet-Review-Request: <request URL>` on its own
+  line in the review body. A retried worker lists the pull request's reviews and
+  adopts only a review by the worker identity that is APPROVED or
+  CHANGES_REQUESTED, names a commit, and carries that line; it records the URL,
+  verdict, and commit without posting again. A review for another request is
+  never reused, regardless of its commit or submission time.
 
 ## Named-request repository enrollment
 

@@ -30,6 +30,7 @@ FIXTURE_ASSIGNEE = "builder"
 FIXTURE_BRANCH = "automation/demo-repo-48"
 REVIEW_SLUG = "example-org/demo-repo"
 REVIEW_HEAD = "a" * 40
+REVIEW_URL = f"https://github.com/{REVIEW_SLUG}/pull/7"
 
 
 class FakeRunner:
@@ -2145,7 +2146,34 @@ class ReviewRequestIntakeTests(unittest.TestCase):
             # worker points at the live head; no second attempt is created.
             self.assertEqual(len(runner.tasks), 1)
 
-    def test_renewed_request_waits_for_the_active_attempt_then_is_assigned(self) -> None:
+    def test_renewed_request_is_recorded_behind_the_active_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            pulls = [review_pull(7)]
+            runner = ReviewRequestIntakeRunner(pulls, {7: [review_request_event(11)]})
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.events[7].append(review_request_event(20))
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            # B is retained at observation, as a child of the active attempt A.
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual(result.errors, [])
+            create_b = runner.creates[-1]
+            self.assertIn("review/demo-repo-pr-7-20", create_b)
+            self.assertEqual(
+                [create_b[i + 1] for i, arg in enumerate(create_b) if arg == "--parent"],
+                ["t_review_1"],
+            )
+            # A submits its formal review: GitHub clears requested_reviewers.
+            pulls[0] = review_pull(7, reviewers=())
+            runner.statuses["t_review_1"] = "done"
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            # B survives A's submission and is not recreated or lost.
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(runner.creates[-1], create_b)
+
+    def test_blocked_predecessor_gates_renewal_through_unblock(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             policy = self.policy(root)
@@ -2153,20 +2181,25 @@ class ReviewRequestIntakeTests(unittest.TestCase):
                 [review_pull(7)], {7: [review_request_event(11)]}
             )
             poller.run_once(policy, root / "l.sqlite3", runner)
-            runner.events[7].append(review_request_event(20))
-            result = poller.run_once(policy, root / "l.sqlite3", runner)
-            # At most one active attempt per pull request.
-            self.assertEqual(len(runner.tasks), 1)
-            self.assertEqual(result.review_tasks, [])
-            self.assertEqual(result.errors, [])
-            # A blocked attempt does not hold the renewed request.
             runner.statuses["t_review_1"] = "blocked"
-            result = poller.run_once(policy, root / "l.sqlite3", runner)
-            self.assertEqual(len(runner.tasks), 2)
+            runner.events[7].append(review_request_event(20))
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            create_b = runner.creates[-1]
+            # The blocked, still-recoverable A gates B instead of being ignored.
             self.assertEqual(
-                [request.request_id for request, _ in result.review_tasks], [20]
+                [create_b[i + 1] for i, arg in enumerate(create_b) if arg == "--parent"],
+                ["t_review_1"],
             )
-            self.assertIn("review/demo-repo-pr-7-20", runner.creates[-1])
+            # Supported unblock returns A to ready; B stays behind it.
+            runner.statuses["t_review_1"] = "ready"
+            runner.events[7].append(review_request_event(30))
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            create_c = runner.creates[-1]
+            self.assertIn("review/demo-repo-pr-7-30", create_c)
+            self.assertEqual(
+                [create_c[i + 1] for i, arg in enumerate(create_c) if arg == "--parent"],
+                ["t_review_1", "t_review_2"],
+            )
 
     def test_completed_review_is_not_restarted_by_a_push_but_is_by_a_renewal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2190,17 +2223,49 @@ class ReviewRequestIntakeTests(unittest.TestCase):
             body = runner.creates[-1][runner.creates[-1].index("--body") + 1]
             self.assertIn(REVIEW_HEAD, body)
 
-    def test_task_carries_request_time_for_closeout_recovery(self) -> None:
+    def test_task_binds_recovery_to_its_request_not_time(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            event = review_request_event(11)
-            event["created_at"] = "2026-10-10T12:00:00Z"
-            runner = ReviewRequestIntakeRunner([review_pull(7)], {7: [event]})
+            runner = ReviewRequestIntakeRunner([review_pull(7)], {7: [review_request_event(11)]})
             poller.run_once(self.policy(root), root / "l.sqlite3", runner)
             body = runner.creates[0][runner.creates[0].index("--body") + 1]
-            self.assertIn("Review requested at: 2026-10-10T12:00:00Z", body)
-            self.assertIn("adopt it, do not post a second review", body)
-            self.assertIn("never satisfies this one", body)
+            marker = poller.review_correlation_marker(f"{REVIEW_URL}#event-11")
+            self.assertIn(f"`{marker}`", body)
+            self.assertIn("APPROVED or CHANGES_REQUESTED", body)
+            self.assertNotIn("requested at", body)
+
+    def test_recovery_adopts_only_the_matching_formal_verdict(self) -> None:
+        identity = "agent-bot"
+        url_a = f"{REVIEW_URL}#event-11"
+        url_b = f"{REVIEW_URL}#event-20"
+
+        def review(state: str, request_url: str, login: str = identity, commit: object = "a" * 40):
+            return {
+                "id": 1,
+                "user": {"login": login},
+                "state": state,
+                "commit_id": commit,
+                "body": f"Full review.\n{poller.review_correlation_marker(request_url)}\n",
+            }
+
+        # Interrupted publication of A: its own submitted verdict is adopted.
+        mine = review("APPROVED", url_a)
+        self.assertIs(poller.select_matching_review([mine], identity, url_a), mine)
+        # A late A verdict at the same SHA, submitted after B was requested,
+        # is never adopted by B, however recent.
+        self.assertIsNone(poller.select_matching_review([mine], identity, url_b))
+        # Non-verdict states, other authors, and missing commits do not count.
+        for bad in (
+            review("COMMENTED", url_b),
+            review("PENDING", url_b),
+            review("DISMISSED", url_b),
+            review("APPROVED", url_b, login="someone"),
+            review("APPROVED", url_b, commit=None),
+        ):
+            self.assertIsNone(poller.select_matching_review([bad], identity, url_b))
+        # B's own CHANGES_REQUESTED is found among older-request reviews.
+        own = review("CHANGES_REQUESTED", url_b)
+        self.assertIs(poller.select_matching_review([mine, own], identity, url_b), own)
 
     def test_repeated_cycle_without_a_new_request_reuses_the_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
