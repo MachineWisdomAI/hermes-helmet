@@ -35,6 +35,23 @@ WRAPPER_EXCEPTIONS: tuple[dict[str, str], ...] = tuple(
         ),
     }
     for identifier in ("CVE-2026-78667", "CVE-2026-97031")
+) + tuple(
+    {
+        "id": "CVE-2026-78669",
+        "package": package,
+        "installed_version": version,
+        "target": "usr/local/libexec/hermes-helmet/gh",
+        "expires": "2026-11-08",
+        "reason": (
+            "HTTP/2 CPU-exhaustion advisory GO-2026-6611, reachable only from "
+            "a malicious HTTP/2 peer; gh 2.101.0 bundles Go stdlib v1.27.1 and "
+            "golang.org/x/net v0.58.0 with no fixed release. gh runs only as an "
+            "outbound client to GitHub for one authorized command and has no "
+            "HTTP/2 listener. Remove once a gh release with fixed Go and "
+            "x/net is pinned."
+        ),
+    }
+    for package, version in (("stdlib", "v1.27.1"), ("golang.org/x/net", "v0.58.0"))
 )
 
 
