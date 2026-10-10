@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.6.0
+### 0.7.0
 
 - Add the Captain’s Bridge mod skeleton to the Claude plugin
   ([#68](https://github.com/MachineWisdomAI/hermes-helmet/issues/68), part of
@@ -21,9 +21,24 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   `retroCommand`). CI installs an exact, checksum-verified Claude Code 2.1.296,
   runs `claude plugin validate` and `claude plugin test` without credentials,
   and fails on any call outside the read-only allowlist. MCP packaging and the skills
-  are unchanged. The version moves to 0.6.0 in `pyproject.toml`, the Python
+  are unchanged. The version moves to 0.7.0 in `pyproject.toml`, the Python
   package and both plugin manifests (the Codex manifest changes only its
   version field), synchronized by `scripts/mw-version.py`.
+
+### 0.6.0
+
+- Captain’s Bridge can prepare an updated walkthrough in the background. The
+  panel captures the originating chat and a verifiable snapshot (delivery is
+  rejected if captured records changed or digests are inconsistent), asks the first
+  officer to dispatch one bounded read-only agent without waiting, and keeps the
+  current walkthrough visible. A timeout asks the first officer to stop the agent
+  and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
+  submission and late completion preserve the last useful view. Verified with
+  synthetic protocol and panel tests only; acceptance in an installed Codex host
+  is recorded separately in the pull request. Measured Codex limit: after the
+  parent turn finishes, the originating panel does not render a delivery, so a
+  request on the installed host now ends with an unsupported-boundary message
+  (no capture, dispatch or timer) unless the host advertises background delivery.
 
 ### 0.5.0
 

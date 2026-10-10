@@ -29,8 +29,9 @@ path. Do not delete unrelated host skills. Canonical behavior stays in
 The Codex plugin also carries Captain’s Bridge: a read-only panel that
 explains one recorded piece of work in the invoking chat and opens its
 supporting records. It is Codex-only and starts no second server beyond the
-plugin's own MCP server. Background preparation and cancellation are not part of
-this release. See the
+plugin's own MCP server. From an open Bridge, “Update walkthrough” can ask the
+first officer to start one read-only background preparation, cancellable from the
+panel; see the lifecycle in the Bridge guide. See the
 [source and test guide](../mcp/captains-bridge/README.md). The Claude Code port
 is tracked in
 [issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55); see
