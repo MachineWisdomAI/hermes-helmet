@@ -773,7 +773,11 @@ export async function pressUpdate(
   Promise.resolve(
     $.clock.after(0, () => {
       if (!owns()) return
-      void runPreparation($, generation, controller, snapshot, options)
+      // The preparation runs in the background: its own failure is already
+      // settled into the request state, and a settlement that arrives after
+      // this plugin's environment is gone (a reload, a teardown) has nowhere
+      // left to go, so it is discarded rather than left unhandled.
+      void runPreparation($, generation, controller, snapshot, options).catch(() => {})
     }),
   ).catch(() => {})
 }
