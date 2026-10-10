@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.7.0
+### 0.8.0
 
 - Add the Captain’s Bridge mod skeleton to the Claude plugin
   ([#68](https://github.com/MachineWisdomAI/hermes-helmet/issues/68), part of
@@ -21,9 +21,32 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   `retroCommand`). CI installs an exact, checksum-verified Claude Code 2.1.296,
   runs `claude plugin validate` and `claude plugin test` without credentials,
   and fails on any call outside the read-only allowlist. MCP packaging and the skills
-  are unchanged. The version moves to 0.7.0 in `pyproject.toml`, the Python
+  are unchanged. The version moves to 0.8.0 in `pyproject.toml`, the Python
   package and both plugin manifests (the Codex manifest changes only its
   version field), synchronized by `scripts/mw-version.py`.
+
+### 0.7.0
+
+Claude Code record reader.
+
+- `helmet bridge read --session ID [--transcript PATH] [--max-bytes N]` reads
+  one Claude Code session's saved transcript and its subagent transcripts
+  read-only and prints a bounded `hermes-helmet.bridge.records/1` summary with
+  stable refs, origins (`person`, `hook`, `plugin`, `meta`, `assistant`,
+  `agent`), coverage and warnings. Thinking is dropped, every record's session
+  ID is verified, an incomplete final line sets `pendingTail`, and the summary
+  budget keeps every person prompt and assistant text while excerpting and
+  then dropping the oldest tool results. `--max-bytes` bounds the exact stdout
+  bytes. Failures exit 2 with `session-not-found`, `ambiguous-session`,
+  `session-mismatch`, `unsupported-format` or `unreadable`; malformed core
+  text blocks or an unsupported version on any record return
+  `unsupported-format`.
+- Each ref is the record's full 32-hex UUID-derived identity, computed from that
+  record's own UUID only. It does not depend on other records, timestamps or
+  presentation order, so appends, partial-tail completion and subagent growth
+  never change an existing ref or `parentRef`. When one source UUID expands
+  into several output records, the first keeps the UUID and later blocks get a
+  deterministic 32-hex identity from the UUID and block index.
 
 ### 0.6.0
 

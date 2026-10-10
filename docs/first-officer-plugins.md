@@ -38,6 +38,23 @@ is tracked in
 [Captain's Bridge in Claude Code](#captains-bridge-in-claude-code) for what the
 Claude plugin ships so far.
 
+### Claude Code session records
+
+`helmet bridge read --session <id> [--transcript <path>] [--max-bytes 600000]`
+reads one Claude Code session's saved records for the Claude port of the
+Bridge. It opens files read-only, finds `<id>.jsonl` under
+`$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`) by exact file name
+only, and prints `hermes-helmet.bridge.records/1` JSON. Errors exit 2 with
+`session-not-found`, `ambiguous-session`, `session-mismatch`,
+`unsupported-format` or `unreadable`. Supported Claude Code versions are
+2.0.0 up to (not including) 2.2.0; others are `unsupported-format`.
+
+Every record's `ref` (and each `parentRef`) is a full 32-hex identity derived
+from that record's own source UUID, so it does not change when records are
+appended, a partial final line completes, or subagent records appear. When one
+source UUID expands into several output records, the first keeps the UUID-derived
+ref and later blocks get a deterministic 32-hex ref from the UUID and block index.
+
 ### Claude Code
 
 ```sh
