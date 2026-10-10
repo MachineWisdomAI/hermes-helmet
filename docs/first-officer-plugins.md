@@ -110,17 +110,23 @@ The request uses `explanationModel` (`sonnet` by default), a
 instructions, the walkthrough schema and the record summary as its blocks. It
 bills to this session's own Claude credentials, so one Update is one model
 call. While it prepares the pane shows **Cancel** and **Keep preparing**; a
-duplicate Update press is ignored. **Cancel** stops the request and keeps the
-last explanation. A new instruction you give the first officer supersedes a
-preparing request unless you chose **Keep preparing**; your prompt is always
-passed through unchanged. A timeout ends it as timed out; an api error, an
-empty reply, or an explanation that cites a record it was not given (or links
-an address those records do not contain) ends it as failed with
-"The explanation didn't match the records", keeping the last explanation and
-never displaying or retrying a partial result. A late or stale result of a
-cancelled or superseded request is discarded silently. If a plugin reload
-interrupts a request, it ends as failed with "Interrupted by a plugin reload"
-and the last explanation stays.
+duplicate Update press is ignored. **Cancel** cuts the in-flight call through
+the call's own AbortSignal option (not a request field) and keeps the last
+explanation; a Cancel or a new instruction that lands while the reader is still
+running starts no call at all. A new instruction you give the first officer
+supersedes a preparing request unless you chose **Keep preparing**; your prompt
+is always passed through unchanged. The engine resolves an outcome rather than
+rejecting over what the provider did: the time limit arrives as `aborted` and
+ends the request as timed out; an `api-error` ends it as failed, naming the
+provider's HTTP status and classified kind; a reply with no text ends it as
+failed and empty; only an engine refusal (a blocked model, a bad cap) rejects
+and ends it as failed. An explanation that cites a record it was not given (or
+links an address those records do not contain) ends it as failed with
+"The explanation didn't match the records". Every ending keeps the last
+explanation and never displays or retries a partial result. A late or stale
+result of a cancelled or superseded request is discarded silently. If a plugin
+reload interrupts a request, it ends as failed with "Interrupted by a plugin
+reload" and the last explanation stays.
 
 **Refresh records** rereads only the saved records. It keeps your place and
 never changes the time the explanation read the records. When the records have

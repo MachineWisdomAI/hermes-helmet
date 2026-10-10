@@ -628,6 +628,16 @@ async function installWalkthrough(
   }))
 }
 
+// A resolved `api-error`: the engine carries the HTTP status and the kind it
+// classified the failure as, never the provider's own text.
+export function providerFailureMessage(result: any): string {
+  const kind = typeof result?.error === 'string' && result.error !== '' ? result.error : 'unknown'
+  const status = typeof result?.status === 'number' ? result.status : null
+  return status === null
+    ? `The explanation request failed: the provider answered ${kind} and no response arrived.`
+    : `The explanation request failed: the provider answered ${kind} (status ${status}).`
+}
+
 async function runPreparation(
   $: any,
   generation: number,
@@ -636,18 +646,36 @@ async function runPreparation(
   options: ExplanationOptions,
 ): Promise<void> {
   try {
-    const result = await $.model.complete({
-      model: options.model,
-      prompt: [
-        { text: EXPLANATION_INSTRUCTIONS, cache: true },
-        { text: JSON.stringify(WALKTHROUGH_SCHEMA) },
-        { text: JSON.stringify(snapshot.summary) },
-      ],
-      maxTokens: MAX_TOKENS,
-      timeoutMs: options.timeoutMs,
-      signal: controller.signal,
-    })
-    const text = typeof result?.text === 'string' ? result.text.trim() : ''
+    // The AbortSignal is the call's own option (ModelCompleteOptions), not a
+    // request field: it is what actually cuts the in-flight call on Cancel.
+    // The engine never rejects over what the provider did; it resolves a
+    // result, and the request's own time limit arrives as `aborted`.
+    const result = await $.model.complete(
+      {
+        model: options.model,
+        prompt: [
+          { text: EXPLANATION_INSTRUCTIONS, cache: true },
+          { text: JSON.stringify(WALKTHROUGH_SCHEMA) },
+          { text: JSON.stringify(snapshot.summary) },
+        ],
+        maxTokens: MAX_TOKENS,
+        timeoutMs: options.timeoutMs,
+      },
+      { signal: controller.signal },
+    )
+    if (result?.isAnswered !== true) {
+      if (result?.reason === 'aborted') {
+        // Its time limit elapsed, or the call was cut: timed out.
+        await failRequest($, generation, 'timed-out', TIMEOUT_MESSAGE)
+      } else if (result?.reason === 'api-error') {
+        await failRequest($, generation, 'failed', providerFailureMessage(result))
+      } else {
+        // `empty-reply`, or a shape this release does not know.
+        await failRequest($, generation, 'failed', EMPTY_MESSAGE)
+      }
+      return
+    }
+    const text = typeof result.text === 'string' ? result.text.trim() : ''
     if (text === '') {
       await failRequest($, generation, 'failed', EMPTY_MESSAGE)
       return
@@ -670,6 +698,20 @@ async function runPreparation(
   } finally {
     if (liveRequest !== null && liveRequest.generation === generation) liveRequest = null
   }
+}
+
+// True only while this generation still owns a preparing request: a Cancel or
+// a superseding instruction advances the generation, so a continuation that
+// resumes after an await must recheck before it spends or claims the request.
+async function ownsPreparing($: any, generation: number): Promise<boolean> {
+  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const state = current?.value as BridgeState['request'] | null | undefined
+  return (
+    state !== null &&
+    state !== undefined &&
+    state.generation === generation &&
+    state.status === 'preparing'
+  )
 }
 
 // The Update press: compare-and-set the request to a new preparing generation,
@@ -704,6 +746,9 @@ export async function pressUpdate(
   const outcome = await runReader($, helmetCommand, bound)
   const stillBound = await read($, binding)
   if (stillBound === null || stillBound.sessionId !== bound.sessionId) return
+  // A Cancel or a new instruction during the reader ends this preparation:
+  // nothing is adopted and no request is started or scheduled.
+  if (!(await ownsPreparing($, generation))) return
   if (!outcome.ok) {
     await failRequest($, generation, 'failed', outcome.text)
     return
@@ -721,11 +766,18 @@ export async function pressUpdate(
     summary,
   }))
 
+  // The records update is another await: recheck ownership before claiming
+  // the live request, so a cancelled or superseded preparation never replaces
+  // a newer request's controller.
+  if (!(await ownsPreparing($, generation))) return
   const controller = new AbortController()
   liveRequest = { generation, controller }
   // One request, started off the press dispatch so the press returns at once.
   Promise.resolve(
     $.clock.after(0, () => {
+      // Cancelled or superseded between scheduling and the deferred start:
+      // no stale request is launched and no newer controller is clobbered.
+      if (liveRequest === null || liveRequest.generation !== generation) return
       void runPreparation($, generation, controller, snapshot, options)
     }),
   ).catch(() => {})

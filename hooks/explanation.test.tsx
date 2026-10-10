@@ -83,14 +83,36 @@ const GOOD = {
 
 const text = (body: unknown = GOOD) => JSON.stringify(body)
 
-// A mutable stand-in for the model plus the reader, and counters.
+const ZERO_USAGE = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0,
+}
+
+// What the engine resolves for an answered call (ModelCompleteResult's first arm).
+const answered = (body: string) => ({ value: { isAnswered: true, text: body, usage: ZERO_USAGE } })
+
+// A mutable stand-in for the model plus the reader, and counters. `holdRead`
+// suspends `helmet bridge read` so a test can act while a preparation waits on
+// it; `releaseRead` lets it answer.
 const fixture: {
   model: (call: any) => any
   read: any
   seed: { value: any; version: number } | null
   walkthrough: any
   gate: { resolve: (v: any) => void; reject: (e: any) => void } | null
-} = { model: () => ({ value: { text: text() } }), read: null, seed: null, walkthrough: null, gate: null }
+  holdRead: boolean
+  releaseRead: (() => void) | null
+} = {
+  model: () => answered(text()),
+  read: null,
+  seed: null,
+  walkthrough: null,
+  gate: null,
+  holdRead: false,
+  releaseRead: null,
+}
 
 type Harness = {
   models: any[]
@@ -127,11 +149,13 @@ const WITH = { plugins: [SEED] }
 
 function host(on: any, opts: { id?: string; listed?: any[] } = {}): Harness {
   const h: Harness = { models: [], runs: [], prompts: [], spawns: 0, sends: 0, tools: 0 }
-  fixture.model = () => ({ value: { text: text() } })
+  fixture.model = () => answered(text())
   fixture.read = ok(summary())
   fixture.seed = null
   fixture.walkthrough = null
   fixture.gate = null
+  fixture.holdRead = false
+  fixture.releaseRead = null
   on('state.get', async (_$: any, e: any, next: any) => {
     if (e.key === 'request' && fixture.seed !== null) {
       const seeded = fixture.seed
@@ -152,7 +176,10 @@ function host(on: any, opts: { id?: string; listed?: any[] } = {}): Harness {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('process.run', (_$: any, e: any) => {
     h.runs.push({ argv: [...e.argv], init: e.init })
-    return { value: fixture.read }
+    if (!fixture.holdRead) return { value: fixture.read }
+    return new Promise(resolve => {
+      fixture.releaseRead = () => resolve({ value: fixture.read })
+    })
   })
   on('model.complete', (_$: any, e: any) => {
     h.models.push(e)
@@ -214,6 +241,23 @@ function delayed(error?: () => Error) {
     }) as any
 }
 
+// The AbortSignal is the call's own option (ModelCompleteOptions), never a
+// request field: the hook input, the request as the engine read it, carries
+// no `signal`.
+function carriesSignal(call: any): boolean {
+  return Object.prototype.hasOwnProperty.call(call, 'signal')
+}
+
+// Hold `helmet bridge read` so a press is suspended after it claimed the
+// request and before any model call is scheduled.
+function heldRead() {
+  fixture.holdRead = true
+}
+
+function releaseRead() {
+  if (fixture.releaseRead !== null) fixture.releaseRead()
+}
+
 describe('starting an explanation request', () => {
   test('sends one tool-less request with the configured model, limit and document order', WITH, async ($, on) => {
     const h = host(on)
@@ -227,7 +271,8 @@ describe('starting an explanation request', () => {
     expect(call.model).toBe('sonnet')
     expect(call.maxTokens).toBe(MAX_TOKENS)
     expect(call.timeoutMs).toBe(180000)
-    expect(call.signal).toBeTruthy()
+    // The AbortSignal is the call's own option, not a request field.
+    expect(carriesSignal(call)).toBe(false)
     expect(call.promptBlocks[0]).toEqual({ text: EXPLANATION_INSTRUCTIONS, cache: true })
     expect(call.promptBlocks[1].text).toBe(JSON.stringify(WALKTHROUGH_SCHEMA))
     const records = JSON.parse(call.promptBlocks[2].text)
@@ -310,10 +355,9 @@ describe('cancelling a request', () => {
     await pane.press({ key: 'update-explanation' })
     await clock.advance(0)
     await tick()
-    const signal = h.models[1].signal
-    // Cancel settles the request at once and aborts it; the abort is what the
-    // late reply below finds, and that reply can no longer install.
-    expect(signal).toBeTruthy()
+    // Cancel settles the request at once and aborts the call's own signal; the
+    // late reply below can no longer install.
+    expect(carriesSignal(h.models[1])).toBe(false)
     await pane.press({ key: 'cancel' })
     expect(h.models.length).toBe(2)
 
@@ -322,7 +366,7 @@ describe('cancelling a request', () => {
     expect(state.walkthrough).toEqual(before.walkthrough)
 
     // A late reply of the cancelled request is silently discarded.
-    fixture.gate.resolve({ value: { text: text({ ...GOOD, objective: 'A late objective' }) } })
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'A late objective' })))
     await tick()
     const after = await probe($)
     expect(after.request.status).toBe('cancelled')
@@ -342,17 +386,16 @@ describe('a person prompt during preparation', () => {
     await pane.press({ key: 'update-explanation' })
     await clock.advance(0)
     await tick()
-    const signal = h.models[0].signal
     const prompt = { text: 'Start on the gadget instead.', origin: { kind: 'human' } }
     await (($ as any).prompt.submit(prompt))
     expect(h.prompts.length).toBe(1)
     expect(h.prompts[0].text).toBe('Start on the gadget instead.')
-    expect(signal).toBeTruthy()
+    expect(carriesSignal(h.models[0])).toBe(false)
     const state = await probe($)
     expect(state.request.status).toBe('superseded')
     expect(state.walkthrough).toBe(null)
 
-    fixture.gate.resolve({ value: { text: text() } })
+    fixture.gate.resolve(answered(text()))
     await tick()
     expect((await probe($)).walkthrough).toBe(null)
     await pane.unmount()
@@ -370,12 +413,11 @@ describe('a person prompt during preparation', () => {
     await pane.press({ key: 'keep-preparing' })
     expect((await probe($)).request.retain).toBe(true)
 
-    const signal = h.models[0].signal
     await (($ as any).prompt.submit({ text: 'Carry on.', origin: { kind: 'human' } }))
-    expect(signal).toBeTruthy()
+    expect(carriesSignal(h.models[0])).toBe(false)
     expect((await probe($)).request.status).toBe('preparing')
 
-    fixture.gate.resolve({ value: { text: text() } })
+    fixture.gate.resolve(answered(text()))
     await tick()
     expect((await probe($)).request.status).toBe('idle')
     await pane.unmount()
@@ -422,7 +464,7 @@ describe('rejecting an explanation', () => {
       await pressUpdate($, pane, clock)
       const before = await probe($)
 
-      fixture.model = () => ({ value: { text: reply } })
+      fixture.model = () => answered(reply)
       await pane.press({ key: 'update-explanation' })
       await clock.advance(0)
       await tick()
@@ -443,12 +485,17 @@ describe('rejecting an explanation', () => {
 })
 
 describe('ending a request', () => {
-  // The engine refuses a call with { deny: reason }, which is what the mod
-  // sees for an api error and for its deadline abort.
+  // The engine never rejects over what the provider did: it resolves a result.
+  // Its time limit and the call's own abort arrive as `aborted`, a provider
+  // failure as `api-error` with the status and the classified kind, a reply
+  // with no text as `empty-reply`. Only an engine refusal rejects.
+  const ZERO = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
   const ENDINGS: Array<[string, () => any, string, string]> = [
-    ['a timeout', () => ({ deny: 'model.complete deadline reached' }), 'timed-out', TIMEOUT_MESSAGE],
-    ['an api error', () => ({ deny: 'provider exploded' }), 'failed', 'provider exploded'],
-    ['an empty reply', () => ({ value: { text: '   ' } }), 'failed', EMPTY_MESSAGE],
+    ['its time limit', () => ({ value: { isAnswered: false, reason: 'aborted', usage: ZERO } }), 'timed-out', TIMEOUT_MESSAGE],
+    ['a provider error', () => ({ value: { isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: ZERO } }), 'failed', 'overloaded'],
+    ['a reply with no text', () => ({ value: { isAnswered: false, reason: 'empty-reply', usage: ZERO } }), 'failed', EMPTY_MESSAGE],
+    // An engine refusal (a blocked model, a bad cap) is the one case that rejects.
+    ['an engine refusal', () => ({ deny: 'the model is blocked' }), 'failed', 'the model is blocked'],
   ]
 
   for (const [name, reply, expectStatus, expectText] of ENDINGS) {
@@ -474,6 +521,45 @@ describe('ending a request', () => {
       await pane.unmount()
     })
   }
+
+  test('a provider error is not described as an empty reply', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => ({
+      value: { isAnswered: false, reason: 'api-error', status: 500, error: 'server_error', usage: ZERO },
+    })
+    await pane.press({ key: 'update-explanation' })
+    await clock.advance(0)
+    await tick()
+
+    const message = (await probe($)).request.message ?? ''
+    expect(message).toContain('server_error')
+    expect(message).toContain('500')
+    expect(message).not.toContain(EMPTY_MESSAGE)
+    expect(h.models.length).toBe(1)
+    await pane.unmount()
+  })
+
+  test('a provider error with no response names no status', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => ({
+      value: { isAnswered: false, reason: 'api-error', status: null, error: 'unknown', usage: ZERO },
+    })
+    await pane.press({ key: 'update-explanation' })
+    await clock.advance(0)
+    await tick()
+
+    const state = await probe($)
+    expect(state.request.status).toBe('failed')
+    expect(state.request.message ?? '').toContain('no response arrived')
+    expect(h.models.length).toBe(1)
+    await pane.unmount()
+  })
 })
 
 describe('races and reloads', () => {
@@ -497,13 +583,13 @@ describe('races and reloads', () => {
     await tick()
     expect(h.models.length).toBe(2)
 
-    firstGate.resolve({ value: { text: text({ ...GOOD, objective: 'The superseded objective' }) } })
+    firstGate.resolve(answered(text({ ...GOOD, objective: 'The superseded objective' })))
     await tick()
     const during = await probe($)
     expect(during.request.status).toBe('preparing')
     expect(during.walkthrough).toBe(null)
 
-    fixture.gate.resolve({ value: { text: text({ ...GOOD, objective: 'The second objective' }) } })
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'The second objective' })))
     await tick()
     const after = await probe($)
     expect(after.request.status).toBe('idle')
@@ -532,7 +618,7 @@ describe('races and reloads', () => {
     await pane.press({ key: 'refresh' })
     expect((await probe($)).records.readAt).toBe('2026-10-09T19:00:00Z')
 
-    fixture.gate.resolve({ value: { text: text() } })
+    fixture.gate.resolve(answered(text()))
     await tick()
     const state = await probe($)
     expect(state.request.status).toBe('idle')
@@ -567,10 +653,113 @@ describe('races and reloads', () => {
     await tick()
     await $.session.start(START)
     expect((await probe($)).request.status).toBe('preparing')
-    fixture.gate.resolve({ value: { text: text() } })
+    fixture.gate.resolve(answered(text()))
     await tick()
     expect((await probe($)).request.status).toBe('idle')
     await pane.unmount()
+  })
+})
+
+describe('a preparation ended while the reader runs', () => {
+  test('Cancel during preparation starts no request and stays cancelled', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+    // Hold the reader: the press is suspended after it claimed the request,
+    // before any model call is scheduled.
+    heldRead()
+    const pressing = pane.press({ key: 'update-explanation' })
+    await tick()
+    expect((await probe($)).request.status).toBe('preparing')
+    expect(await pane.find({ key: 'cancel' })).not.toBe(undefined)
+
+    await pane.press({ key: 'cancel' })
+    expect((await probe($)).request.status).toBe('cancelled')
+
+    // The held reader answers: no stale request launches off the cancelled
+    // preparation, and no later call follows.
+    releaseRead()
+    await pressing
+    await clock.advance(0)
+    await tick()
+    expect(h.models.length).toBe(0)
+    await clock.advance(600000)
+    await tick()
+    expect(h.models.length).toBe(0)
+    expect((await probe($)).request.status).toBe('cancelled')
+    await pane.unmount()
+  })
+
+  test('a prompt during preparation starts no request and stays superseded', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+    heldRead()
+    const pressing = pane.press({ key: 'update-explanation' })
+    await tick()
+    expect((await probe($)).request.status).toBe('preparing')
+
+    await (($ as any).prompt.submit({ text: 'Start on the gadget.', origin: { kind: 'human' } }))
+    expect((await probe($)).request.status).toBe('superseded')
+
+    releaseRead()
+    await pressing
+    await clock.advance(0)
+    await tick()
+    expect(h.models.length).toBe(0)
+    expect((await probe($)).request.status).toBe('superseded')
+    await pane.unmount()
+  })
+
+  test('a held preparation still starts exactly one request when nothing ends it', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+
+    heldRead()
+    const pressing = pane.press({ key: 'update-explanation' })
+    await tick()
+    releaseRead()
+    await pressing
+    await clock.advance(0)
+    await tick()
+    expect(h.models.length).toBe(1)
+    expect(carriesSignal(h.models[0])).toBe(false)
+    expect((await probe($)).request.status).toBe('idle')
+    await pane.unmount()
+  })
+})
+
+describe('the call’s own AbortSignal option', () => {
+  // The engine reads a cancellation only from the call's own options; a
+  // `signal` inside the request reaches the hook input and aborts nothing.
+  const SIGNAL_PROBE = {
+    name: 'signal-probe',
+    register: (on: any) => {
+      on('command.run', { command: 'probe-aborted' }, async ($: any) => {
+        const controller = new AbortController()
+        controller.abort()
+        const result = await $.model.complete(
+          { model: 'sonnet', prompt: 'hello' },
+          { signal: controller.signal },
+        )
+        return { text: JSON.stringify({ result }) }
+      })
+    },
+  }
+
+  test('an aborted own signal settles the call aborted without dispatching', { plugins: [SEED, SIGNAL_PROBE] }, async ($, on) => {
+    const h = host(on)
+    const result = JSON.parse((await $.command.run(run('probe-aborted'))).text).result
+    expect(result.isAnswered).toBe(false)
+    expect(result.reason).toBe('aborted')
+    // Nothing reached the model hook: the engine cut it before the dispatch.
+    expect(h.models.length).toBe(0)
   })
 })
 
