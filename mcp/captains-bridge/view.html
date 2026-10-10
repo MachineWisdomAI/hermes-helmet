@@ -53,7 +53,59 @@ async function requestSkill(skill,workItem,b){
 }
 function skillButton(skill,workItem){const b=button(skill==='retro'?'Retro':'Show Me',()=>requestSkill(skill,workItem,b),'button');b.title=skill==='retro'?'Suggest improvements for future sessions':'Ask for a visual explanation';b.disabled=messagePending;return b}
 function chatActions(main){append(main,append(el('div',null,'chat-actions'),skillButton('show-me'),skillButton('retro')),el('p','Visual explanation or session retrospective. The first officer responds in this chat.','action-context'))}
-async function explain(){try{await rpc('ui/message',{role:'user',content:[{type:'text',text:'Open Captain’s Bridge for this current chat with an updated source-grounded walkthrough. Use the observe-chat skill, read_chat_work, and present_chat_work. Preserve current-chat scope. Do not start or resume the underlying project work.'}]});error('');const n=el('p','Requested an updated walkthrough in this chat.','context');$('app').prepend(n)}catch(e){error(e.message)}}
+async function connectChat(){try{await rpc('ui/message',{role:'user',content:[{type:'text',text:'Open Captain’s Bridge for this current chat with an updated source-grounded walkthrough. Use the observe-chat skill, read_chat_work, and present_chat_work. Preserve current-chat scope. Do not start or resume the underlying project work.'}]});error('')}catch(e){error(e.message)}}
+let prep=null,prepTimer=null,capturing=false,backgroundDelivery=false;
+const PREP_MS=600000;
+function clearPrep(){clearTimeout(prepTimer);prep=null}
+function prepText(request){return 'Prepare an updated Captain’s Bridge walkthrough in the background; this is optional and a new instruction from me ends it. Do not wait or poll for the result, and do not pause or change already-authorized project work. Dispatch exactly one read-only subagent, once, with no retry. The subagent reads only chat '+request.threadId+' (codex://threads/'+request.threadId+') and never substitutes its own chat. It must not run project tasks or repair the viewer. It uses the observe-chat skill and read_chat_work with that thread_id, cites only record IDs from that read, then calls deliver_walkthrough_update once with the request below unchanged (or with a failure message). Present its delivery briefly at the next available boundary. If I cancel this request or it times out, interrupt the subagent and discard any result.\n\nRequest:\n'+JSON.stringify(request)}
+async function explain(){
+ if(prep||capturing)return;
+ // Measured host boundary: installed Codex cannot render a result in this panel once the chat turn has finished, and the panel cannot tell whether the turn is still active. Unless the host advertises background delivery, end the attempt here: no capture, no dispatch, no timer.
+ if(!backgroundDelivery){error('Background updates are not supported in this Codex chat: a result prepared after the chat turn has finished cannot be shown in this panel. Nothing was requested, and your current view is preserved.');render();return}
+ if(!portableView?.threadId){error('This view has no chat reference. Open its walkthrough before requesting an update.');return}
+ let mine=null;
+ try{
+  error('');capturing=true;
+  const captured=toolResult(await rpc('tools/call',{name:'request_walkthrough_update',arguments:{view:portableView}}));
+  if(captured?.isError)throw Error(captured.content?.find(c=>c.type==='text')?.text||'The update could not be requested.');
+  const request=captured?.structuredContent?.request;
+  if(!request?.requestId)throw Error('Codex returned no request identity. The current view is preserved.');
+  capturing=false;mine=request.requestId;
+  prep={request,state:'sending'};render();
+  const sent=await rpc('ui/message',{role:'user',content:[{type:'text',text:prepText(request)}]});
+  if(sent?.isError)throw Error(sent.content?.find(c=>c.type==='text')?.text||'The request could not be sent.');
+  if(owns(mine)){prep.state='preparing';clearTimeout(prepTimer);prepTimer=setTimeout(()=>timeoutPrep(mine),PREP_MS);render()}
+ }catch(e){
+  if(mine===null)capturing=false; // capture failed; no request exists yet
+  else if(!owns(mine))return; // cancelled, timed out or replaced: a late failure belongs to a dead attempt
+  else clearPrep();
+  error(e.message);render()}
+}
+const owns=id=>prep?.request.requestId===id;
+async function stopRequest(id,why){
+ try{await rpc('ui/message',{role:'user',content:[{type:'text',text:'Cancel Captain’s Bridge walkthrough request '+id+' ('+why+'). Interrupt its read-only subagent if it is still running and discard any result. Do not start another and do not change project work.'}]});return true}catch(e){return e.message||'unknown error'}}
+async function timeoutPrep(id){
+ if(!owns(id))return;clearPrep();
+ error('The update took too long. Asking Codex to stop it. Your current view is preserved.');render();
+ const stopped=await stopRequest(id,'timed out after 10 minutes');
+ if(prep||capturing)return; // a newer attempt owns the panel
+ error(stopped===true?'The update took too long. Codex was asked to stop it; the stop is not confirmed, and any result is ignored. Your current view is preserved.'
+  :'The update took too long, and Codex could not be told to stop it ('+stopped+'). It may still be running; any result is ignored. Your current view is preserved.');render()}
+async function cancelPrep(){
+ if(!prep)return;const id=prep.request.requestId;clearPrep();render();
+ const stopped=await stopRequest(id,'cancelled');
+ if(stopped!==true&&!prep&&!capturing){error('Cancelled in this view. Codex could not be told: '+stopped);render()}
+}
+function settle(preparation){
+ if(!prep||!preparation||preparation.requestId!==prep.request.requestId)return false;
+ clearPrep();
+ if(preparation.outcome==='failed')error(preparation.message||'The update failed. Your current view is preserved.');
+ else if(preparation.outcome==='superseded')error('New instructions arrived, so the update was dropped. Your current view is preserved.');
+ return true}
+function prepNotice(main){
+ if(!prep)return;const n=el('div',null,'notice');
+ append(n,el('span',prep.state==='sending'?'Requesting an update…':'Updating the walkthrough in the background. This view stays as it is, and project work is not paused.'),button('Cancel update',cancelPrep));
+ append(main,n)}
 let refreshSeq=0,refreshing=false;
 function newerOrSame(next){const a=Date.parse(next?.readAt),b=Date.parse(deck?.readAt);return !(Number.isFinite(a)&&Number.isFinite(b))||a>=b}
 function sameChat(next){return !deck||!next||next.threadId===deck.threadId}
@@ -93,7 +145,7 @@ function work(main,i){append(main,crumb(i.title),append(el('div',null,'row-title
 function change(main,i){const c=i.change;if(!c){view={page:'work',id:i.id};render();return}append(main,crumb(i.title),el('h1',i.title),el('p',i.summary,'context'));const compare=el('div',null,'compare');for(const [label,value,cls]of[['Before',c.before,''],['After',c.after,'after']])append(compare,append(el('div',null,'value '+cls),el('strong',value),el('small',label)));append(main,compare,el('h2','What changed'),el('p',c.explanation,'context'),evidenceButton(c.evidence,'View recorded change'),button('Return to this work',back));}
 function sources(main){append(main,crumb('Supporting records'),el('h1',view.title||'Supporting records'));const wanted=new Set(view.refs||[]),records=allRecords().filter(r=>wanted.has(r.id));if(!records.length)append(main,el('p','These source records are no longer available in this connection. Refresh or reopen the walkthrough.','context'));for(const r of records){const section=el('article',null,'record');append(section,append(el('header'),el('strong',r.actor||'Recorded source'),el('span',r.kind,'badge')));const t=deck.turns.find(t=>t.id===r.turnId);if(t)append(section,el('small','Within turn starting '+date(t.startedAt),'muted'));for(const url of [...new Set(String(r.text).match(/https:\/\/[^\s<>"')\]]+/g)||[])].slice(0,5)){const a=el('a','Open original: '+url,'external');a.href=url;a.target='_blank';a.rel='noopener noreferrer';append(section,a)}
  append(section,el(['command','tool','change'].includes(r.kind)?'pre':'div',r.text,['command','tool','change'].includes(r.kind)?'':'record-text'));if(r.truncated)append(section,el('p','This excerpt was shortened. Open the original chat for the complete record.','small muted'));append(main,section)}}
-function render(){if(!deck)return;seq=0;const main=$('app');main.replaceChildren();if(deck.partialAppend){append(main,el('div','The newest record was still being written and is not included yet. Refresh again shortly.','notice'))}
+function render(){if(!deck)return;seq=0;const main=$('app');main.replaceChildren();prepNotice(main);if(deck.partialAppend){append(main,el('div','The newest record was still being written and is not included yet. Refresh again shortly.','notice'))}
  if(deck.explanationStale){const n=el('div',null,'notice');append(n,el('span','Newer records were read after this explanation was prepared, so it is older than the chat. Its conclusions are unchanged and may need updating.'),button('Update walkthrough',explain));append(main,n)}
  if(view.page==='overview')overview(main);else if(view.page==='sources')sources(main);else if(view.page==='activity'){append(main,crumb('Activity'),el('h1','Recorded activity'),el('p','The gaps below are gaps between stored turns. They do not establish a stall.','context'),timeline());}else{const i=item();if(i)view.page==='change'?change(main,i):work(main,i);else{view={page:'overview'};overview(main)}}
  const d=el('details');append(d,el('summary','About these records'),el('p','The walkthrough is the first officer’s interpretation, with links to its supporting records. A report of completion and acceptance of the work are separate claims.'));append(d,el('p',deck.coverage||'Existing records from this chat.'));if(deck.walkthrough)append(d,el('p','Explanation prepared from records read '+date(deck.walkthrough.explainedAt)));append(main,d)}
@@ -102,8 +154,8 @@ async function loadPrepared(reference){const version=++loadVersion;showConnectio
 // Codex saved tool events may wrap a complete MCP result in a single JSON text block.
 // Unwrap only that result shape; prose and source-record JSON remain literal content.
 function toolResult(result){for(let depth=0;depth<2;depth++){if(result?.isError||result?.structuredContent||result?._meta?.deck)return result;const blocks=result?.content;if(!Array.isArray(blocks)||blocks.length!==1||blocks[0]?.type!=='text')return result;let nested;try{nested=JSON.parse(blocks[0].text)}catch{return result}if(!nested||typeof nested!=='object'||!Array.isArray(nested.content)||!('structuredContent'in nested||'_meta'in nested||'isError'in nested))return result;result=nested}return result}
-function receive(raw){const result=toolResult(raw);if(result?.isError){error(result.content?.find(c=>c.type==='text')?.text||'The records could not be read.');return}const data=result?.structuredContent||{},payload=result?._meta?.deck?result._meta:data;if(payload.deck&&deck&&(!sameChat(payload.deck)||!newerOrSame(payload.deck))){error('An older or unrelated result was ignored; the current view is kept.')}else if(payload.deck){++loadVersion;deck=payload.deck;portableView=payload.view;error('');render()}else if(data.needsBinding){showConnection('Ask the first officer to connect this view to the current chat.')}else if(data.view){return loadPrepared(data.view)}else{error('The panel received a result without walkthrough data. Its explanation has not opened.');showConnection('No walkthrough data received.')}}
-$('connect').onclick=explain;
-addEventListener('message',e=>{if(e.source!==parent)return;const m=e.data;if(m?.id===1&&m.result){host=true;send({method:'ui/notifications/initialized',params:{}});$('connect')&&($('connect').disabled=false);if($('connection'))$('connection').textContent='Connected to Codex. Waiting for this chat’s records.';for(const[k,v]of Object.entries(m.result.hostContext?.styles?.variables||{}))if(k.startsWith('--')&&!k.startsWith('--color-'))document.documentElement.style.setProperty(k,v);const hostTheme=m.result.hostContext?.theme;if(hostTheme==='light'||hostTheme==='dark')document.documentElement.setAttribute('data-theme',hostTheme)}else if(pending.has(m?.id)){const p=pending.get(m.id);clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}else if(m?.method==='ui/notifications/tool-result')receive(m.params);else if(m?.method==='ping'||m?.method==='ui/resource-teardown')send({id:m.id,result:{}})});
+function receive(raw){const result=toolResult(raw);if(result?.isError){error(result.content?.find(c=>c.type==='text')?.text||'The records could not be read.');return}const data=result?.structuredContent||{};const preparation=data.preparation||result?._meta?.preparation;if(preparation){if(!settle(preparation)){render();return}if(preparation.outcome!=='delivered'){render();return}}const payload=result?._meta?.deck?result._meta:data;if(payload.deck&&deck&&(!sameChat(payload.deck)||(!preparation&&!newerOrSame(payload.deck)))){error('An older or unrelated result was ignored; the current view is kept.')}else if(payload.deck){++loadVersion;deck=payload.deck;portableView=payload.view;error('');render()}else if(data.needsBinding){showConnection('Ask the first officer to connect this view to the current chat.')}else if(data.view){return loadPrepared(data.view)}else{error('The panel received a result without walkthrough data. Its explanation has not opened.');showConnection('No walkthrough data received.')}}
+$('connect').onclick=connectChat;
+addEventListener('message',e=>{if(e.source!==parent)return;const m=e.data;if(m?.id===1&&m.result){host=true;backgroundDelivery=m.result.hostCapabilities?.backgroundWalkthroughDelivery===true;send({method:'ui/notifications/initialized',params:{}});$('connect')&&($('connect').disabled=false);if($('connection'))$('connection').textContent='Connected to Codex. Waiting for this chat’s records.';for(const[k,v]of Object.entries(m.result.hostContext?.styles?.variables||{}))if(k.startsWith('--')&&!k.startsWith('--color-'))document.documentElement.style.setProperty(k,v);const hostTheme=m.result.hostContext?.theme;if(hostTheme==='light'||hostTheme==='dark')document.documentElement.setAttribute('data-theme',hostTheme)}else if(pending.has(m?.id)){const p=pending.get(m.id);clearTimeout(p.timer);pending.delete(m.id);m.error?p.reject(Error(m.error.message)):p.resolve(m.result)}else if(m?.method==='ui/notifications/tool-result')receive(m.params);else if(m?.method==='ping'||m?.method==='ui/resource-teardown')send({id:m.id,result:{}})});
 if(parent!==window)send({id:1,method:'ui/initialize',params:{protocolVersion:'2026-01-26',appInfo:{name:'hermes-helmet-captains-bridge',version:'1'},appCapabilities:{availableDisplayModes:['fullscreen']}}});else $('connection').textContent='Open Captain’s Bridge through the plugin in Codex.';
 </script></body></html>

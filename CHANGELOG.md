@@ -5,23 +5,41 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### Claude Code record reader (version bump pending)
+### 0.6.0
+
+- Captain’s Bridge can prepare an updated walkthrough in the background. The
+  panel captures the originating chat and a verifiable snapshot (delivery is
+  rejected if captured records changed or digests are inconsistent), asks the first
+  officer to dispatch one bounded read-only agent without waiting, and keeps the
+  current walkthrough visible. A timeout asks the first officer to stop the agent
+  and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
+  submission and late completion preserve the last useful view. Verified with
+  synthetic protocol and panel tests only; acceptance in an installed Codex host
+  is recorded separately in the pull request. Measured Codex limit: after the
+  parent turn finishes, the originating panel does not render a delivery, so a
+  request on the installed host now ends with an unsupported-boundary message
+  (no capture, dispatch or timer) unless the host advertises background delivery.
+
+### Claude Code record reader
 
 - `helmet bridge read --session ID [--transcript PATH] [--max-bytes N]` reads
   one Claude Code session's saved transcript and its subagent transcripts
   read-only and prints a bounded `hermes-helmet.bridge.records/1` summary with
-  stable UUID-derived refs, origins (`person`, `hook`, `plugin`, `meta`,
-  `assistant`, `agent`), coverage and warnings. Thinking is dropped, every
-  record's session ID is verified, an incomplete final line sets
-  `pendingTail`, and the summary budget keeps every person prompt and assistant
-  text while excerpting and then dropping the oldest tool results. Failures
-  exit 2 with `session-not-found`, `ambiguous-session`, `session-mismatch`,
-  `unsupported-format` or `unreadable`. The version bump is held back by the
-  Codex manifest no-touch instruction; see the pull request. Refs are
-  allocated in reading order so an appended record never changes an earlier
-  ref (an earlier ref may be a prefix of a later one; match exact refs first),
-  `--max-bytes` bounds the exact stdout bytes, and malformed core text blocks
-  or an unsupported version on any record return `unsupported-format`.
+  stable refs, origins (`person`, `hook`, `plugin`, `meta`, `assistant`,
+  `agent`), coverage and warnings. Thinking is dropped, every record's session
+  ID is verified, an incomplete final line sets `pendingTail`, and the summary
+  budget keeps every person prompt and assistant text while excerpting and
+  then dropping the oldest tool results. `--max-bytes` bounds the exact stdout
+  bytes. Failures exit 2 with `session-not-found`, `ambiguous-session`,
+  `session-mismatch`, `unsupported-format` or `unreadable`; malformed core
+  text blocks or an unsupported version on any record return
+  `unsupported-format`.
+- Each ref is the record's full 32-hex UUID-derived identity, computed from that
+  record's own UUID only. It does not depend on other records, timestamps or
+  presentation order, so appends, partial-tail completion and subagent growth
+  never change an existing ref or `parentRef`. When one source UUID expands
+  into several output records, the first keeps the UUID and later blocks get a
+  deterministic 32-hex identity from the UUID and block index.
 
 ### 0.5.0
 
