@@ -377,6 +377,56 @@ class AuthorityTests(unittest.TestCase):
         self.assertIn("`local-only`", contract)
         self.assertNotIn("still accepted", contract)
 
+    def test_generated_review_contract_names_worker_head_and_boundaries(self) -> None:
+        policy = authority.load_authority(EXAMPLECO)
+        pull_url = "https://github.com/example-org/demo-repo/pull/12"
+        head_sha = "b" * 40
+        body = authority.render_review_task_body(
+            pull_url=pull_url,
+            head_sha=head_sha,
+            request_url=f"{pull_url}#event-12",
+            policy=policy,
+        )
+        self.assertIs(poller.render_review_task_body, authority.render_review_task_body)
+        for needle in (
+            pull_url,
+            head_sha,
+            f"{pull_url}#event-12",
+            "example-agent",
+            "git rev-parse HEAD",
+            "full review",
+            "configured with",
+            "do not select or change",
+            "re-read the live pull request head",
+            "REQUEST_CHANGES",
+            "APPROVE",
+            "blocked/error",
+            "review URL",
+            "six-question audit",
+            "metadata.review_url",
+            "Do not commit, push, force-push, merge",
+            "replacement pull request",
+            "change the model provider",
+            "example-captain",
+            "example-org/demo-repo",
+        ):
+            self.assertIn(needle, body)
+        # A review returns a verdict, never a published pull request.
+        self.assertNotIn("published_pr", body)
+        self.assertNotIn("never merge", body)
+        repair = authority.render_repair_task_body(
+            pull_url=pull_url,
+            event_kind="reviewed",
+            event_state="changes_requested",
+            event_actor="trusted-reviewer",
+            event_url=f"{pull_url}#pullrequestreview-1",
+        )
+        self.assertIn("Repair contract", repair)
+        self.assertNotIn("Repair contract", body)
+        self.assertIn("Review contract", body)
+        for marker in FORBIDDEN_PUBLIC_MARKERS:
+            self.assertNotIn(marker, body)
+
     def test_trusted_human_and_bot_handling(self) -> None:
         policy = authority.load_authority(EXAMPLECO)
         self.assertTrue(
