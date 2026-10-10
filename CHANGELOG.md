@@ -20,7 +20,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   request on the installed host now ends with an unsupported-boundary message
   (no capture, dispatch or timer) unless the host advertises background delivery.
 
-### Claude Code record reader
+### 0.7.0
+
+Claude Code record reader.
 
 - `helmet bridge read --session ID [--transcript PATH] [--max-bytes N]` reads
   one Claude Code session's saved transcript and its subagent transcripts
