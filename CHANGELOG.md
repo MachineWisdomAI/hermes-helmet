@@ -5,6 +5,20 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### Claude Code record reader (version bump pending)
+
+- `helmet bridge read --session ID [--transcript PATH] [--max-bytes N]` reads
+  one Claude Code session's saved transcript and its subagent transcripts
+  read-only and prints a bounded `hermes-helmet.bridge.records/1` summary with
+  stable UUID-derived refs, origins (`person`, `hook`, `plugin`, `meta`,
+  `assistant`, `agent`), coverage and warnings. Thinking is dropped, every
+  record's session ID is verified, an incomplete final line sets
+  `pendingTail`, and the summary budget keeps every person prompt and assistant
+  text while excerpting and then dropping the oldest tool results. Failures
+  exit 2 with `session-not-found`, `ambiguous-session`, `session-mismatch`,
+  `unsupported-format` or `unreadable`. The version bump is held back by the
+  Codex manifest no-touch instruction; see the pull request.
+
 ### 0.5.0
 
 - Captain’s Bridge Refresh records now rereads the exact bound chat directly

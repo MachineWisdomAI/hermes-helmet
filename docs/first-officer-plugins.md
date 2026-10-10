@@ -36,6 +36,17 @@ is tracked in
 [issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55); the
 Claude plugin does not load the Bridge.
 
+### Claude Code session records
+
+`helmet bridge read --session <id> [--transcript <path>] [--max-bytes 600000]`
+reads one Claude Code session's saved records for the Claude port of the
+Bridge. It opens files read-only, finds `<id>.jsonl` under
+`$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`) by exact file name
+only, and prints `hermes-helmet.bridge.records/1` JSON. Errors exit 2 with
+`session-not-found`, `ambiguous-session`, `session-mismatch`,
+`unsupported-format` or `unreadable`. Supported Claude Code versions are
+2.0.0 up to (not including) 2.2.0; others are `unsupported-format`.
+
 ### Claude Code
 
 ```sh
