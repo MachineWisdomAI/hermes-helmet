@@ -73,6 +73,18 @@ references, retaining consequential failures. Keep async handoffs and later
 wakeups related to the same work without inventing a parent-child execution tree.
 Do not assign turn timestamps to individual operations. Gaps are not proof of a stall.
 
+## Background update (preparation agent)
+
+When the Captain’s panel requests an update, the first officer dispatches one
+read-only subagent and continues authorized work without waiting or polling. The
+subagent reads only the `threadId` in the request with `read_chat_work`, never its
+own chat, runs no project task, does not repair the viewer, and never retries. It
+cites only IDs from that read and calls `deliver_walkthrough_update` once with the
+request unchanged, or with `failure`. On a cancel message or a substantive new
+instruction from the Captain, the first officer interrupts the subagent and
+discards its result unless the Captain keeps the request. Present a delivery
+briefly at an available boundary; do not hold project delivery open for it.
+
 ## Refresh and limitations
 
 The reader opens Codex’s existing local chat index in read-only mode and reads
@@ -85,7 +97,7 @@ The prepared result carries an explicit chat reference and explanation so app
 calls do not depend on the model tool process’s memory. Each app read validates
 the citations again; it writes no transcript or standalone viewer file.
 If records changed it labels the explanation as older, showing the record-read time apart from the explanation’s own source time, and never restamps or rewrites it. Refresh calls the read-only app tool directly: it sends no message to the first officer. A failed, timed-out, foreign or out-of-order refresh keeps the last view and reports why. “Update walkthrough”
-requests this skill again in this same chat. No automatic monitoring is added.
+starts the background update above in this same chat. No automatic monitoring is added.
 The extension does not directly collect Hermes Docker events: use recorded
 worker results only when explicitly connected to this chat, and disclose missing
 coverage at the affected item. A source-bound explanation is not independent
