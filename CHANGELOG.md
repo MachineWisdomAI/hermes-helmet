@@ -5,13 +5,15 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.9.0
+### 0.10.0
 
 - Captain’s Bridge Show Me and Retro now state a portable skill-discovery path
   (`$CODEX_HOME/skills`, `.agents/skills`, plugin skills), require the
   originating chat identity to match, and stop with a clear message rather than
   substitute a skill when one is missing. The panel separates “delivered to this
   chat” from skill completion, and optional setup is documented.
+
+### 0.9.0
 
 Show Me and Retro in the Claude Bridge.
 
