@@ -5,6 +5,26 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.14.0
+
+- Document the Claude Code Captain's Bridge and prepare its version update
+  ([#72](https://github.com/MachineWisdomAI/hermes-helmet/issues/72), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  `docs/first-officer-plugins.md` now states that the Claude plugin includes a
+  mod running code inside sessions (the Codex track is unchanged), the tested
+  Claude Code 2.1.296 and minimum 2.1.293, the reachable `helmet` CLI and
+  absolute `helmetCommand` for Desktop, the organization mod policy,
+  `/captains-bridge` with the pane versus the text fallback, existing skills
+  staying available when mods are disabled, the public install commands and the
+  one update path, one model call per Update billed to the session's own
+  credentials with cancellation and the time limit, the five `userConfig`
+  fields and defaults, optional Show Me and Retro, missing states, this-session
+  records, no direct Docker collection, and that a source-bound explanation is
+  not independent delivery verification. The version moves to 0.14.0 across
+  `pyproject.toml`, the Python package and both plugin manifests via
+  `scripts/mw-version.py`. No tag, release, publication or installed-host
+  acceptance is claimed.
+
 ### 0.13.0
 
 - Prepare and cancel a source-bound explanation in the background from the

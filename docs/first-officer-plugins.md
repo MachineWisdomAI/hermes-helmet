@@ -32,11 +32,8 @@ supporting records. It is Codex-only and starts no second server beyond the
 plugin's own MCP server. From an open Bridge, “Update walkthrough” can ask the
 first officer to start one read-only background preparation, cancellable from the
 panel; see the lifecycle in the Bridge guide. See the
-[source and test guide](../mcp/captains-bridge/README.md). The Claude Code port
-is tracked in
-[issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55); see
-[Captain's Bridge in Claude Code](#captains-bridge-in-claude-code) for what the
-Claude plugin ships so far.
+[source and test guide](../mcp/captains-bridge/README.md). The Claude plugin carries its own Bridge as a Claude Code mod; see
+[Captain's Bridge in Claude Code](#captains-bridge-in-claude-code).
 
 ### Claude Code session records
 
@@ -70,13 +67,13 @@ reload plugins in an existing session, invoke them as
 ### Captain's Bridge in Claude Code
 
 The Claude plugin now includes the Captain's Bridge mod. A mod runs code inside
-your Claude Code sessions, unlike the Codex plugin, which still copies
-instructions (and its own MCP server) only. The skills above are unchanged and
+your Claude Code sessions. The Codex plugin is a separate track: it ships
+skills and its own MCP server, and loads no mod. The skills above are unchanged and
 keep working if your organization policy disables mods; only the Bridge is
 skipped.
 
-This release adds the reader, the Changes First view and the background
-explanation. Run `/captains-bridge` in any session to open
+This release carries the reader, the Changes First view, the background
+explanation and the Show Me and Retro actions. Run `/captains-bridge` in any session to open
 the Captain's Bridge pane beside the conversation. It is bound to that exact
 session ID, starts no turn and messages no one, so it can be opened while the
 first officer is working and at narrow terminal widths. It never opens by
@@ -178,15 +175,46 @@ Settings (plugin `userConfig`, defaults in parentheses): `helmetCommand`
 by **Update explanation**; `showMeCommand` and `retroCommand` name the Show Me
 and Retro commands.
 
-Update with `claude plugin update hermes-helmet@hermes-helmet`, then
-`/reload-plugins` or start a new session. Third-party marketplaces do not
-auto-update, so each release carries a version bump.
+Install from the public marketplace:
+
+```sh
+claude plugin marketplace add MachineWisdomAI/hermes-helmet
+claude plugin install hermes-helmet@hermes-helmet
+```
+
+Update with one path:
+
+```sh
+claude plugin update hermes-helmet@hermes-helmet
+```
+
+then run `/reload-plugins` or start a new session. Third-party marketplaces do
+not auto-update, so each release carries a version bump; that update command is
+the whole procedure, and no repeated restart is needed.
+
+What the Bridge shows and does not show:
+
+- Records are this session only: the reader opens the bound session's saved
+  records (and its subagent records), never another session's.
+- Missing states are shown, not filled in: no records yet, partial coverage,
+  an unsupported record format, a missing Show Me or Retro command, and
+  records newer than the explanation are each named in the pane.
+- The Bridge does not collect Hermes Docker events directly. Worker results
+  appear only when they were recorded in this session, and missing coverage is
+  disclosed at the affected item.
+- An explanation is source-bound: it cites the records it was given. That is
+  not independent verification of delivery; the Captain's own review and
+  acceptance remain separate.
+- Source checks and CI validate the mod. They are not an installed-host
+  acceptance; that and any release are separate, human-only steps.
 
 The mod's calls are limited in CI to a read-only allowlist: `$.session.id`,
 `$.session.version`, `$.process.run`, `$.model.complete`, `$.command.register`,
 `$.command.list`, `$.command.run`, `$.ui.open`, `$.ui.resolve`, `$.ui.status`,
-`$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It cannot write
-files, spawn agents, submit prompts, send messages or reach the network. This
+`$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It uses no
+direct network, file-write, prompt-submission, subagent or message APIs. An
+explicit Update explanation makes the one documented tool-less model request
+through Claude Code, which reaches the configured model provider. This
 release uses `$.clock.after`, `$.command.list`, `$.command.register`,
 `$.command.run`, `$.model.complete`, `$.process.run`, `$.session.id`,
 `$.session.version`, `$.state.get`, `$.state.set`, `$.ui.open` and
