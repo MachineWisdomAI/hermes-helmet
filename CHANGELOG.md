@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.13.0
+### 0.15.0
 
 - Assign a requested Hermes review of a pull request through the existing
   poller and Kanban runtime
@@ -28,6 +28,60 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   result; it ships through both first-officer plugins and the skill installer.
   The review does not commit, push, merge, change providers, or trigger a
   repair task, and the Captain keeps the merge decision.
+
+### 0.14.0
+
+- Document the Claude Code Captain's Bridge and prepare its version update
+  ([#72](https://github.com/MachineWisdomAI/hermes-helmet/issues/72), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  `docs/first-officer-plugins.md` now states that the Claude plugin includes a
+  mod running code inside sessions (the Codex track is unchanged), the tested
+  Claude Code 2.1.296 and minimum 2.1.293, the reachable `helmet` CLI and
+  absolute `helmetCommand` for Desktop, the organization mod policy,
+  `/captains-bridge` with the pane versus the text fallback, existing skills
+  staying available when mods are disabled, the public install commands and the
+  one update path, one model call per Update billed to the session's own
+  credentials with cancellation and the time limit, the five `userConfig`
+  fields and defaults, optional Show Me and Retro, missing states, this-session
+  records, no direct Docker collection, and that a source-bound explanation is
+  not independent delivery verification. The version moves to 0.14.0 across
+  `pyproject.toml`, the Python package and both plugin manifests via
+  `scripts/mw-version.py`. No tag, release, publication or installed-host
+  acceptance is claimed.
+
+### 0.13.0
+
+- Prepare and cancel a source-bound explanation in the background from the
+  Claude Captain's Bridge mod
+  ([#70](https://github.com/MachineWisdomAI/hermes-helmet/issues/70), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  **Update explanation** takes one record snapshot with the reader, then makes
+  exactly one tool-less `$.model.complete` request started off the press
+  dispatch with `$.clock.after(0, …)`: the configured model,
+  `explanationTimeoutSeconds` × 1000, 16000 tokens, the fixed instructions with
+  `cache: true`, the walkthrough schema and the record summary. It starts no
+  turn, submits no prompt, calls no tool or subagent, sends nothing, polls
+  nothing and never retries. The pane shows Cancel and Keep preparing while it
+  prepares; a duplicate press is ignored. Cancel cuts the in-flight call
+  through the call's own `{ signal }` option (never a request field, which the
+  engine ignores), and a Cancel or a superseding instruction that lands while
+  the reader is still running is re-checked before the deferred start, so it
+  launches no request and never replaces a newer request's controller. The
+  result installs only when the request generation still matches under
+  compare-and-set, so a late, cancelled or superseded result is discarded
+  silently. A person's prompt supersedes the request unless Keep preparing is
+  on, and always passes through unchanged. The engine resolves an outcome
+  rather than rejecting over what the provider did: `aborted` (the time limit,
+  or the call cut) becomes timed-out; `api-error` becomes failed, naming the
+  HTTP status and classified kind; `empty-reply` becomes failed and empty; only
+  an engine refusal rejects. A non-JSON or wrongly shaped reply, empty
+  top-level or item evidence, an unknown ref, or a link absent from a cited
+  record becomes failed with "The explanation didn't match the records",
+  keeping the last walkthrough. A plugin reload that leaves a preparing request
+  with no live controller becomes failed with "Interrupted by a plugin
+  reload". Tests drive `claude plugin test` seams with synthetic delayed model
+  stand-ins on the mocked clock, and CI keeps the mod's calls inside the
+  read-only allowlist.
 
 ### 0.12.0
 

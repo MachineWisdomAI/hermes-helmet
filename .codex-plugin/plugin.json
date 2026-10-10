@@ -1,6 +1,6 @@
 {
   "name": "hermes-helmet",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, and dependent-issue coordination.",
   "author": {
     "name": "Machine Wisdom",
@@ -14,14 +14,13 @@
   "interface": {
     "displayName": "Hermes Helmet",
     "shortDescription": "First-officer skills for delegated GitHub delivery with Hermes Helmet.",
-    "longDescription": "Packages the Captain-side setup-helmet, helmet-issue, helmet-epic, and helmet-review skills from this repository, and, in Codex, a read-only Captain’s Bridge panel for the current chat. You remain Captain. Claude Code or Codex runs on the Captain host with the Captain GitHub identity. The published Docker image still runs Hermes under a separate worker identity. Installing the plugin copies instructions and the Codex-only Captain’s Bridge reader, which only reads existing saved chat records; helmet, gh, model login, authority policy, and worker access still come from the existing setup.",
+    "longDescription": "Packages the Captain-side setup-helmet, helmet-issue, and helmet-epic skills from this repository, and, in Codex, a read-only Captain’s Bridge panel for the current chat. You remain Captain. Claude Code or Codex runs on the Captain host with the Captain GitHub identity. The published Docker image still runs Hermes under a separate worker identity. Installing the plugin copies instructions and the Codex-only Captain’s Bridge reader, which only reads existing saved chat records; helmet, gh, model login, authority policy, and worker access still come from the existing setup.",
     "developerName": "Machine Wisdom",
     "category": "Developer Tools",
     "capabilities": [
       "Captain-side Hermes Helmet setup",
       "Single-issue GitHub delivery",
       "Dependent-issue coordination",
-      "Requested pull-request review by the worker",
       "Captain's Bridge current-chat walkthrough"
     ],
     "websiteURL": "https://github.com/MachineWisdomAI/hermes-helmet",

@@ -313,9 +313,36 @@ class FirstOfficerPluginTests(unittest.TestCase):
             "hooks/register.test.tsx",
             "hooks/bridge.test.tsx",
             "hooks/actions.test.tsx",
+            "hooks/explanation.test.tsx",
             "types/index.d.ts",
         ):
             self.assertIn(required, verify)
+
+    def test_mod_prepares_the_explanation_within_the_read_only_allowlist(self) -> None:
+        from hermes_helmet import claude_mod_toolchain
+
+        source = (ROOT / "hooks" / "register.tsx").read_text(encoding="utf-8")
+        # The one model request and the deferred start are the only new calls.
+        for call in ("$.model.complete", "$.clock.after", "$.state.set"):
+            self.assertIn(call, source)
+            self.assertIn(call, claude_mod_toolchain.ALLOWED_CALLS)
+        for forbidden in (
+            "$.agent.spawn",
+            "$.prompt.submit",
+            "$.prompt.fill",
+            "$.session.send",
+            "$.http",
+            "$.tool.call",
+            "$.process.spawn",
+            "$.store.",
+            "$.fs.write",
+            "$.clock.every",
+            "setInterval",
+        ):
+            self.assertNotIn(forbidden, source, forbidden)
+        # The prompt hook observes the event and passes it on unchanged.
+        self.assertIn("on('prompt.submit'", source)
+        self.assertIn("next(e)", source)
 
     def test_plugin_and_tests_use_only_synthetic_fixtures(self) -> None:
         for relative in (
@@ -323,6 +350,7 @@ class FirstOfficerPluginTests(unittest.TestCase):
             "hooks/register.test.tsx",
             "hooks/bridge.test.tsx",
             "hooks/actions.test.tsx",
+            "hooks/explanation.test.tsx",
             "types/index.d.ts",
         ):
             text = (ROOT / relative).read_text(encoding="utf-8")
