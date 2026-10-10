@@ -804,6 +804,67 @@ describe('compare-and-set collisions', () => {
     expect(h.models.length).toBe(2)
     await pane.unmount()
   })
+
+  test('Cancel during a held walkthrough write keeps the last useful explanation', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Useful previous explanation' }))
+    await pressUpdate($, pane, clock)
+    expect((await probe($)).walkthrough.body.objective).toBe('Useful previous explanation')
+
+    delayed()
+    await pressUpdate($, pane, clock)
+    heldSet(isWalkthroughWrite)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'Cancelled replacement' })))
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+    expect((await probe($)).request.status).toBe('preparing')
+
+    await pane.press({ key: 'cancel' })
+    expect((await probe($)).request.status).toBe('cancelled')
+    releaseSet()
+    await tick()
+    await clock.advance(0)
+    await tick()
+
+    const state = await probe($)
+    expect(state.request.status).toBe('cancelled')
+    expect(state.walkthrough.body.objective).toBe('Useful previous explanation')
+    expect(h.models.length).toBe(2)
+    await pane.unmount()
+  })
+
+  test('a cancelled older result cannot replace a newer accepted explanation', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Useful previous explanation' }))
+    await pressUpdate($, pane, clock)
+
+    delayed()
+    await pressUpdate($, pane, clock)
+    heldSet(isWalkthroughWrite)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'Cancelled older replacement' })))
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+    await pane.press({ key: 'cancel' })
+
+    // A newer explicit Update completes while the older write is still held.
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Fresh accepted explanation' }))
+    await pressUpdate($, pane, clock)
+    let state = await probe($)
+    expect(state.walkthrough.body.objective).toBe('Fresh accepted explanation')
+
+    releaseSet()
+    await tick()
+    state = await probe($)
+    expect(state.request.status).toBe('idle')
+    expect(state.walkthrough.body.objective).toBe('Fresh accepted explanation')
+    await pane.unmount()
+  })
 })
 
 describe('a preparation ended while the reader runs', () => {

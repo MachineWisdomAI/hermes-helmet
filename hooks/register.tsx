@@ -642,12 +642,33 @@ async function installWalkthrough(
   // Only then does the request settle idle, and only while it is still the
   // preparing generation: a Cancel or supersession that won during the write
   // leaves it alone.
-  await update($, walkthrough, () => ({
-    body,
-    readAt: snapshot.readAt,
-    fingerprint: snapshot.fingerprint,
-    preparedAt: new Date().toISOString(),
-  }))
+  //
+  // The walkthrough is written under compare-and-set against the version read
+  // here, so an older adoption can never overwrite a newer accepted
+  // explanation: its write misses and is discarded. A Cancel or supersession
+  // that wins while the write is in flight cannot stop it landing, so the
+  // adoption rechecks the request afterwards and restores the last useful view
+  // it replaced, only while its own write is still the current one.
+  const key = { plugin: 'hermes-helmet', key: 'walkthrough' }
+  const prior = await $.state.get(key)
+  const adopted = await $.state.set(
+    key,
+    {
+      body,
+      readAt: snapshot.readAt,
+      fingerprint: snapshot.fingerprint,
+      preparedAt: new Date().toISOString(),
+    },
+    { ifVersion: prior?.version ?? 0 },
+  )
+  if (adopted?.isSet !== true) return
+  const after = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+  const settled = after?.value as BridgeState['request'] | null | undefined
+  if (settled?.generation !== generation || settled?.status !== 'preparing') {
+    const landed = await $.state.get(key)
+    await $.state.set(key, prior?.value ?? null, { ifVersion: landed?.version ?? 0 })
+    return
+  }
   await settleRequest($, s =>
     s.generation === generation && s.status === 'preparing'
       ? { generation, status: 'idle', retain: s.retain === true }
