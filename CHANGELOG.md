@@ -5,7 +5,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### Show Me and Retro
+### 0.9.0
+
+Show Me and Retro in the Claude Bridge.
 
 - Run the Captain’s installed Show Me and Retro commands from the Claude
   Bridge pane
