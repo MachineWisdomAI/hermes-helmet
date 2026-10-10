@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### Claude Code Captain’s Bridge mod (version bump pending)
+### 0.6.0
 
 - Add the Captain’s Bridge mod skeleton to the Claude plugin
   ([#68](https://github.com/MachineWisdomAI/hermes-helmet/issues/68), part of
@@ -20,8 +20,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   `explanationModel`, `explanationTimeoutSeconds`, `showMeCommand`,
   `retroCommand`). CI installs an exact, checksum-verified Claude Code 2.1.296,
   runs `claude plugin validate` and `claude plugin test` without credentials,
-  and fails on any call outside the read-only allowlist. The Codex manifest, MCP
-  packaging and the skills are unchanged.
+  and fails on any call outside the read-only allowlist. MCP packaging and the skills
+  are unchanged. The version moves to 0.6.0 in `pyproject.toml`, the Python
+  package and both plugin manifests (the Codex manifest changes only its
+  version field), synchronized by `scripts/mw-version.py`.
 
 ### 0.5.0
 
