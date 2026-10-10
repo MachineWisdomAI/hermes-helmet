@@ -155,6 +155,28 @@ describe('classic.SessionStart', () => {
     })
   }
 
+  for (const source of ['clear', 'resume', 'fork'] as const) {
+    test(`${source} stays ended through a plugin reload`, WITH_PROBE, async ($, on) => {
+      host(on, { id: 'sess-new' })
+      await $.classic.SessionStart({ source: 'startup', session_id: 'sess-a' })
+      await $.classic.SessionStart({ source, session_id: 'sess-new' })
+      await $.session.start(START)
+      expect(await stateOf($, 'binding')).toBe(null)
+      expect((await stateOf($, 'request')).message).toBe(CHANGED)
+      await $.command.run(run('captains-bridge'))
+      expect(await stateOf($, 'binding')).toEqual({ sessionId: 'sess-new' })
+    })
+  }
+
+  test('session.end stays ended through a plugin reload', WITH_PROBE, async ($, on) => {
+    host(on, { id: 'sess-a' })
+    await $.classic.SessionStart({ source: 'startup', session_id: 'sess-a' })
+    await $.session.end({ reason: 'clear', sessionId: 'sess-a', resume: { id: 'sess-a' } })
+    await $.session.start(START)
+    expect(await stateOf($, 'binding')).toBe(null)
+    expect((await stateOf($, 'request')).message).toBe(CHANGED)
+  })
+
   test('passes the event on unchanged', async ($, on) => {
     const seen = host(on)
     await $.classic.SessionStart({ source: 'startup', session_id: 'sess-a' })
@@ -278,6 +300,16 @@ describe('the drawn pane', () => {
       host(on)
       await $.classic.SessionStart({ source: 'startup', session_id: 'sess-a' })
       await $.classic.SessionStart({ source: 'resume', session_id: 'sess-b' })
+      const pane = await $.ui.mount({ ...PANE, surface })
+      expect(await pane.find({ type: 'Text', text: CHANGED })).not.toBe(undefined)
+      await pane.unmount()
+    })
+
+    test(`keeps the changed-conversation state on ${surface} after a reload`, async ($, on) => {
+      host(on, { id: 'sess-b' })
+      await $.classic.SessionStart({ source: 'startup', session_id: 'sess-a' })
+      await $.classic.SessionStart({ source: 'clear', session_id: 'sess-b' })
+      await $.session.start(START)
       const pane = await $.ui.mount({ ...PANE, surface })
       expect(await pane.find({ type: 'Text', text: CHANGED })).not.toBe(undefined)
       await pane.unmount()

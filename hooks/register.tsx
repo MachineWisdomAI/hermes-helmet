@@ -99,9 +99,12 @@ export const register: Register = on => {
     })
     // Retain the exact session ID on start and on reload. An established
     // binding for this same session stays; a different one has ended.
+    // A binding ended by clear/resume/fork/end stays ended through a reload
+    // until an explicit /captains-bridge command (which clears the message).
     const id = await $.session.id()
+    const ended = (await read($, request)).message === CHANGED_MESSAGE
     await update($, binding, current => {
-      if (current === null) return { sessionId: id }
+      if (current === null) return ended ? null : { sessionId: id }
       return current.sessionId === id ? current : null
     })
     return next(e)
