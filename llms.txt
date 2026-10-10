@@ -19,6 +19,7 @@ Use these when you are the coding-agent first officer on the Captain host. The i
 - Configuring or reusing a first-officer session: [Starting a first-officer session](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/first-officer-plugins.md#starting-a-first-officer-session).
 - Coordinating delivery and review of one issue: [helmet-issue](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-issue/SKILL.md).
 - Coordinating dependent issues: [helmet-epic](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-epic/SKILL.md).
+- Requesting a worker pull-request review: [helmet-review](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-review/SKILL.md).
 - Configuring identities and the worker: [setup-helmet](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/setup-helmet/SKILL.md).
 
 ## Changing this repository

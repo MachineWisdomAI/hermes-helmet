@@ -70,6 +70,35 @@ canonical repository identity before adoption: valid foreign references are
 ignored, references with no usable identity grant no authority, and
 contradictory metadata claiming the local repository fails closed.
 
+## Ask Hermes to review a pull request
+
+Issue implementation uses the dispatch label. Reviewing an existing pull
+request (for example one authored under the Captain's identity) uses GitHub's
+native reviewer request instead, through the `helmet-review` skill:
+
+```sh
+gh pr edit PR_URL --add-reviewer WORKER_LOGIN
+```
+
+On the next successful poll cycle, the existing `github-issue-poller` finds
+open pull requests in the policy repository allowlist whose pending reviewers
+include `worker_github_login` and submits one ordinary Kanban task per request
+(idempotency key: the repository, PR number, and GitHub's `review_requested`
+event id). Repeated cycles reuse it. Closed pull requests, pull requests
+without the request, and repositories outside the allowlist produce nothing.
+Any request GitHub permits is accepted, including fork pull requests; the
+poller adds no requester, author, or source-repository filter.
+
+The task carries the packaged review contract and omits the PR-publication
+completion contract. Hermes fetches and verifies the selected head, reviews the
+full pull request with its currently configured model, and submits one formal
+`APPROVE` or `REQUEST_CHANGES` review bound to the examined commit. Missing
+prerequisites use the blocked/error path rather than a verdict. The closeout
+records the review URL, verdict, reviewed commit, and six-question audit. The
+review never commits, pushes, merges, or triggers a repair task; the Captain
+keeps the merge decision. Following changed heads and renewed requests are
+covered in a later release.
+
 ## Named-request repository enrollment
 
 When the human Captain explicitly asks the first officer to work on or review

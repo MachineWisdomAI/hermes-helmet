@@ -2,7 +2,7 @@
 
 Give Hermes the wings to carry your plan through, under its own identity.
 
-Install the bundled `setup-helmet`, `helmet-issue`, and `helmet-epic` skills
+Install the bundled `setup-helmet`, `helmet-issue`, `helmet-epic`, and `helmet-review` skills
 on a configured first-officer host. This repository is the plugin
 marketplace. It packages those existing skills for Claude Code and Codex; it
 does not fork them, change the worker, or replace `helmet` setup.
@@ -62,7 +62,7 @@ claude plugin install hermes-helmet@hermes-helmet
 Claude namespaces plugin skills. After a new session starts, or after you
 reload plugins in an existing session, invoke them as
 `/hermes-helmet:setup-helmet`, `/hermes-helmet:helmet-issue`, and
-`/hermes-helmet:helmet-epic`.
+`/hermes-helmet:helmet-epic`, and `/hermes-helmet:helmet-review` (ask the worker to review a PR; see [helmet-issue](helmet-issue.md#ask-hermes-to-review-a-pull-request)).
 
 ### Captain's Bridge in Claude Code
 

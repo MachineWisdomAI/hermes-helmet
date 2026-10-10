@@ -5,6 +5,30 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.15.0
+
+- Assign a requested Hermes review of a pull request through the existing
+  poller and Kanban runtime
+  ([#79](https://github.com/MachineWisdomAI/hermes-helmet/issues/79), part of
+  [#77](https://github.com/MachineWisdomAI/hermes-helmet/issues/77)). On each
+  poll cycle the `github-issue-poller` lists open pull requests in the policy
+  repository allowlist whose pending reviewers include `worker_github_login`
+  and submits one ordinary Kanban task per request, keyed by the repository,
+  pull-request number, and GitHub's native `review_requested` event id, so
+  repeated cycles reuse the assignment and a renewed request at the same commit
+  is a distinct review. The task carries the packaged review contract
+  (verify the selected head, full review with the runtime's configured model,
+  one formal `APPROVE` or `REQUEST_CHANGES` review bound to the examined
+  commit, blocked/error path for missing prerequisites, review URL and audit in
+  the closeout) and omits the PR-publication completion contract. Closed pull
+  requests, pull requests without the request, and repositories outside the
+  allowlist produce nothing; any request GitHub permits, including a fork pull
+  request, uses the same path. The thin `helmet-review` first-officer skill
+  requests the worker through GitHub's reviewer interface and reads the formal
+  result; it ships through both first-officer plugins and the skill installer.
+  The review does not commit, push, merge, change providers, or trigger a
+  repair task, and the Captain keeps the merge decision.
+
 ### 0.14.0
 
 - Document the Claude Code Captain's Bridge and prepare its version update
@@ -75,6 +99,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   existing exact-match `WRAPPER_EXCEPTIONS`; remove on a fixed `gh`. A test
   runs the gate against retained real arm64 base/derived reports when
   `HERMES_HELMET_TRIVY_REPORTS` points at them (not committed).
+
 
 ### 0.11.0
 
