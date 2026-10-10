@@ -150,6 +150,25 @@ class CallAllowlistTests(unittest.TestCase):
         )
         self.assertEqual(calls, ["$.command.register", "$.session.id", "$.ui.open"])
 
+    def test_helper_annotations_are_dropped_but_every_call_is_checked(self) -> None:
+        calls = check_mod_calls(
+            _report(
+                "./register.tsx calls: $.command.list (via discoverCommands, runAction), "
+                "$.command.run (via runAction), $.ui.open"
+            )
+        )
+        self.assertEqual(calls, ["$.command.list", "$.command.run", "$.ui.open"])
+        with self.assertRaisesRegex(ClaudeModToolchainError, r"\$\.fs\.write"):
+            check_mod_calls(_report("./register.tsx calls: $.fs.write (via helper), $.ui.open"))
+        for text in (
+            "./register.tsx calls: $.ui.open (via )",
+            "./register.tsx calls: $.ui.open (via a b)",
+            "./register.tsx calls: $.ui.open (also $.fs.write)",
+            "./register.tsx calls: $.ui.open (via a), ",
+        ):
+            with self.subTest(text=text), self.assertRaises(ClaudeModToolchainError):
+                calls_from_validation(_report(text))
+
     def test_forbidden_calls_fail_closed(self) -> None:
         for call in (
             "$.fs.write",

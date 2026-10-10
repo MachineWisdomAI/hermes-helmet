@@ -312,6 +312,7 @@ class FirstOfficerPluginTests(unittest.TestCase):
             "hooks/register.tsx",
             "hooks/register.test.tsx",
             "hooks/bridge.test.tsx",
+            "hooks/actions.test.tsx",
             "types/index.d.ts",
         ):
             self.assertIn(required, verify)
@@ -321,6 +322,7 @@ class FirstOfficerPluginTests(unittest.TestCase):
             "hooks/register.tsx",
             "hooks/register.test.tsx",
             "hooks/bridge.test.tsx",
+            "hooks/actions.test.tsx",
             "types/index.d.ts",
         ):
             text = (ROOT / relative).read_text(encoding="utf-8")

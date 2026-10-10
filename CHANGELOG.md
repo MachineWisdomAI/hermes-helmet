@@ -28,6 +28,22 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
   is called and nothing is sent.
 
+- Run the Captain’s installed Show Me and Retro commands from the Claude
+  Bridge pane
+  ([#71](https://github.com/MachineWisdomAI/hermes-helmet/issues/71), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  Availability comes from `$.command.list()` when the Bridge opens and on each
+  refresh, for `showMeCommand`/`retroCommand` or `<plugin>:<name>`. A missing
+  command is a disabled action with the install wording and sends nothing; an
+  unknown-name rejection returns to that state. A present command calls
+  `$.command.run` once with the scope “this session” or the selected item’s
+  title, evidence refs and cited timestamps, relying on the host’s queue to wait
+  for an idle first officer. `pending` ignores repeat presses until settlement.
+  No prompt, subagent or cross-session send is used and neither skill is
+  bundled. The CI allowlist check now accepts the `(via helper)` annotation that
+  `claude plugin validate` adds to calls made in helper functions, while still
+  checking every call name.
+
 ### 0.8.0
 
 - Add the Captain’s Bridge mod skeleton to the Claude plugin

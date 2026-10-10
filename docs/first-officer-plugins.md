@@ -81,7 +81,7 @@ session ID, starts no turn and messages no one, so it can be opened while the
 first officer is working and at narrow terminal widths. It never opens by
 itself and runs no timers. In VS Code and headless or SDK sessions, where no
 pane draws, the command returns a short text status instead. The background
-explanation, Show Me and Retro arrive in later releases under the same state
+explanation arrives in a later release under the same state
 contract.
 
 The Bridge now reads the session's saved records and draws the Changes First
@@ -112,6 +112,21 @@ is not the expected JSON, or speaks an incompatible schema, the pane names the
 cause and the fix and keeps the last useful view; set `helmetCommand` to an
 absolute path when Claude Desktop does not inherit your shell `PATH`.
 
+Show Me and Retro run your own installed commands in this same session. The
+Bridge checks `$.command.list()` when it opens and on every refresh, and accepts
+the configured name (`showMeCommand`, default `show-me`; `retroCommand`, default
+`retro`) or `<plugin>:<name>`. When the command is present, the button calls
+`$.command.run` once, with the scope "this session" or, for a selected item, its
+title with its evidence refs and the timestamps of the records it cites. Claude
+Code queues that run until the first officer is idle, so it never interrupts a
+turn; the Bridge submits no prompt, starts no subagent and sends nothing to
+another session. Retro asks for suggestions and applies none. While a request
+is unsettled the button shows "(queued)" and repeat presses are ignored. When
+the command is missing the action is disabled and sends nothing: "Show Me isn't
+installed. Install a skill named show-me, or set showMeCommand." (and the same
+for Retro). If the host rejects the name as unknown, the action returns to that
+missing state. The Bridge bundles neither skill and works fully without them.
+
 If the conversation changes (`/clear`, `/resume`, a fork, or the session
 ends), the Bridge ends its binding and shows exactly: "This conversation
 changed. Run /captains-bridge to open the Bridge for it." It never rebinds the
@@ -133,8 +148,8 @@ Requirements:
 
 Settings (plugin `userConfig`, defaults in parentheses): `helmetCommand`
 (`helmet`), `explanationModel` (`sonnet`), `explanationTimeoutSeconds` (`180`),
-`showMeCommand` (`show-me`), `retroCommand` (`retro`). The last four take
-effect with later releases.
+`showMeCommand` (`show-me`), `retroCommand` (`retro`). `showMeCommand` and
+`retroCommand` take effect now; the other three take effect with later releases.
 
 Update with `claude plugin update hermes-helmet@hermes-helmet`, then
 `/reload-plugins` or start a new session. Third-party marketplaces do not
@@ -145,8 +160,9 @@ The mod's calls are limited in CI to a read-only allowlist: `$.session.id`,
 `$.command.list`, `$.command.run`, `$.ui.open`, `$.ui.resolve`, `$.ui.status`,
 `$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It cannot write
 files, spawn agents, submit prompts, send messages or reach the network. This
-slice uses only `$.command.register`, `$.session.id`, `$.session.version`,
-`$.state.get`, `$.state.set`, `$.ui.open` and `$.ui.resolve`.
+slice uses only `$.command.list`, `$.command.register`, `$.command.run`,
+`$.session.id`, `$.session.version`, `$.state.get`, `$.state.set`, `$.ui.open`
+and `$.ui.resolve`.
 
 ### Codex
 

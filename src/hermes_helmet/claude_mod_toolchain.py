@@ -60,7 +60,6 @@ ALLOWED_CALLS = frozenset(
     }
 )
 _CALLS_RE = re.compile(r"^(?P<module>\S+) calls: (?P<calls>.+)$")
-_VIA_RE = re.compile(r"\s+\(via [A-Za-z_$][A-Za-z0-9_$]*\)$")
 _CALL_RE = re.compile(r"^\$\.[a-z][A-Za-z]*\.[a-z][A-Za-z]*$")
 
 
@@ -195,6 +194,25 @@ def install(*, bin_dir: Path, version: str = CLAUDE_CODE_VERSION) -> Path:
     return destination
 
 
+_VIA = r"(?: \(via [A-Za-z_$][\w$]*(?:, [A-Za-z_$][\w$]*)*\))?"
+_CALL_ENTRY = rf"\$\.[a-z][A-Za-z]*\.[a-z][A-Za-z]*{_VIA}"
+_CALL_LIST_RE = re.compile(rf"{_CALL_ENTRY}(?:, {_CALL_ENTRY})*")
+
+
+def _split_calls(text: str) -> list[str]:
+    """Split a ``calls:`` list, dropping the ``(via helper, ...)`` notes.
+
+    ``claude plugin validate`` annotates a call made inside a helper function
+    with that helper's name.  Only that exact annotation is accepted; anything
+    else in the list is unparseable (an empty result), so every call name is
+    still checked against the allowlist.
+    """
+
+    if _CALL_LIST_RE.fullmatch(text) is None:
+        return []
+    return re.findall(r"\$\.[a-z][A-Za-z]*\.[a-z][A-Za-z]*", text)
+
+
 def calls_from_validation(report_text: str) -> dict[str, list[str]]:
     """Return the ``calls:`` each hooks module makes, per ``claude plugin validate --json``.
 
@@ -222,12 +240,7 @@ def calls_from_validation(report_text: str) -> dict[str, list[str]]:
             match = _CALLS_RE.match(note)
             if match is None:
                 continue
-            # Claude Code tags a call made through a local helper function,
-            # `$.process.run (via runReader)`.  The call itself is still
-            # checked against the allowlist; only that tag is removed.
-            names = [
-                _VIA_RE.sub("", part).strip() for part in match.group("calls").split(",")
-            ]
+            names = _split_calls(match.group("calls"))
             if not names or any(_CALL_RE.match(name) is None for name in names):
                 raise ClaudeModToolchainError(f"validation calls are unparseable: {note!r}")
             found.setdefault(match.group("module"), []).extend(names)
