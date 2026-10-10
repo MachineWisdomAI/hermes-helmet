@@ -79,7 +79,9 @@ export type RecordsSummary = {
   fingerprint: string
   records: SessionRecord[]
   coverage: Coverage
-  warnings: string[]
+  // The reader reports `{ code, message }` objects; plain strings are
+  // tolerated by the view.
+  warnings: Array<string | { code: string; message: string }>
 }
 
 export type RequestStatus =
@@ -111,7 +113,18 @@ export type BridgeState = {
     startedAt?: string
     message?: string
   }
-  view: { stack: Array<{ itemId?: string; scroll?: number }> }
+  view: {
+    // The last entry is the current view; an entry without itemId is the
+    // overview. `scroll` is the window offset left behind when the next
+    // view was opened; `open` lists the expanded sections of an item.
+    stack: Array<{
+      itemId?: string
+      scroll?: number
+      open?: Array<'change' | 'sources'>
+    }>
+    // The last reader or action message; it never replaces a useful view.
+    notice?: { kind: 'error' | 'info'; text: string }
+  }
   pending: { action: 'show-me' | 'retro'; since: string } | null
 }
 

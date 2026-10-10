@@ -207,6 +207,16 @@ class CallAllowlistTests(unittest.TestCase):
             with self.subTest(text=text[:40]), self.assertRaises(ClaudeModToolchainError):
                 calls_from_validation(text)
 
+    def test_a_call_tagged_as_made_through_a_helper_is_still_checked(self) -> None:
+        tagged = _report("./register.tsx calls: $.ui.open, $.process.run (via runReader)")
+        self.assertEqual(
+            check_mod_calls(tagged), ["$.process.run", "$.ui.open"]
+        )
+        with self.assertRaisesRegex(ClaudeModToolchainError, "outside the read-only allowlist"):
+            check_mod_calls(_report("./register.tsx calls: $.fs.write (via helper)"))
+        with self.assertRaises(ClaudeModToolchainError):
+            calls_from_validation(_report("./register.tsx calls: $.ui.open (via a b)"))
+
     def test_every_module_in_the_report_is_checked(self) -> None:
         report = json.dumps(
             {
