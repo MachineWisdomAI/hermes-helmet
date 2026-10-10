@@ -700,20 +700,6 @@ async function runPreparation(
   }
 }
 
-// True only while this generation still owns a preparing request: a Cancel or
-// a superseding instruction advances the generation, so a continuation that
-// resumes after an await must recheck before it spends or claims the request.
-async function ownsPreparing($: any, generation: number): Promise<boolean> {
-  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
-  const state = current?.value as BridgeState['request'] | null | undefined
-  return (
-    state !== null &&
-    state !== undefined &&
-    state.generation === generation &&
-    state.status === 'preparing'
-  )
-}
-
 // The Update press: compare-and-set the request to a new preparing generation,
 // take one record snapshot, then start exactly one model request off the press
 // dispatch. A duplicate press while preparing is ignored.
@@ -738,18 +724,33 @@ export async function pressUpdate(
   )
   if (claimed?.isSet !== true) return
 
+  // The preparation claims its live request now, before the reader: Cancel and
+  // a superseding instruction end a preparation by clearing this token and
+  // aborting its controller, so every await below rechecks it locally and a
+  // preparation that lost ownership adopts nothing and launches nothing.
+  const controller = new AbortController()
+  liveRequest = { generation, controller }
+  const owns = () => liveRequest !== null && liveRequest.generation === generation
+  const release = () => {
+    if (owns()) liveRequest = null
+  }
+
   const bound = await read($, binding)
   if (bound === null) {
+    release()
     await failRequest($, generation, 'failed', 'No conversation is bound.')
     return
   }
   const outcome = await runReader($, helmetCommand, bound)
+  // A Cancel or a new instruction during the reader ends this preparation.
+  if (!owns()) return
   const stillBound = await read($, binding)
-  if (stillBound === null || stillBound.sessionId !== bound.sessionId) return
-  // A Cancel or a new instruction during the reader ends this preparation:
-  // nothing is adopted and no request is started or scheduled.
-  if (!(await ownsPreparing($, generation))) return
+  if (stillBound === null || stillBound.sessionId !== bound.sessionId) {
+    release()
+    return
+  }
   if (!outcome.ok) {
+    release()
     await failRequest($, generation, 'failed', outcome.text)
     return
   }
@@ -766,18 +767,12 @@ export async function pressUpdate(
     summary,
   }))
 
-  // The records update is another await: recheck ownership before claiming
-  // the live request, so a cancelled or superseded preparation never replaces
-  // a newer request's controller.
-  if (!(await ownsPreparing($, generation))) return
-  const controller = new AbortController()
-  liveRequest = { generation, controller }
   // One request, started off the press dispatch so the press returns at once.
+  // A Cancel or a superseding instruction between scheduling and the deferred
+  // start launches no stale request and never clobbers a newer controller.
   Promise.resolve(
     $.clock.after(0, () => {
-      // Cancelled or superseded between scheduling and the deferred start:
-      // no stale request is launched and no newer controller is clobbered.
-      if (liveRequest === null || liveRequest.generation !== generation) return
+      if (!owns()) return
       void runPreparation($, generation, controller, snapshot, options)
     }),
   ).catch(() => {})
