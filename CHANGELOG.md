@@ -5,20 +5,25 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.6.0
+### 0.8.0
 
-- Captain’s Bridge can prepare an updated walkthrough in the background. The
-  panel captures the originating chat and a verifiable snapshot (delivery is
-  rejected if captured records changed or digests are inconsistent), asks the first
-  officer to dispatch one bounded read-only agent without waiting, and keeps the
-  current walkthrough visible. A timeout asks the first officer to stop the agent
-  and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
-  submission and late completion preserve the last useful view. Verified with
-  synthetic protocol and panel tests only; acceptance in an installed Codex host
-  is recorded separately in the pull request. Measured Codex limit: after the
-  parent turn finishes, the originating panel does not render a delivery, so a
-  request on the installed host now ends with an unsupported-boundary message
-  (no capture, dispatch or timer) unless the host advertises background delivery.
+- Add the Captain’s Bridge mod skeleton to the Claude plugin
+  ([#68](https://github.com/MachineWisdomAI/hermes-helmet/issues/68), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)). A hooks
+  module registers `/captains-bridge` (immediate) and opens a pane bound to the
+  exact `$.session.id()` without starting a turn or messaging the first
+  officer; non-drawing surfaces get a text status. `clear`, `resume`, `fork`
+  and session end end the binding and show “This conversation changed. Run
+  /captains-bridge to open the Bridge for it.” Claude Code older than 2.1.293
+  is told which version is needed. The manifest names a `PluginState`/
+  `BridgeState` type contract and `userConfig` (`helmetCommand`,
+  `explanationModel`, `explanationTimeoutSeconds`, `showMeCommand`,
+  `retroCommand`). CI installs an exact, checksum-verified Claude Code 2.1.296,
+  runs `claude plugin validate` and `claude plugin test` without credentials,
+  and fails on any call outside the read-only allowlist. MCP packaging and the skills
+  are unchanged. The version moves to 0.8.0 in `pyproject.toml`, the Python
+  package and both plugin manifests (the Codex manifest changes only its
+  version field), synchronized by `scripts/mw-version.py`.
 
 ### 0.7.0
 
@@ -42,6 +47,21 @@ Claude Code record reader.
   never change an existing ref or `parentRef`. When one source UUID expands
   into several output records, the first keeps the UUID and later blocks get a
   deterministic 32-hex identity from the UUID and block index.
+
+### 0.6.0
+
+- Captain’s Bridge can prepare an updated walkthrough in the background. The
+  panel captures the originating chat and a verifiable snapshot (delivery is
+  rejected if captured records changed or digests are inconsistent), asks the first
+  officer to dispatch one bounded read-only agent without waiting, and keeps the
+  current walkthrough visible. A timeout asks the first officer to stop the agent
+  and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
+  submission and late completion preserve the last useful view. Verified with
+  synthetic protocol and panel tests only; acceptance in an installed Codex host
+  is recorded separately in the pull request. Measured Codex limit: after the
+  parent turn finishes, the originating panel does not render a delivery, so a
+  request on the installed host now ends with an unsupported-boundary message
+  (no capture, dispatch or timer) unless the host advertises background delivery.
 
 ### 0.5.0
 
