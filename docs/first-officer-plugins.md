@@ -183,18 +183,27 @@ those CLIs are on the host.
 Each release carries a version bump in `.codex-plugin/plugin.json` (kept equal
 to the Claude manifest, `pyproject.toml` and the package version by
 `scripts/mw-version.py`), because a third-party marketplace does not
-auto-update. To update, use your Codex CLI's plugin-marketplace refresh for
-`hermes-helmet`, then `codex plugin add hermes-helmet@hermes-helmet` again (run
-`codex plugin marketplace --help` for the refresh verb in your version; it is
-not pinned here because the Codex CLI was not available on the host that
-produced this guide).
+auto-update.
 
-Then start a new Codex session or chat. Skills, the plugin's MCP server
-(`codex.mcp.json` → `mcp/captains-bridge/server.py`) and the Bridge panel are
-read when a session starts, so one new session after the update is the
-activation step. Repeated global Codex restarts are not an update procedure and
-are not needed. Check the installed version with `codex plugin marketplace list`
-or the plugin's `plugin.json`.
+```sh
+codex plugin marketplace upgrade hermes-helmet
+codex plugin list --marketplace hermes-helmet --json
+```
+
+`codex plugin marketplace upgrade hermes-helmet` refreshes the marketplace
+catalog and installs the plugin's new version. Confirm what is installed with
+`codex plugin list --marketplace hermes-helmet --json`, which reports the
+plugins and versions installed from that marketplace; `codex plugin marketplace
+list` reports marketplace roots only, not installed versions.
+
+Updating replaces the plugin's files on disk. The running connection is
+separate: the plugin's MCP server (`codex.mcp.json` →
+`mcp/captains-bridge/server.py`) is started per session and skills are read when
+a session starts, so an update is picked up by starting a new Codex session or
+chat. Where the host requires it, that single new session is the one
+consolidated activation step; repeated global Codex restarts are not an update
+procedure and are not needed. A listed version or a successful install proves
+the installed files, not that a running connection or panel has adopted them.
 
 The plugin package is the repository tree selected by the marketplace entry. It
 needs no local marketplace, private toolkit or personal path. It does not
