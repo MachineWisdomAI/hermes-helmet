@@ -163,7 +163,15 @@ function validSummary(value: any): value is RecordsSummary {
     typeof c === 'object' &&
     typeof c.recordsTotal === 'number' &&
     typeof c.recordsIncluded === 'number' &&
-    Array.isArray(value.warnings)
+    typeof c.bytesOmitted === 'number' &&
+    typeof c.unsupportedSkipped === 'number' &&
+    typeof c.pendingTail === 'boolean' &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every(
+      (w: any) =>
+        typeof w === 'string' ||
+        (w !== null && typeof w === 'object' && typeof w.message === 'string'),
+    )
   )
 }
 
@@ -254,10 +262,19 @@ export async function runReader(
         'Check that helmetCommand names the helmet command and that it is current.',
     }
   }
+  if (schemaMajor(parsed.schema) !== READER_SCHEMA_MAJOR) {
+    return {
+      ok: false,
+      text:
+        `\`${shown}\` answered with ${parsed.schema === undefined ? 'no schema' : `schema ${JSON.stringify(parsed.schema)}`}, ` +
+        `but this plugin reads hermes-helmet.bridge.records/${READER_SCHEMA_MAJOR}. ` +
+        'Update the hermes-helmet package and the plugin to matching releases, then refresh. The records already shown were kept.',
+    }
+  }
   if (!validSummary(parsed)) {
     return {
       ok: false,
-      text: `\`${shown}\` answered in a shape this plugin does not understand. Update the hermes-helmet package and plugin together.`,
+      text: `\`${shown}\` answered in a shape this plugin does not understand (a record, the coverage counts or a warning is malformed). Update the hermes-helmet package and plugin together, then refresh. The records already shown were kept.`,
     }
   }
   if (parsed.sessionId !== bound.sessionId) {
@@ -460,6 +477,40 @@ type Ctx = {
   stack: Array<{ itemId?: string; scroll?: number; open?: string[] }>
 }
 
+// Long text is cut into word-wrapped pieces, each its own block, so the
+// block-counted scroll window moves a line or so at a time and never skips
+// a whole long explanation or source list.
+const PIECE_WIDTH = 72
+
+export function textPieces(text: string): string[] {
+  const pieces: string[] = []
+  for (const line of text.split('\n')) {
+    let current = ''
+    for (const word of line.split(/\s+/).filter(w => w !== '')) {
+      if (current !== '' && current.length + 1 + word.length > PIECE_WIDTH) {
+        pieces.push(current)
+        current = ''
+      }
+      current = current === '' ? word : `${current} ${word}`
+      while (current.length > PIECE_WIDTH) {
+        pieces.push(current.slice(0, PIECE_WIDTH))
+        current = current.slice(PIECE_WIDTH)
+      }
+    }
+    pieces.push(current)
+  }
+  return pieces
+}
+
+function textBlocks(ui: any, key: string, text: string, dim = false): any[] {
+  const { Text } = ui
+  return textPieces(text).map((piece, i) => (
+    <Text key={`${key}:${i}`} wrap="wrap" dimColor={dim ? true : undefined}>
+      {piece === '' ? ' ' : piece}
+    </Text>
+  ))
+}
+
 function pairBoxes(ui: any, item: WalkthroughItem, suffix: string): any {
   const { Box, Text } = ui
   const reported = item.reported
@@ -501,12 +552,14 @@ function overviewBlocks(ctx: Ctx): any[] {
   const body = ctx.body as Walkthrough
   const blocks: any[] = []
   blocks.push(
-    <Box key="objective" flexDirection="column" marginBottom={1}>
-      <Text bold>Objective</Text>
-      <Text wrap="wrap">{body.objective}</Text>
-      <Text bold>Outcome</Text>
-      <Text wrap="wrap">{body.summary}</Text>
-    </Box>,
+    <Text key="objective-title" bold>
+      Objective
+    </Text>,
+    ...textBlocks(ctx.ui, 'objective', body.objective),
+    <Text key="outcome-title" bold>
+      Outcome
+    </Text>,
+    ...textBlocks(ctx.ui, 'outcome', body.summary),
   )
   for (const [group, label] of GROUPS) {
     const items = body.items.filter(item => item.group === group)
@@ -552,10 +605,10 @@ function detailBlocks(ctx: Ctx, item: WalkthroughItem, open: string[]): any[] {
     </Box>,
   )
   blocks.push(
-    <Box key="explanation" flexDirection="column" marginY={1}>
-      <Text bold>Explanation</Text>
-      <Text wrap="wrap">{item.detail}</Text>
-    </Box>,
+    <Text key="explanation-title" bold>
+      Explanation
+    </Text>,
+    ...textBlocks(ctx.ui, 'explanation', item.detail),
   )
   if (item.steps !== undefined && item.steps.length > 0) {
     blocks.push(
@@ -566,13 +619,11 @@ function detailBlocks(ctx: Ctx, item: WalkthroughItem, open: string[]): any[] {
     item.steps.forEach((step, i) => {
       const spent = elapsedOf(step.evidence, ctx.index)
       blocks.push(
-        <Box key={`step:${i}`} flexDirection="column" marginBottom={1}>
-          <Text bold>
-            {step.actor}: {step.label}
-            {spent === null ? '' : ` (elapsed ${spent})`}
-          </Text>
-          <Text wrap="wrap">{step.detail}</Text>
-        </Box>,
+        <Text key={`step:${i}`} bold wrap="wrap">
+          {step.actor}: {step.label}
+          {spent === null ? '' : ` (elapsed ${spent})`}
+        </Text>,
+        ...textBlocks(ctx.ui, `step:${i}:detail`, step.detail),
       )
     })
   }
@@ -583,23 +634,23 @@ function detailBlocks(ctx: Ctx, item: WalkthroughItem, open: string[]): any[] {
     const shown = open.includes('change')
     const change = item.change
     blocks.push(
-      <Box key="change" flexDirection="column" marginBottom={1}>
-        <Button key="change-toggle" onPress={() => ctx.act.toggle('change')}>
-          {shown ? 'Hide before and after' : 'View before and after'}
-        </Button>
-        {shown ? (
-          <Box flexDirection="column">
-            <Text bold>Before</Text>
-            <Text wrap="wrap">{change.before}</Text>
-            <Text bold>After</Text>
-            <Text wrap="wrap">{change.after}</Text>
-            <Text wrap="wrap" dimColor>
-              {change.explanation}
-            </Text>
-          </Box>
-        ) : null}
-      </Box>,
+      <Button key="change-toggle" onPress={() => ctx.act.toggle('change')}>
+        {shown ? 'Hide before and after' : 'View before and after'}
+      </Button>,
     )
+    if (shown) {
+      blocks.push(
+        <Text key="before-title" bold>
+          Before
+        </Text>,
+        ...textBlocks(ctx.ui, 'before', change.before),
+        <Text key="after-title" bold>
+          After
+        </Text>,
+        ...textBlocks(ctx.ui, 'after', change.after),
+        ...textBlocks(ctx.ui, 'change-explanation', change.explanation, true),
+      )
+    }
   }
   const links = evidenceLinks(item, ctx.index)
   if (links.length > 0) {
@@ -617,26 +668,20 @@ function detailBlocks(ctx: Ctx, item: WalkthroughItem, open: string[]): any[] {
     .filter((rec): rec is SessionRecord => rec !== undefined)
   const sourcesOpen = open.includes('sources')
   blocks.push(
-    <Box key="sources" flexDirection="column" marginBottom={1}>
-      <Button key="sources-toggle" onPress={() => ctx.act.toggle('sources')}>
-        {sourcesOpen
-          ? 'Hide supporting records'
-          : `Show supporting records (${cited.length})`}
-      </Button>
-      {sourcesOpen ? (
-        <Box flexDirection="column">
-          {cited.map(rec => (
-            <Box flexDirection="column" marginTop={1}>
-              <Text dimColor>
-                {clock(rec.timestamp)} · {actorOf(rec)}
-              </Text>
-              <Text wrap="wrap">{excerpt(rec.text)}</Text>
-            </Box>
-          ))}
-        </Box>
-      ) : null}
-    </Box>,
+    <Button key="sources-toggle" onPress={() => ctx.act.toggle('sources')}>
+      {sourcesOpen ? 'Hide supporting records' : `Show supporting records (${cited.length})`}
+    </Button>,
   )
+  if (sourcesOpen) {
+    cited.forEach(rec => {
+      blocks.push(
+        <Text key={`source:${rec.ref}:head`} dimColor>
+          {clock(rec.timestamp)} · {actorOf(rec)}
+        </Text>,
+        ...textBlocks(ctx.ui, `source:${rec.ref}`, excerpt(rec.text)),
+      )
+    })
+  }
   return blocks
 }
 
@@ -913,20 +958,21 @@ export const register: Register = (on, options) => {
       blocks = overviewBlocks(ctx)
     } else {
       const item = body.items.find(candidate => candidate.id === top.itemId)
-      const back = (
+      // Back is part of the fixed header, so it stays reachable however far
+      // a long detail has been scrolled.
+      header.push(
         <Button key="back" onPress={() => ctx.act.back()}>
           Back
-        </Button>
+        </Button>,
       )
       if (item === undefined) {
         blocks = [
-          back,
           <Text key="missing" wrap="wrap">
             This item is not part of the current explanation.
           </Text>,
         ]
       } else {
-        blocks = [back, ...detailBlocks(ctx, item, top.open ?? [])]
+        blocks = detailBlocks(ctx, item, top.open ?? [])
       }
     }
     blocks = [...blocks, ...footerBlocks(ctx, summary, body !== null)]

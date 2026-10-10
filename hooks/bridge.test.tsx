@@ -391,13 +391,13 @@ describe('the item detail', () => {
       component: 'Pane', requestId: 'captains-bridge', offset: 1, by: 1,
       bodyRows: 20, contentRows: 40, origin: { kind: 'person' },
     })
-    expect(await pane.find({ text: 'Ship the synthetic widget' })).toBe(undefined)
+    expect(await pane.find({ text: 'Objective' })).toBe(undefined)
     await pane.press({ key: 'item:gadget' })
     expect(await pane.find({ text: 'A tool result shows the gadget failing.' })).not.toBe(undefined)
     expect((await probe($)).view.stack).toEqual([{ scroll: 1 }, { itemId: 'gadget', scroll: 0, open: [] }])
     await pane.press({ key: 'back' })
     expect((await probe($)).view.stack).toEqual([{ scroll: 1 }])
-    expect(await pane.find({ text: 'Ship the synthetic widget' })).toBe(undefined)
+    expect(await pane.find({ text: 'Objective' })).toBe(undefined)
     expect(await pane.find({ key: 'item:gadget' })).not.toBe(undefined)
     await pane.unmount()
   })
@@ -479,6 +479,10 @@ describe('Refresh records', () => {
     ['a nonzero exit without error JSON', { exitCode: 127, stdout: '', stderr: 'helmet: command not found' }, 'exited with code 127'],
     ['a too-old helmet', { exitCode: 2, stdout: '', stderr: "usage: helmet\nhelmet: error: argument command: invalid choice: 'bridge'" }, 'too old'],
     ['non-JSON output', { exitCode: 0, stdout: 'not json', stderr: '' }, 'cannot parse'],
+    ['a missing schema', { exitCode: 0, stdout: JSON.stringify(summary({ schema: undefined, fingerprint: '9:uuid-9' })), stderr: '' }, 'no schema'],
+    ['a null warning', { exitCode: 0, stdout: JSON.stringify(summary({ warnings: [null], fingerprint: '9:uuid-9' })), stderr: '' }, 'does not understand'],
+    ['a warning without a message', { exitCode: 0, stdout: JSON.stringify(summary({ warnings: [{ code: 'x' }], fingerprint: '9:uuid-9' })), stderr: '' }, 'does not understand'],
+    ['malformed coverage counts', { exitCode: 0, stdout: JSON.stringify(summary({ coverage: { recordsTotal: 5, recordsIncluded: 5 }, fingerprint: '9:uuid-9' })), stderr: '' }, 'does not understand'],
     ['a wrong schema major', { exitCode: 0, stdout: JSON.stringify(summary({ schema: 'hermes-helmet.bridge.records/2' })), stderr: '' }, 'records/1'],
   ]
   for (const [name, answer, cause] of FAILURES) {
@@ -524,6 +528,61 @@ describe('Refresh records', () => {
     expect(await pane.find({ key: 'notice' })).not.toBe(undefined)
     expect(await pane.find({ text: '0 of 0' })).toBe(undefined)
     expect(await pane.find({ text: 'No records have been read yet' })).not.toBe(undefined)
+    await pane.unmount()
+  })
+})
+
+describe('long content stays readable when scrolled', () => {
+  const LINES = Array.from({ length: 100 }, (_, i) => `explanation line ${i + 1}`).join('\n')
+  const LONG = {
+    ...WALKTHROUGH,
+    body: { ...BODY, items: [{ ...ITEMS[0], detail: LINES }, ...ITEMS.slice(1)] },
+  }
+  const scroll = ($: any, offset: number) =>
+    $.ui.scroll({
+      component: 'Pane', requestId: 'captains-bridge', offset, by: 1,
+      bodyRows: 20, contentRows: 120, origin: { kind: 'person' },
+    })
+
+  for (const surface of SURFACES) {
+    test(`three single steps skip no more than three lines of a long detail on ${surface}`, WITH, async ($, on) => {
+      await opened($, on)
+      await seed($, 'walkthrough', LONG)
+      const pane = await $.ui.mount({ ...PANE, surface })
+      await pane.press({ key: 'item:widget' })
+      expect(await pane.find({ text: 'explanation line 1' })).not.toBe(undefined)
+      for (const offset of [1, 2, 3]) await scroll($, offset)
+      expect(await pane.find({ text: 'explanation line 4' })).not.toBe(undefined)
+      expect(await pane.find({ text: 'explanation line 100' })).not.toBe(undefined)
+      await pane.unmount()
+    })
+  }
+
+  test('expanded supporting records in a narrow pane remain reachable one step at a time', WITH, async ($, on) => {
+    await opened($, on)
+    await seed($, 'walkthrough', LONG)
+    const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 30 }, surface: 'terminal' })
+    await pane.press({ key: 'item:widget' })
+    await pane.press({ key: 'sources-toggle' })
+    const before = (await texts(pane)).join('\n')
+    expect(before).toContain('Opened https://example.test/acme/widgets/pull/7')
+    await scroll($, 1)
+    const after = (await texts(pane)).join('\n')
+    expect(after).toContain('explanation line 2')
+    expect(after).toContain('Opened https://example.test/acme/widgets/pull/7')
+    await pane.unmount()
+  })
+
+  test('Back still restores the preceding item and place after scrolling a long detail', WITH, async ($, on) => {
+    await opened($, on)
+    await seed($, 'walkthrough', LONG)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await scroll($, 1)
+    await pane.press({ key: 'item:widget' })
+    await scroll($, 1)
+    await scroll($, 2)
+    await pane.press({ key: 'back' })
+    expect((await probe($)).view.stack).toEqual([{ scroll: 1 }])
     await pane.unmount()
   })
 })

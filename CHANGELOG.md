@@ -21,8 +21,12 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   rereads saved records only, keeps the view stack and selection, never restamps
   the walkthrough’s `readAt`, and shows “Explanation read records at {readAt};
   {n} newer records since.” Reader failures name the cause and fix and keep the
-  last useful view. The call-allowlist parser accepts Claude Code’s
-  `(via helper)` tag. No model is called and nothing is sent.
+  last useful view. The reader answer must carry the expected schema, valid
+  records, coverage counts and warnings before it replaces anything. Long
+  explanations and supporting records are drawn as word-wrapped pieces, so
+  scrolling never skips a whole long block, and Back stays in the fixed header.
+  The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
+  is called and nothing is sent.
 
 ### 0.8.0
 
