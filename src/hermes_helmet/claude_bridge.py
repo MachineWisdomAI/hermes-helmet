@@ -263,6 +263,16 @@ def _blocks(content: Any, where: str) -> list[dict[str, Any]]:
     raise BridgeReadError("unsupported-format", f"{where} has malformed message content.")
 
 
+def _text_field(block: dict[str, Any], where: str, version: str) -> str:
+    text = block.get("text")
+    if not isinstance(text, str):
+        raise BridgeReadError(
+            "unsupported-format",
+            f"{where} (Claude Code {version}) has a text block whose text is not a string.",
+        )
+    return text
+
+
 def _result_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -338,6 +348,8 @@ def _scan_file(
                 f"{where} belongs to session {sid!r}, not the requested session {session_id!r}.",
             )
         if rtype not in CORE_TYPES:
+            if record.get("version") is not None:
+                _check_version(record["version"], where)
             if rtype not in KNOWN_NONCORE_TYPES:
                 state.unsupported += 1
                 state.unsupported_types.add(rtype)
@@ -406,15 +418,24 @@ def _scan_file(
                 if rtype == "assistant":
                     origin = "agent" if sidechain else "assistant"
                     if btype == "text":
-                        add("assistant", origin, str(block.get("text", "")))
+                        add("assistant", origin, _text_field(block, where, version))
                     elif btype == "tool_use":
-                        name = str(block.get("name", ""))
+                        name = block.get("name")
+                        if not isinstance(name, str) or not name:
+                            raise BridgeReadError(
+                                "unsupported-format",
+                                f"{where} (Claude Code {version}) has a tool_use block without a name.",
+                            )
+                        tool_input = block.get("input", {})
+                        if not isinstance(tool_input, (dict, list, str)):
+                            raise BridgeReadError(
+                                "unsupported-format",
+                                f"{where} (Claude Code {version}) has a malformed tool_use input.",
+                            )
                         tool_use_id = block.get("id")
                         tool_use_id = tool_use_id if isinstance(tool_use_id, str) else None
-                        text, clipped = _clip(
-                            json.dumps(block.get("input", {}), ensure_ascii=False, sort_keys=True),
-                            TOOL_INPUT_CAP,
-                        )
+                        full_input = json.dumps(tool_input, ensure_ascii=False, sort_keys=True)
+                        text, clipped = _clip(full_input, TOOL_INPUT_CAP)
                         if tool_use_id:
                             state.tool_names[tool_use_id] = name
                         add(
@@ -425,13 +446,29 @@ def _scan_file(
                             tool_use_id=tool_use_id,
                             truncated=clipped,
                         )
+                        emitted[-1].orig_bytes = len(full_input.encode("utf-8"))
                         if emitted[-1:] and tool_use_id:
                             state.tool_use_uuid.setdefault(tool_use_id, uuid)
                 else:  # user role
                     if btype == "tool_result":
                         tool_use_id = block.get("tool_use_id")
                         tool_use_id = tool_use_id if isinstance(tool_use_id, str) else None
-                        full = _result_text(block.get("content"))
+                        raw_result = block.get("content")
+                        if raw_result is not None and not isinstance(raw_result, (str, list)):
+                            raise BridgeReadError(
+                                "unsupported-format",
+                                f"{where} (Claude Code {version}) has malformed tool_result content.",
+                            )
+                        if isinstance(raw_result, list) and not all(
+                            isinstance(item, str)
+                            or (isinstance(item, dict) and (item.get("type") != "text" or isinstance(item.get("text"), str)))
+                            for item in raw_result
+                        ):
+                            raise BridgeReadError(
+                                "unsupported-format",
+                                f"{where} (Claude Code {version}) has malformed tool_result content.",
+                            )
+                        full = _result_text(raw_result)
                         text, clipped = _clip(full, TOOL_RESULT_READ_CAP)
                         add(
                             "tool_result",
@@ -451,7 +488,7 @@ def _scan_file(
                         ):
                             state.agent_tool_use[result["agentId"]] = tool_use_id
                     elif btype == "text":
-                        text = str(block.get("text", ""))
+                        text = _text_field(block, where, version)
                         add("user", _user_origin(record, text, sidechain), text)
         for index, rec in enumerate(emitted):
             if index:
@@ -469,22 +506,27 @@ def _scan_file(
 
 
 def _assign_refs(records: list[_Rec]) -> dict[int, str]:
-    """Shortest unique prefix (>= 8 hex chars) of each record's UUID."""
-    ids = sorted({rec.uuid for rec in records})
-    needed: dict[str, int] = {}
-    for index, current in enumerate(ids):
-        longest = 0
-        for other in (ids[index - 1] if index else None, ids[index + 1] if index + 1 < len(ids) else None):
-            if other is None:
-                continue
-            common = 0
-            for a, b in zip(current, other):
-                if a != b:
-                    break
-                common += 1
-            longest = max(longest, common)
-        needed[current] = min(len(current), max(MIN_REF_LENGTH, longest + 1))
-    return {id(rec): rec.uuid[: needed[rec.uuid]] for rec in records}
+    """Stable refs: a UUID prefix of at least 8 hex characters.
+
+    Records are allocated in reading order. A record takes the shortest prefix
+    that is not a prefix of any earlier record's UUID, so a record appended
+    later can only lengthen its own ref and never changes an existing one.
+    """
+    seen: set[str] = set()
+    by_uuid: dict[str, str] = {}
+    for rec in records:
+        if rec.uuid in by_uuid:
+            continue
+        uuid = rec.uuid
+        ref = uuid
+        for length in range(min(MIN_REF_LENGTH, len(uuid)), len(uuid) + 1):
+            if uuid[:length] not in seen:
+                ref = uuid[:length]
+                break
+        by_uuid[uuid] = ref
+        for length in range(min(MIN_REF_LENGTH, len(uuid)), len(uuid) + 1):
+            seen.add(uuid[:length])
+    return {id(rec): by_uuid[rec.uuid] for rec in records}
 
 
 def _record_dict(rec: _Rec, ref: str, parent_ref: str | None) -> dict[str, Any]:
@@ -503,8 +545,9 @@ def _record_dict(rec: _Rec, ref: str, parent_ref: str | None) -> dict[str, Any]:
     }
 
 
-def _size(rec: dict[str, Any]) -> int:
-    return len(json.dumps(rec, ensure_ascii=False).encode("utf-8")) + 2
+def render(payload: dict[str, Any]) -> str:
+    """The exact text ``helmet bridge read`` prints, newline included."""
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
 
 
 def _excerpt(text: str) -> str:
@@ -581,69 +624,13 @@ def read_session(
 
     total = len(records)
     protected = {"person", "assistant", "agent"}
-    keep = list(records)
-    texts = {id(rec): rec.text for rec in keep}
-    truncated = {id(rec): rec.truncated for rec in keep}
-
-    def candidates() -> list[dict[str, Any]]:
-        out = []
-        for rec in keep:
-            item = _record_dict(rec, refs[id(rec)], None)
-            item["text"] = texts[id(rec)]
-            item["truncated"] = truncated[id(rec)]
-            out.append(item)
-        return out
-
-    def total_size() -> int:
-        return sum(_size(item) for item in candidates())
-
-    warnings: list[dict[str, str]] = []
-    if total_size() > max_bytes:
-        for rec in keep:
-            if rec.role == "tool_result" and len(texts[id(rec)]) > EXCERPT_HEAD + EXCERPT_TAIL:
-                texts[id(rec)] = _excerpt(texts[id(rec)])
-                truncated[id(rec)] = True
-        if total_size() > max_bytes:
-            sizes = {id(rec): _size(_record_dict(rec, refs[id(rec)], None) | {"text": texts[id(rec)]}) for rec in keep}
-            running = sum(sizes.values())
-            dropped: set[int] = set()
-            for rec in keep:
-                if running <= max_bytes:
-                    break
-                if rec.role == "tool_result":
-                    dropped.add(id(rec))
-                    running -= sizes[id(rec)]
-            keep = [rec for rec in keep if id(rec) not in dropped]
-            if running > max_bytes:
-                protected_bytes = sum(
-                    len(texts[id(rec)].encode("utf-8"))
-                    for rec in keep
-                    if rec.origin in protected and rec.role in {"user", "assistant"}
-                )
-                warnings.append(
-                    {
-                        "code": "budget-conflict",
-                        "message": (
-                            f"Person prompts and assistant text ({protected_bytes} bytes) are "
-                            f"protected and are returned in full, so the summary is {running} "
-                            f"bytes, over --max-bytes {max_bytes}."
-                        ),
-                    }
-                )
-
-    included_refs = {refs[id(rec)] for rec in keep}
-    out_records = []
-    for rec in keep:
-        item = _record_dict(rec, refs[id(rec)], parent_ref_for(rec, included_refs))
-        item["text"] = texts[id(rec)]
-        item["truncated"] = truncated[id(rec)]
-        out_records.append(item)
-
     original_bytes = sum(rec.orig_bytes for rec in records)
-    final_bytes = sum(len(item["text"].encode("utf-8")) for item in out_records)
-    omitted = max(0, original_bytes - final_bytes)
+    last_uuid = state.last_main_uuid or (records[-1].primary_uuid or records[-1].uuid)
+    texts = {id(rec): rec.text for rec in records}
+    truncated = {id(rec): rec.truncated for rec in records}
+    extra_warnings: list[dict[str, str]] = []
     if state.unsupported:
-        warnings.append(
+        extra_warnings.append(
             {
                 "code": "unsupported-records-skipped",
                 "message": (
@@ -654,26 +641,76 @@ def read_session(
             }
         )
     if state.pending_tail:
-        warnings.append(
+        extra_warnings.append(
             {
                 "code": "pending-tail",
                 "message": "An incomplete final line was ignored; Claude Code may still be writing.",
             }
         )
-    last_uuid = state.last_main_uuid or (records[-1].primary_uuid or records[-1].uuid)
-    return {
-        "schema": SCHEMA,
-        "helmetVersion": __version__,
-        "sessionId": session_id,
-        "readAt": _utc_now(),
-        "fingerprint": f"{total}:{last_uuid}",
-        "records": out_records,
-        "coverage": {
-            "recordsTotal": total,
-            "recordsIncluded": len(out_records),
-            "bytesOmitted": omitted,
-            "unsupportedSkipped": state.unsupported,
-            "pendingTail": state.pending_tail,
-        },
-        "warnings": warnings,
-    }
+
+    def build(keep: list[_Rec], budget_warnings: list[dict[str, str]]) -> dict[str, Any]:
+        included = {refs[id(rec)] for rec in keep}
+        out_records = []
+        for rec in keep:
+            item = _record_dict(rec, refs[id(rec)], parent_ref_for(rec, included))
+            item["text"] = texts[id(rec)]
+            item["truncated"] = truncated[id(rec)]
+            out_records.append(item)
+        final_bytes = sum(len(item["text"].encode("utf-8")) for item in out_records)
+        return {
+            "schema": SCHEMA,
+            "helmetVersion": __version__,
+            "sessionId": session_id,
+            "readAt": _utc_now(),
+            "fingerprint": f"{total}:{last_uuid}",
+            "records": out_records,
+            "coverage": {
+                "recordsTotal": total,
+                "recordsIncluded": len(out_records),
+                "bytesOmitted": max(0, original_bytes - final_bytes),
+                "unsupportedSkipped": state.unsupported,
+                "pendingTail": state.pending_tail,
+            },
+            "warnings": budget_warnings + extra_warnings,
+        }
+
+    def measure(keep: list[_Rec]) -> int:
+        return len(render(build(keep, [])).encode("utf-8"))
+
+    keep = list(records)
+    budget_warnings: list[dict[str, str]] = []
+    if measure(keep) > max_bytes:
+        for rec in keep:
+            if rec.role == "tool_result" and len(texts[id(rec)]) > EXCERPT_HEAD + EXCERPT_TAIL:
+                texts[id(rec)] = _excerpt(texts[id(rec)])
+                truncated[id(rec)] = True
+        # Drop the oldest tool results until the serialized output fits.
+        droppable = [rec for rec in records if rec.role == "tool_result"]
+        low, high = 0, len(droppable)  # smallest count of oldest results to drop
+        while low < high:
+            mid = (low + high) // 2
+            gone = {id(rec) for rec in droppable[:mid]}
+            if measure([rec for rec in records if id(rec) not in gone]) <= max_bytes:
+                high = mid
+            else:
+                low = mid + 1
+        gone = {id(rec) for rec in droppable[:low]}
+        keep = [rec for rec in records if id(rec) not in gone]
+        running = measure(keep)
+        if running > max_bytes:
+            protected_bytes = sum(
+                len(texts[id(rec)].encode("utf-8"))
+                for rec in keep
+                if rec.origin in protected and rec.role in {"user", "assistant"}
+            )
+            budget_warnings.append(
+                {
+                    "code": "budget-conflict",
+                    "message": (
+                        f"Person prompts and assistant text ({protected_bytes} bytes) are "
+                        f"protected and are returned in full, so the output is {running} "
+                        f"bytes, over --max-bytes {max_bytes}."
+                    ),
+                }
+            )
+    return build(keep, budget_warnings)

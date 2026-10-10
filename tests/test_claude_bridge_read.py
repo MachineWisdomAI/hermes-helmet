@@ -537,8 +537,95 @@ class BridgeReadTests(unittest.TestCase):
         self.write(t)
         records = self.read_ok()["records"]
         self.assertEqual(len({r["ref"] for r in records}), 2)
-        self.assertTrue(all(len(r["ref"]) > 8 for r in records))
+        # The earlier record keeps its short ref; the later one lengthens.
+        self.assertEqual(len(records[0]["ref"]), 8)
+        self.assertGreater(len(records[1]["ref"]), 8)
         self.assertEqual(records[1]["parentRef"], records[0]["ref"])
+
+    def test_ref_is_stable_when_an_appended_uuid_collides_with_its_prefix(self) -> None:
+        t = Transcript()
+        t.user("single prompt")
+        path = self.write(t)
+        before = self.read_ok()["records"]
+        self.assertEqual(before[0]["ref"], "4f1c2a9e")
+        t.assistant("next answer")  # shares the 4f1c2a9e prefix
+        path.write_text(t.text(), encoding="utf-8")
+        after = self.read_ok()["records"]
+        self.assertEqual(after[0]["ref"], "4f1c2a9e")
+        self.assertEqual(after[0]["parentRef"], before[0]["parentRef"])
+        self.assertEqual(after[1]["parentRef"], "4f1c2a9e")
+        self.assertGreater(len(after[1]["ref"]), 8)
+        self.assertEqual(len({r["ref"] for r in after}), 2)
+
+    # serialized budget ------------------------------------------------------
+    def cli_stdout(self, *args: str) -> tuple[int, str]:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["bridge", "read", "--session", SESSION, *args])
+        return code, out.getvalue()
+
+    def test_stdout_bytes_stay_within_max_bytes(self) -> None:
+        self.write(self.big_transcript(results=20, size=5000))
+        code, text = self.cli_stdout("--max-bytes", "40000")
+        self.assertEqual(code, 0)
+        payload = json.loads(text)
+        self.assertLessEqual(len(text.encode("utf-8")), 40000)
+        self.assertEqual(payload["warnings"], [])
+        prompts = [r["text"] for r in payload["records"] if r["origin"] == "person"]
+        self.assertEqual(prompts, [f"prompt {i}" for i in range(20)])
+
+    def test_over_budget_protected_text_still_warns_with_true_size(self) -> None:
+        t = Transcript()
+        t.user("P" * 6000)
+        t.assistant("A" * 6000)
+        self.write(t)
+        code, text = self.cli_stdout("--max-bytes", "1000")
+        payload = json.loads(text)
+        self.assertEqual([w["code"] for w in payload["warnings"]], ["budget-conflict"])
+        self.assertGreater(len(text.encode("utf-8")), 12000)
+
+    def test_truncated_tool_input_reports_omitted_bytes(self) -> None:
+        t = Transcript()
+        t.user("go")
+        t.tool_use("toolu_1", "Write", {"content": "x" * 10000})
+        self.write(t)
+        payload = self.read_ok()
+        record = [r for r in payload["records"] if r["tool"] == "Write"][0]
+        self.assertTrue(record["truncated"])
+        self.assertGreater(payload["coverage"]["bytesOmitted"], 7000)
+
+    # fail closed ------------------------------------------------------------
+    def test_non_string_core_text_is_unsupported_format(self) -> None:
+        for name, rtype in (("assistant", "assistant"), ("user", "user")):
+            with self.subTest(name):
+                t = Transcript()
+                if rtype == "assistant":
+                    t.assistant([{"type": "text", "text": {"unexpected": "object"}}])
+                else:
+                    t.add(t._base("user", message={"role": "user", "content": [{"type": "text", "text": {"unexpected": "object"}}]}))
+                self.write(t)
+                code, payload = self.run_cli("--session", SESSION)
+                self.assertEqual(code, 2)
+                self.assert_error(payload, "unsupported-format")
+
+    def test_unsupported_version_on_skipped_record_is_unsupported_format(self) -> None:
+        t = Transcript()
+        t.user("hello")
+        t.add({"type": "future-thing", "sessionId": SESSION, "version": "9.9.9"})
+        self.write(t)
+        code, payload = self.run_cli("--session", SESSION)
+        self.assertEqual(code, 2)
+        self.assertIn("9.9.9", self.assert_error(payload, "unsupported-format"))
+
+    def test_versionless_metadata_and_unknown_types_are_still_skipped(self) -> None:
+        t = Transcript()
+        t.user("hello")
+        t.add({"type": "summary", "summary": "x"})
+        t.add({"type": "future-thing", "sessionId": SESSION})
+        t.add({"type": "future-thing", "sessionId": SESSION, "version": VERSION})
+        self.write(t)
+        payload = self.read_ok()
+        self.assertEqual(payload["coverage"]["unsupportedSkipped"], 2)
 
     # read-only ------------------------------------------------------------
     def snapshot(self) -> dict[str, tuple[int, int, bytes | None]]:

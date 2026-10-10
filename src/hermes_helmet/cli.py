@@ -448,7 +448,7 @@ def cmd_bridge_read(args: argparse.Namespace) -> int:
     except claude_bridge.BridgeReadError as exc:
         print(json.dumps(claude_bridge.error_payload(exc.code, exc.message), indent=2))
         return 2
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    sys.stdout.write(claude_bridge.render(payload))
     return 0
 
 

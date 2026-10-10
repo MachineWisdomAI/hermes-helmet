@@ -17,7 +17,11 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   text while excerpting and then dropping the oldest tool results. Failures
   exit 2 with `session-not-found`, `ambiguous-session`, `session-mismatch`,
   `unsupported-format` or `unreadable`. The version bump is held back by the
-  Codex manifest no-touch instruction; see the pull request.
+  Codex manifest no-touch instruction; see the pull request. Refs are
+  allocated in reading order so an appended record never changes an earlier
+  ref (an earlier ref may be a prefix of a later one; match exact refs first),
+  `--max-bytes` bounds the exact stdout bytes, and malformed core text blocks
+  or an unsupported version on any record return `unsupported-format`.
 
 ### 0.5.0
 
