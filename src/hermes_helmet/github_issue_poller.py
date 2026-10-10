@@ -11,7 +11,7 @@ never reads, logs, or persists token values itself.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
@@ -114,6 +114,7 @@ class PollResult:
     created: list[tuple[Issue, str]]
     warnings: list[str]
     errors: list[str]
+    review_tasks: list[tuple[ReviewRequest, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1066,10 +1067,17 @@ def run_once(policy: Policy, ledger: Path, runner: Runner) -> PollResult:
             created.append((issue, task_id))
     _, review_errors = reconcile_review_tasks(policy, ledger, runner)
     errors.extend(review_errors)
-    _, request_warnings, request_errors = reconcile_review_requests(policy, runner)
+    request_tasks, request_warnings, request_errors = reconcile_review_requests(
+        policy, runner
+    )
     warnings.extend(request_warnings)
     errors.extend(request_errors)
-    return PollResult(created=created, warnings=warnings, errors=errors)
+    return PollResult(
+        created=created,
+        warnings=warnings,
+        errors=errors,
+        review_tasks=request_tasks,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -1084,6 +1092,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     for issue, task_id in result.created:
         print(f"Queued {issue.url} as Kanban task {task_id}.")
+    for request, task_id in result.review_tasks:
+        print(f"Queued review of {request.pull_url} as Kanban task {task_id}.")
     for warning in result.warnings:
         print(f"Warning: {warning}")
     for error in result.errors:
