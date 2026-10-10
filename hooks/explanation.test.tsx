@@ -95,7 +95,9 @@ const answered = (body: string) => ({ value: { isAnswered: true, text: body, usa
 
 // A mutable stand-in for the model plus the reader, and counters. `holdRead`
 // suspends `helmet bridge read` so a test can act while a preparation waits on
-// it; `releaseRead` lets it answer.
+// it; `releaseRead` lets it answer. `holdSet` suspends the first
+// `$.state.set` its predicate matches, so a test can interleave a competing
+// write with a settling transition and release it afterwards.
 const fixture: {
   model: (call: any) => any
   read: any
@@ -104,6 +106,8 @@ const fixture: {
   gate: { resolve: (v: any) => void; reject: (e: any) => void } | null
   holdRead: boolean
   releaseRead: (() => void) | null
+  holdSet: ((e: any) => boolean) | null
+  releaseSet: (() => void) | null
 } = {
   model: () => answered(text()),
   read: null,
@@ -112,6 +116,8 @@ const fixture: {
   gate: null,
   holdRead: false,
   releaseRead: null,
+  holdSet: null,
+  releaseSet: null,
 }
 
 type Harness = {
@@ -156,6 +162,8 @@ function host(on: any, opts: { id?: string; listed?: any[] } = {}): Harness {
   fixture.gate = null
   fixture.holdRead = false
   fixture.releaseRead = null
+  fixture.holdSet = null
+  fixture.releaseSet = null
   on('state.get', async (_$: any, e: any, next: any) => {
     if (e.key === 'request' && fixture.seed !== null) {
       const seeded = fixture.seed
@@ -164,6 +172,16 @@ function host(on: any, opts: { id?: string; listed?: any[] } = {}): Harness {
     }
     if (e.key === 'walkthrough' && fixture.walkthrough !== null) {
       return { value: { value: fixture.walkthrough, version: 1 } }
+    }
+    return next(e)
+  })
+  on('state.set', async (_$: any, e: any, next: any) => {
+    // Hold the first matching write so a test can interleave a competing one.
+    if (fixture.holdSet !== null && fixture.holdSet(e)) {
+      fixture.holdSet = null
+      await new Promise<void>(resolve => {
+        fixture.releaseSet = resolve
+      })
     }
     return next(e)
   })
@@ -257,6 +275,32 @@ function heldRead() {
 function releaseRead() {
   if (fixture.releaseRead !== null) fixture.releaseRead()
 }
+
+// Hold the first `$.state.set` that matches `match`, so a test can land a
+// competing writing press against a transition that is already settling, then
+// release it. Only the first match is held; a retried write passes through.
+function heldSet(match: (e: any) => boolean) {
+  fixture.holdSet = match
+}
+
+function releaseSet() {
+  if (fixture.releaseSet !== null) {
+    const release = fixture.releaseSet
+    fixture.releaseSet = null
+    release()
+  }
+}
+
+// The request write that settles a completed preparation to idle.
+const isRequestIdle = (e: any): boolean =>
+  e.key === 'request' && e.value?.status === 'idle'
+
+// The request write that marks a request cancelled.
+const isRequestCancelled = (e: any): boolean =>
+  e.key === 'request' && e.value?.status === 'cancelled'
+
+// The walkthrough write that adopts a completed reply.
+const isWalkthroughWrite = (e: any): boolean => e.key === 'walkthrough'
 
 describe('starting an explanation request', () => {
   test('sends one tool-less request with the configured model, limit and document order', WITH, async ($, on) => {
@@ -656,6 +700,108 @@ describe('races and reloads', () => {
     fixture.gate.resolve(answered(text()))
     await tick()
     expect((await probe($)).request.status).toBe('idle')
+    await pane.unmount()
+  })
+})
+
+// A settling transition writes the request under compare-and-set. A competing
+// press (Keep preparing) that lands between its read and its write must not
+// strand the request or lose a cancellation: the transition re-reads and
+// retries while it still owns the generation. An older adoption must not
+// retry over a newer accepted explanation.
+describe('compare-and-set collisions', () => {
+  test('a Keep preparing press during result adoption does not strand the request', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    delayed()
+    await pane.press({ key: 'update-explanation' })
+    await clock.advance(0)
+    await tick()
+
+    // Hold the write that settles the completed reply to idle, then let a Keep
+    // preparing press bump the store version under it.
+    heldSet(isRequestIdle)
+    fixture.gate.resolve(answered(text()))
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+    await pane.press({ key: 'keep-preparing' })
+    releaseSet()
+    await tick()
+
+    const state = await probe($)
+    expect(state.request.status).toBe('idle')
+    expect(state.request.retain).toBe(true)
+    expect(state.walkthrough.body.objective).toBe('Ship the synthetic widget')
+    expect(h.models.length).toBe(1)
+    await pane.unmount()
+  })
+
+  test('a Keep preparing press during Cancel still advances the generation', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    delayed()
+    await pane.press({ key: 'update-explanation' })
+    await clock.advance(0)
+    await tick()
+
+    // Hold Cancel's write, bump the version with Keep preparing, then release:
+    // the cancel must not miss and let the cancelled reply install.
+    heldSet(isRequestCancelled)
+    const cancelling = pane.press({ key: 'cancel' })
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+    await pane.press({ key: 'keep-preparing' })
+    releaseSet()
+    await cancelling
+
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'A cancelled objective' })))
+    await tick()
+    const state = await probe($)
+    expect(state.request.status).toBe('cancelled')
+    expect(state.request.generation).toBe(2)
+    expect(state.walkthrough).toBe(null)
+    expect(await pane.find({ text: 'A cancelled objective' })).toBe(undefined)
+    await pane.unmount()
+  })
+
+  test('an older adoption never overwrites a newer accepted explanation', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    delayed()
+    await pane.press({ key: 'update-explanation' })
+    await clock.advance(0)
+    await tick()
+
+    // Hold the first reply's walkthrough write. The request stays preparing, so
+    // a second Update is ignored rather than racing the held write.
+    heldSet(isWalkthroughWrite)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'First objective' })))
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+    await pane.press({ key: 'update-explanation' })
+    await clock.advance(0)
+    await tick()
+    expect(h.models.length).toBe(1)
+
+    releaseSet()
+    await tick()
+    let state = await probe($)
+    expect(state.request.status).toBe('idle')
+    expect(state.walkthrough.body.objective).toBe('First objective')
+
+    // The next explicit Update still succeeds.
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Second objective' }))
+    await pressUpdate($, pane, clock)
+    state = await probe($)
+    expect(state.request.status).toBe('idle')
+    expect(state.walkthrough.body.objective).toBe('Second objective')
+    expect(h.models.length).toBe(2)
     await pane.unmount()
   })
 })

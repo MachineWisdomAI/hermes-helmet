@@ -581,25 +581,48 @@ export function failureOf(error: unknown): { status: RequestStatus; message: str
   }
 }
 
-// Settles the request only if it is still the preparing generation under
-// compare-and-set; a late result of a cancelled or superseded request is
-// discarded silently and the walkthrough is never touched.
+// Compare-and-set the request only while the transition still owns it. A
+// competing write that lands between the read and the set (a Keep preparing
+// toggle, say) bumps the store version and makes the write miss without
+// changing the generation; the transition reads again and retries so a
+// settling request is never stranded. When the generation or status it
+// depends on no longer matches, a newer request or instruction owns the
+// request and the transition is discarded.
+async function settleRequest(
+  $: any,
+  next: (state: BridgeState['request']) => BridgeState['request'] | null,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
+    const state = current?.value as BridgeState['request'] | null | undefined
+    if (state === null || state === undefined) return false
+    const value = next(state)
+    if (value === null) return false
+    const outcome = await $.state.set(
+      { plugin: 'hermes-helmet', key: 'request' },
+      value,
+      { ifVersion: current.version },
+    )
+    if (outcome?.isSet === true) return true
+  }
+  return false
+}
+
+// Settles the request only if it is still the preparing generation: a late
+// result of a cancelled or superseded request is discarded silently and the
+// walkthrough is never touched.
 async function failRequest(
   $: any,
   generation: number,
   status: RequestStatus,
   message: string | undefined,
 ): Promise<void> {
-  const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
-  const state = current?.value as BridgeState['request'] | null | undefined
-  if (state === null || state === undefined) return
-  if (state.generation !== generation || state.status !== 'preparing') return
-  await $.state.set(
-    { plugin: 'hermes-helmet', key: 'request' },
-    message === undefined
-      ? { generation, status, retain: state.retain === true }
-      : { generation, status, retain: state.retain === true, message },
-    { ifVersion: current.version },
+  await settleRequest($, state =>
+    state.generation === generation && state.status === 'preparing'
+      ? message === undefined
+        ? { generation, status, retain: state.retain === true }
+        : { generation, status, retain: state.retain === true, message }
+      : null,
   )
 }
 
@@ -613,19 +636,23 @@ async function installWalkthrough(
   const state = current?.value as BridgeState['request'] | null | undefined
   if (state === null || state === undefined) return
   if (state.generation !== generation || state.status !== 'preparing') return
-  // Claim the request first: only the generation that still owns it installs.
-  const claimed = await $.state.set(
-    { plugin: 'hermes-helmet', key: 'request' },
-    { generation, status: 'idle', retain: state.retain === true },
-    { ifVersion: current.version },
-  )
-  if (claimed?.isSet !== true) return
+  // Adopt while this generation still owns the preparing request: the request
+  // stays `preparing` until the walkthrough write has landed, so a duplicate
+  // or newer Update cannot start a second preparation and race this write.
+  // Only then does the request settle idle, and only while it is still the
+  // preparing generation: a Cancel or supersession that won during the write
+  // leaves it alone.
   await update($, walkthrough, () => ({
     body,
     readAt: snapshot.readAt,
     fingerprint: snapshot.fingerprint,
     preparedAt: new Date().toISOString(),
   }))
+  await settleRequest($, s =>
+    s.generation === generation && s.status === 'preparing'
+      ? { generation, status: 'idle', retain: s.retain === true }
+      : null,
+  )
 }
 
 // A resolved `api-error`: the engine carries the HTTP status and the kind it
@@ -790,10 +817,14 @@ export async function pressCancel($: any): Promise<void> {
   const current = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
   const state = current?.value as BridgeState['request'] | null | undefined
   if (state !== null && state !== undefined && state.status === 'preparing') {
-    await $.state.set(
-      { plugin: 'hermes-helmet', key: 'request' },
-      { generation: state.generation + 1, status: 'cancelled', retain: state.retain === true },
-      { ifVersion: current.version },
+    // Bind the cancel to the generation it saw: a collision retries only while
+    // that same preparing generation still owns the request, so a newer
+    // request is never cancelled by accident.
+    const generation = state.generation
+    await settleRequest($, s =>
+      s.status === 'preparing' && s.generation === generation
+        ? { generation: generation + 1, status: 'cancelled', retain: s.retain === true }
+        : null,
     )
   }
   if (controller !== null) controller.abort()
@@ -821,12 +852,13 @@ export async function notePrompt($: any, e: any): Promise<void> {
   const state = current?.value as BridgeState['request'] | null | undefined
   if (state === null || state === undefined) return
   if (state.status !== 'preparing' || state.retain === true) return
+  const generation = state.generation
   const controller = liveRequest === null ? null : liveRequest.controller
   liveRequest = null
-  await $.state.set(
-    { plugin: 'hermes-helmet', key: 'request' },
-    { generation: state.generation + 1, status: 'superseded', retain: false },
-    { ifVersion: current.version },
+  await settleRequest($, s =>
+    s.status === 'preparing' && s.retain !== true && s.generation === generation
+      ? { generation: generation + 1, status: 'superseded', retain: false }
+      : null,
   )
   if (controller !== null) controller.abort()
 }
