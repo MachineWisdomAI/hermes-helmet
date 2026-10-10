@@ -68,7 +68,6 @@ SESSION_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 UUID_RE = re.compile(r"[0-9a-fA-F][0-9a-fA-F-]{7,63}")
 
-MIN_REF_LENGTH = 8
 # Per-text read-time caps so a single enormous tool result cannot exhaust
 # memory. Person prompts and assistant text are never capped.
 TOOL_RESULT_READ_CAP = 20000
@@ -108,6 +107,7 @@ class _Rec:
     orig_bytes: int = 0
     primary_uuid: str | None = None  # set on extra blocks of one record
     order: int = 0
+    ref: str = ""
 
 
 @dataclass
@@ -491,10 +491,10 @@ def _scan_file(
                         text = _text_field(block, where, version)
                         add("user", _user_origin(record, text, sidechain), text)
         for index, rec in enumerate(emitted):
+            rec.ref = _record_ref(uuid, index)
             if index:
                 rec.primary_uuid = rec.uuid
-                digest = hashlib.sha256(f"{rec.uuid}:{index}".encode()).hexdigest()
-                rec.uuid = digest
+                rec.uuid = rec.ref
             rec.order = state.counter
             state.counter += 1
             state.records.append(rec)
@@ -505,28 +505,23 @@ def _scan_file(
 # --------------------------------------------------------------------------
 
 
-def _assign_refs(records: list[_Rec]) -> dict[int, str]:
-    """Stable refs: a UUID prefix of at least 8 hex characters.
+def _record_ref(uuid: str, index: int) -> str:
+    """Full 32-hex ref derived only from the record's own source UUID.
 
-    Records are allocated in reading order. A record takes the shortest prefix
-    that is not a prefix of any earlier record's UUID, so a record appended
-    later can only lengthen its own ref and never changes an existing one.
+    A 32-hex UUID is its own ref. Any other accepted UUID spelling is hashed to
+    32 hex. Additional output blocks of one source UUID get a deterministic
+    32-hex identity from the UUID and the block index. No other record, the
+    timestamp order or the presentation order takes part, so refs never change
+    when records are appended or discovered later.
     """
-    seen: set[str] = set()
-    by_uuid: dict[str, str] = {}
-    for rec in records:
-        if rec.uuid in by_uuid:
-            continue
-        uuid = rec.uuid
-        ref = uuid
-        for length in range(min(MIN_REF_LENGTH, len(uuid)), len(uuid) + 1):
-            if uuid[:length] not in seen:
-                ref = uuid[:length]
-                break
-        by_uuid[uuid] = ref
-        for length in range(min(MIN_REF_LENGTH, len(uuid)), len(uuid) + 1):
-            seen.add(uuid[:length])
-    return {id(rec): by_uuid[rec.uuid] for rec in records}
+    base = uuid if re.fullmatch(r"[0-9a-f]{32}", uuid) else hashlib.sha256(uuid.encode()).hexdigest()[:32]
+    if index == 0:
+        return base
+    return hashlib.sha256(f"{base}:{index}".encode()).hexdigest()[:32]
+
+
+def _assign_refs(records: list[_Rec]) -> dict[int, str]:
+    return {id(rec): rec.ref for rec in records}
 
 
 def _record_dict(rec: _Rec, ref: str, parent_ref: str | None) -> dict[str, Any]:
@@ -594,9 +589,8 @@ def read_session(
     refs = _assign_refs(records)
     ref_by_uuid: dict[str, str] = {}
     for rec in records:
-        key = rec.primary_uuid or rec.uuid
-        ref_by_uuid.setdefault(key, refs[id(rec)])
-        ref_by_uuid.setdefault(rec.uuid, refs[id(rec)])
+        if rec.primary_uuid is None:
+            ref_by_uuid[rec.uuid] = rec.ref
     first_ref_of_agent: dict[str, str] = {}
     for rec in records:
         if rec.agent_id:

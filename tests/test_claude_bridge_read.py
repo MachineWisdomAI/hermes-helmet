@@ -165,8 +165,7 @@ class BridgeReadTests(unittest.TestCase):
                 "tool", "toolUseId", "isError", "truncated"}
         for record in records:
             self.assertEqual(set(record), keys)
-            self.assertGreaterEqual(len(record["ref"]), 8)
-            self.assertRegex(record["ref"], r"^[0-9a-f]+$")
+            self.assertRegex(record["ref"], r"^[0-9a-f]{32}$")
         refs = [r["ref"] for r in records]
         self.assertEqual(len(set(refs)), len(refs))
         self.assertIsNone(records[0]["parentRef"])
@@ -524,22 +523,15 @@ class BridgeReadTests(unittest.TestCase):
         self.assertEqual(second["coverage"]["recordsTotal"], 7)
         self.assertNotEqual(first["fingerprint"], second["fingerprint"])
 
-    def test_refs_extend_past_eight_characters_when_prefixes_collide(self) -> None:
-        t = Transcript()
-        t.user("one")
-        t.user("two")
-        first, second = (json.loads(line) for line in t.lines)
-        first["uuid"] = "abcdef12-0000-4000-8000-000000000001"
-        second["uuid"] = "abcdef12-0000-4000-8000-000000000002"
-        second["parentUuid"] = first["uuid"]
-        first["parentUuid"] = None
-        t.lines = [json.dumps(first), json.dumps(second)]
-        self.write(t)
+    def refs_of(self, payload: dict) -> dict[str, dict]:
+        return {r["text"]: r for r in payload["records"]}
+
+    def test_refs_are_full_32_hex_uuid_derived(self) -> None:
+        self.write(self.basic())
         records = self.read_ok()["records"]
-        self.assertEqual(len({r["ref"] for r in records}), 2)
-        # The earlier record keeps its short ref; the later one lengthens.
-        self.assertEqual(len(records[0]["ref"]), 8)
-        self.assertGreater(len(records[1]["ref"]), 8)
+        for record in records:
+            self.assertRegex(record["ref"], r"^[0-9a-f]{32}$")
+        self.assertEqual(records[0]["ref"], make_uuid(1).replace("-", ""))
         self.assertEqual(records[1]["parentRef"], records[0]["ref"])
 
     def test_ref_is_stable_when_an_appended_uuid_collides_with_its_prefix(self) -> None:
@@ -547,15 +539,103 @@ class BridgeReadTests(unittest.TestCase):
         t.user("single prompt")
         path = self.write(t)
         before = self.read_ok()["records"]
-        self.assertEqual(before[0]["ref"], "4f1c2a9e")
         t.assistant("next answer")  # shares the 4f1c2a9e prefix
         path.write_text(t.text(), encoding="utf-8")
         after = self.read_ok()["records"]
-        self.assertEqual(after[0]["ref"], "4f1c2a9e")
-        self.assertEqual(after[0]["parentRef"], before[0]["parentRef"])
-        self.assertEqual(after[1]["parentRef"], "4f1c2a9e")
-        self.assertGreater(len(after[1]["ref"]), 8)
+        self.assertEqual(after[0], before[0])
+        self.assertEqual(after[1]["parentRef"], before[0]["ref"])
         self.assertEqual(len({r["ref"] for r in after}), 2)
+
+    def test_refs_do_not_depend_on_earlier_or_tied_timestamps(self) -> None:
+        t = Transcript()
+        t.user("first prompt")
+        path = self.write(t)
+        before = self.read_ok()["records"][0]
+        t.assistant("answer with earlier timestamp")
+        t.assistant("answer with tied timestamp")
+        records = [json.loads(line) for line in t.lines]
+        records[1]["timestamp"] = "2000-01-01T00:00:00Z"
+        records[2]["timestamp"] = records[0]["timestamp"]
+        path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+        after = self.refs_of(self.read_ok())
+        self.assertEqual(after["first prompt"]["ref"], before["ref"])
+        self.assertEqual(after["answer with earlier timestamp"]["parentRef"], before["ref"])
+        self.assertEqual(
+            after["answer with tied timestamp"]["parentRef"],
+            after["answer with earlier timestamp"]["ref"],
+        )
+
+    def test_refs_are_stable_when_a_partial_tail_completes(self) -> None:
+        t = Transcript()
+        t.user("kept prompt")
+        t.assistant("tail answer")
+        complete = t.text()
+        first_line, tail_line = complete.rstrip("\n").split("\n")
+        path = self.write(t)
+        path.write_text(first_line + "\n" + tail_line[:20], encoding="utf-8")
+        partial = self.read_ok()
+        self.assertTrue(partial["coverage"]["pendingTail"])
+        path.write_text(complete, encoding="utf-8")
+        done = self.read_ok()
+        self.assertEqual(done["records"][0], partial["records"][0])
+        self.assertEqual(done["records"][1]["parentRef"], partial["records"][0]["ref"])
+
+    def test_refs_are_stable_when_subagent_records_grow_or_appear(self) -> None:
+        t = Transcript()
+        t.user("delegate")
+        t.tool_use("toolu_task", "Task", {"prompt": "look"})
+        t.tool_result("toolu_task", "found it", toolUseResult={"agentId": "a1b2c3"})
+        self.write(t)
+        before = self.read_ok()["records"]
+
+        def sub_line(uid: str, parent, text: str, stamp: str) -> str:
+            return json.dumps({
+                "type": "assistant", "uuid": uid, "parentUuid": parent, "sessionId": SESSION,
+                "version": VERSION, "timestamp": stamp, "isSidechain": True, "agentId": "a1b2c3",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+            })
+
+        folder = self.project / SESSION / "subagents"
+        folder.mkdir(parents=True)
+        sub = folder / "agent-a1b2c3.jsonl"
+        one = make_uuid(900)
+        sub.write_text(sub_line(one, None, "sub one", "2000-01-01T00:00:00Z") + "\n", encoding="utf-8")
+        discovered = self.read_ok()["records"]
+        self.assertEqual([r for r in discovered if not r["agentId"]], before)
+        sub_one = next(r for r in discovered if r["agentId"])
+        self.assertEqual(sub_one["ref"], one.replace("-", ""))
+        task_call = next(r for r in before if r["tool"] == "Task")
+        self.assertEqual(sub_one["parentRef"], task_call["ref"])
+        sub.write_text(
+            sub.read_text(encoding="utf-8")
+            + sub_line(make_uuid(901), one, "sub two", "1999-01-01T00:00:00Z") + "\n",
+            encoding="utf-8",
+        )
+        grown = self.refs_of(self.read_ok())
+        self.assertEqual(grown["sub one"], sub_one)
+        self.assertEqual(grown["sub two"]["parentRef"], sub_one["ref"])
+
+    def test_multiple_blocks_of_one_uuid_have_deterministic_distinct_refs(self) -> None:
+        t = Transcript()
+        t.user("ask")
+        t.assistant([
+            {"type": "text", "text": "block one"},
+            {"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {"command": "ls"}},
+            {"type": "text", "text": "block three"},
+        ])
+        path = self.write(t)
+        first = self.read_ok()["records"]
+        refs = [r["ref"] for r in first]
+        self.assertEqual(len(set(refs)), 4)
+        for ref in refs:
+            self.assertRegex(ref, r"^[0-9a-f]{32}$")
+        self.assertEqual(first[1]["ref"], make_uuid(2).replace("-", ""))
+        self.assertEqual(first[2]["parentRef"], first[1]["ref"])
+        self.assertEqual(first[3]["parentRef"], first[1]["ref"])
+        t.user("later")
+        path.write_text(t.text(), encoding="utf-8")
+        second = self.read_ok()["records"]
+        self.assertEqual(second[:4], first)
 
     # serialized budget ------------------------------------------------------
     def cli_stdout(self, *args: str) -> tuple[int, str]:
