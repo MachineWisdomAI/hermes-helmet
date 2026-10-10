@@ -49,6 +49,12 @@ for required in \
     skills/helmet-epic/SKILL.md \
     skills/observe-chat/SKILL.md \
     codex.mcp.json \
+    hooks/hooks.json \
+    hooks/register.tsx \
+    hooks/register.test.tsx \
+    types/index.d.ts \
+    src/hermes_helmet/claude_mod_toolchain.py \
+    tests/test_claude_mod_toolchain.py \
     mcp/captains-bridge/server.py \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
@@ -173,6 +179,22 @@ PYTHONPATH=src "$PYTHON_BIN" -m unittest discover -s tests -v
         echo "verify: skipped Captain's Bridge view checks (node not found)" >&2
     fi
 )
+
+# Captain's Bridge Claude Code mod: run the real `claude plugin validate` and
+# `claude plugin test` with the exact checked CLI, no account credentials, and
+# fail on any call outside the read-only allowlist. CI must have the CLI; a
+# local worker without it skips with a notice (CI is the authority).
+if command -v claude >/dev/null 2>&1; then
+    PYTHONPATH=src "$PYTHON_BIN" -m hermes_helmet.claude_mod_toolchain \
+        --check-binary "$(command -v claude)"
+    PYTHONPATH=src "$PYTHON_BIN" -m hermes_helmet.claude_mod_toolchain \
+        --check-mod "$(command -v claude)" .
+elif [ -n "${CI:-}" ]; then
+    echo "verify: the exact checked Claude Code CLI is required in CI for the Bridge mod" >&2
+    exit 1
+else
+    echo "verify: skipped Bridge mod validate/test (claude not found; CI is the authority)" >&2
+fi
 
 # Compose file must parse as YAML-ish structure (no docker required).
 "$PYTHON_BIN" - <<'PY'

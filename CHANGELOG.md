@@ -5,6 +5,24 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### Claude Code Captain’s Bridge mod (version bump pending)
+
+- Add the Captain’s Bridge mod skeleton to the Claude plugin
+  ([#68](https://github.com/MachineWisdomAI/hermes-helmet/issues/68), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)). A hooks
+  module registers `/captains-bridge` (immediate) and opens a pane bound to the
+  exact `$.session.id()` without starting a turn or messaging the first
+  officer; non-drawing surfaces get a text status. `clear`, `resume`, `fork`
+  and session end end the binding and show “This conversation changed. Run
+  /captains-bridge to open the Bridge for it.” Claude Code older than 2.1.293
+  is told which version is needed. The manifest names a `PluginState`/
+  `BridgeState` type contract and `userConfig` (`helmetCommand`,
+  `explanationModel`, `explanationTimeoutSeconds`, `showMeCommand`,
+  `retroCommand`). CI installs an exact, checksum-verified Claude Code 2.1.296,
+  runs `claude plugin validate` and `claude plugin test` without credentials,
+  and fails on any call outside the read-only allowlist. The Codex manifest, MCP
+  packaging and the skills are unchanged.
+
 ### 0.5.0
 
 - Captain’s Bridge Refresh records now rereads the exact bound chat directly

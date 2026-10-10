@@ -32,6 +32,12 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Verify Jujutsu version
         run: PYTHONPATH=src python -m hermes_helmet.jj_toolchain --check-binary "$(command -v jj)"
+      - name: Install checked Claude Code CLI
+        run: |
+          PYTHONPATH=src python -m hermes_helmet.claude_mod_toolchain --bin-dir "$RUNNER_TEMP/claude-bin"
+          echo "$RUNNER_TEMP/claude-bin" >> "$GITHUB_PATH"
+      - name: Verify Claude Code CLI version
+        run: PYTHONPATH=src python -m hermes_helmet.claude_mod_toolchain --check-binary "$(command -v claude)"
       - name: Run product verification
         run: scripts/verify.sh
       - name: Run minimum quickstart and setup profiles
