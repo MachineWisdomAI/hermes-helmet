@@ -211,8 +211,10 @@ What the Bridge shows and does not show:
 The mod's calls are limited in CI to a read-only allowlist: `$.session.id`,
 `$.session.version`, `$.process.run`, `$.model.complete`, `$.command.register`,
 `$.command.list`, `$.command.run`, `$.ui.open`, `$.ui.resolve`, `$.ui.status`,
-`$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It cannot write
-files, spawn agents, submit prompts, send messages or reach the network. This
+`$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It uses no
+direct network, file-write, prompt-submission, subagent or message APIs. An
+explicit Update explanation makes the one documented tool-less model request
+through Claude Code, which reaches the configured model provider. This
 release uses `$.clock.after`, `$.command.list`, `$.command.register`,
 `$.command.run`, `$.model.complete`, `$.process.run`, `$.session.id`,
 `$.session.version`, `$.state.get`, `$.state.set`, `$.ui.open` and
