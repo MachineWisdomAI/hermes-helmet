@@ -42,6 +42,8 @@ export const DISPOSITION_BACKGROUND = '#3b3a2f'
 export const MAX_TOKENS = 16000
 export const DIFFICULT_MESSAGE = "The explanation didn't match the records"
 export const EMPTY_MESSAGE = 'The explanation came back empty'
+export const WALKTHROUGH_CONFLICT_MESSAGE =
+  'The explanation changed while it was being saved; press Update to try again'
 export const TIMEOUT_MESSAGE = 'The explanation request hit its time limit'
 export const RELOAD_MESSAGE = 'Interrupted by a plugin reload'
 
@@ -661,7 +663,15 @@ async function installWalkthrough(
     },
     { ifVersion: prior?.version ?? 0 },
   )
-  if (adopted?.isSet !== true) return
+  if (adopted?.isSet !== true) {
+    // The walkthrough moved since it was read (a newer write or a cleanup
+    // restore). This generation may still own the preparing request, so settle
+    // it as a generation-qualified failure that keeps the current view rather
+    // than leaving it preparing; a request that is no longer the preparing
+    // generation is left alone.
+    await failRequest($, generation, 'failed', WALKTHROUGH_CONFLICT_MESSAGE)
+    return
+  }
   const after = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
   const settled = after?.value as BridgeState['request'] | null | undefined
   // Restore only while this adoption's own write is still the current one: the

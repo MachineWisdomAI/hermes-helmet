@@ -920,6 +920,44 @@ describe('compare-and-set collisions', () => {
     await pane.unmount()
   })
 
+  test('a walkthrough write that misses its compare-and-set settles the request and keeps the view', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Useful previous explanation' }))
+    await pressUpdate($, pane, clock)
+
+    // An older replacement commits but its acknowledgement is held.
+    delayed()
+    await pressUpdate($, pane, clock)
+    heldAck(isWalkthroughWrite)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'Cancelled older replacement' })))
+    await tick()
+    expect(fixture.releaseAck).not.toBe(null)
+    await pane.press({ key: 'cancel' })
+
+    // A newer Update holds its walkthrough write after reading its version.
+    delayed()
+    await pressUpdate($, pane, clock)
+    heldSet(isWalkthroughWrite)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'Newer replacement' })))
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+
+    // The older cleanup restores the useful view and advances the version.
+    releaseAck()
+    await tick()
+    releaseSet()
+    await tick()
+
+    const state = await probe($)
+    expect(state.request.status).not.toBe('preparing')
+    expect(state.walkthrough.body.objective).toBe('Useful previous explanation')
+    expect(h.models.length).toBe(3)
+    await pane.unmount()
+  })
+
   test('Cancel winning the final idle settlement keeps the last useful explanation', WITH, async ($, on) => {
     const h = host(on)
     const clock = (mock as any).clock(on)
