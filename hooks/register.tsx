@@ -582,7 +582,7 @@ function overviewBlocks(ctx: Ctx): any[] {
             plain
             onPress={() => ctx.act.open(item.id)}
           >
-            {item.title} <Text dimColor>[{item.status}]</Text>
+            {`${item.title} [${item.status}]`}
           </Button>
           <Text wrap="truncate-end" dimColor>
             {item.summary.replace(/\s+/g, ' ')}

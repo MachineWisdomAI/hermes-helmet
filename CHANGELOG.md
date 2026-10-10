@@ -25,7 +25,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   records, coverage counts and warnings before it replaces anything. Long
   explanations and supporting records are drawn as word-wrapped pieces, so
   scrolling never skips a whole long block, and Back stays in the fixed header.
-  The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
+  Each overview item button now carries its title and status as one string
+  label, which the advertised minimum Claude Code 2.1.293 requires to draw the
+  pane. The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
   is called and nothing is sent.
 
 ### 0.9.0

@@ -276,6 +276,11 @@ describe('the overview', () => {
       expect(titles.map((b: any) => b.key)).toEqual([
         'item:widget', 'item:gadget', 'item:notes', 'refresh',
       ])
+      // Claude Code 2.1.293 rejects a Button with anything but one string label.
+      // The item Button carries title and status as one label, no nested Text.
+      const item = titles.find((b: any) => b.key === 'item:widget')
+      expect(typeof item.text).toBe('string')
+      expect(item.text).toMatch(/\[[^\]]+\]$/)
       expect(await pane.find({ text: 'Fix the gadget on empty input' })).not.toBe(undefined)
       expect(await pane.find({ text: 'The gadget still fails on empty input.' })).not.toBe(undefined)
       await pane.unmount()
