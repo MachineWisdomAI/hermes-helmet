@@ -1293,8 +1293,12 @@ occurred when it has not.
   store, or session.
 - Default deny: only allowlisted owners (`{owners}`) and repositories
   (`{repos}`) are in scope.
-- Dispatch requires the `{policy.dispatch_label}` label. Ready triage uses
-  `{policy.ready_label}`.
+- Issue implementation requires the `{policy.dispatch_label}` label. Ready
+  triage uses `{policy.ready_label}`. The label governs issue implementation
+  only: reviewing an existing pull request does not use it. A pending native
+  GitHub review request for `{worker}` inside the configured repository
+  allowlist authorizes the review, and any request GitHub permits (including a
+  fork pull request) follows the same path.
 - Trusted human review is limited to repository associations: {humans}.
 - Trusted automation is limited to exact bot logins: {bots}.
 - Implement and repair pull requests as `{worker}`. Never approve your own head

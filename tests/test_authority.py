@@ -87,6 +87,13 @@ class AuthorityTests(unittest.TestCase):
         self.assertIn("Captain's independent review", contract)
         self.assertIn("must not be stored as a `gh` profile", contract)
         self.assertIn("Default deny", contract)
+        # The dispatch label governs issue implementation only; a native
+        # review request authorizes a pull-request review within the allowlist.
+        self.assertIn("Issue implementation requires", contract)
+        self.assertIn("does not use it", contract)
+        self.assertIn("native", contract)
+        self.assertIn("review request", contract)
+        self.assertNotIn("Dispatch requires", contract)
         self.assertIn("defaults to unattended merge", contract)
         self.assertIn("8640", contract)
         self.assertIn("bounded elapsed windows", contract)

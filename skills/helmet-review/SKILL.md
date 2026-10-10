@@ -46,11 +46,19 @@ under `worker_github_login`. You write no per-PR instructions.
 
 ## Read the result
 
-Use GitHub notifications and the existing `helmet issue` status/recovery
-facilities; do not add a polling loop. Read the worker's formal review on the
-PR: `APPROVE` or `REQUEST_CHANGES`, bound to the reviewed commit. The task
-closeout holds the review URL, verdict, reviewed commit, and six-question
-audit. A blocked task means missing evidence or access, never a verdict.
+Read the worker's formal review from GitHub itself:
+
+```sh
+gh api repos/OWNER/REPO/pulls/PR_NUMBER/reviews \
+  --jq '.[] | {reviewer: .user.login, verdict: .state, commit: .commit_id, url: .html_url, submitted_at}'
+```
+
+`verdict` is `APPROVE` or `REQUEST_CHANGES`, bound to the reviewed `commit`.
+Read the task's closeout through the existing Kanban task status and recovery
+facilities, which hold the review URL, verdict, reviewed commit, and
+six-question audit; a task in a blocked state means missing evidence or access,
+never a verdict. Do not add a review/wait CLI verb, a watcher, or a polling
+loop.
 
 Before merging, compare the reviewed commit with the PR's current head. The
 worker review does not create a repair task, authorize merge, or replace your
