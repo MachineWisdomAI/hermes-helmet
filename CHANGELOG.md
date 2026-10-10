@@ -5,6 +5,25 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.9.0
+
+- Show the Captain’s Bridge Changes First view in the Claude mod
+  ([#69](https://github.com/MachineWisdomAI/hermes-helmet/issues/69), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)). The pane
+  runs `helmet bridge read` for the bound session (30 s limit, exact session ID,
+  known transcript path when present), validates the schema major and session
+  before adopting it, and draws one element tree for terminal and desktop:
+  objective and outcome, then What changed, What remains unresolved and Other
+  recorded activity, with the completion report and the disposition as separate
+  labeled boxes. Item detail adds actor-labeled steps, View before and after
+  only where supported, evidence-bound links, elapsed time from cited records,
+  collapsed supporting records and Back with its place restored. Refresh records
+  rereads saved records only, keeps the view stack and selection, never restamps
+  the walkthrough’s `readAt`, and shows “Explanation read records at {readAt};
+  {n} newer records since.” Reader failures name the cause and fix and keep the
+  last useful view. The call-allowlist parser accepts Claude Code’s
+  `(via helper)` tag. No model is called and nothing is sent.
+
 ### 0.8.0
 
 - Add the Captain’s Bridge mod skeleton to the Claude plugin

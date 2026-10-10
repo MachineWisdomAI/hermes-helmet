@@ -75,14 +75,42 @@ instructions (and its own MCP server) only. The skills above are unchanged and
 keep working if your organization policy disables mods; only the Bridge is
 skipped.
 
-This release is the mod skeleton. Run `/captains-bridge` in any session to open
+This release adds the reader and the Changes First view. Run `/captains-bridge` in any session to open
 the Captain's Bridge pane beside the conversation. It is bound to that exact
 session ID, starts no turn and messages no one, so it can be opened while the
 first officer is working and at narrow terminal widths. It never opens by
 itself and runs no timers. In VS Code and headless or SDK sessions, where no
-pane draws, the command returns a short text status instead. The walkthrough,
-refresh, background explanation, Show Me and Retro arrive in later releases
-under the same state contract.
+pane draws, the command returns a short text status instead. The background
+explanation, Show Me and Retro arrive in later releases under the same state
+contract.
+
+The Bridge now reads the session's saved records and draws the Changes First
+view. Opening the pane (and **Refresh records**) runs
+`helmet bridge read --session <id>` for this exact conversation, adding
+`--transcript <path>` when the plugin saw the path at session start; otherwise
+the reader looks the session up by its exact ID. The reader is read-only, the
+call stops after 30 seconds, and no model is called and no message is sent.
+Until an explanation exists the pane shows record counts, coverage and
+**Refresh records**, never the raw transcript. **Update explanation** arrives
+in a later release; a walkthrough shown here is drawn from the plugin state
+contract, with its objective and outcome first, then *What changed*, *What
+remains unresolved* and *Other recorded activity*. Opening an item shows its
+explanation, actor-labeled handoff, review and repair steps, the completion
+report and the disposition as separate labeled boxes, **View before and
+after** only where the records support one, links whose address appears in a
+cited record, elapsed time from the cited record timestamps, and the
+supporting records collapsed. **Back** restores the previous item and scroll
+position. A completed run or a quiet interval is never presented as accepted
+delivery or a stall.
+
+**Refresh records** rereads only the saved records. It keeps your place and
+never changes the time the explanation read the records. When the records have
+moved on, the header says "Explanation read records at {readAt}; {n} newer
+records since." and lists read time and coverage warnings. If `helmet` cannot
+be started or is too old, exits without a reader error, prints something that
+is not the expected JSON, or speaks an incompatible schema, the pane names the
+cause and the fix and keeps the last useful view; set `helmetCommand` to an
+absolute path when Claude Desktop does not inherit your shell `PATH`.
 
 If the conversation changes (`/clear`, `/resume`, a fork, or the session
 ends), the Bridge ends its binding and shows exactly: "This conversation

@@ -60,6 +60,7 @@ ALLOWED_CALLS = frozenset(
     }
 )
 _CALLS_RE = re.compile(r"^(?P<module>\S+) calls: (?P<calls>.+)$")
+_VIA_RE = re.compile(r"\s+\(via [A-Za-z_$][A-Za-z0-9_$]*\)$")
 _CALL_RE = re.compile(r"^\$\.[a-z][A-Za-z]*\.[a-z][A-Za-z]*$")
 
 
@@ -221,7 +222,12 @@ def calls_from_validation(report_text: str) -> dict[str, list[str]]:
             match = _CALLS_RE.match(note)
             if match is None:
                 continue
-            names = [part.strip() for part in match.group("calls").split(",")]
+            # Claude Code tags a call made through a local helper function,
+            # `$.process.run (via runReader)`.  The call itself is still
+            # checked against the allowlist; only that tag is removed.
+            names = [
+                _VIA_RE.sub("", part).strip() for part in match.group("calls").split(",")
+            ]
             if not names or any(_CALL_RE.match(name) is None for name in names):
                 raise ClaudeModToolchainError(f"validation calls are unparseable: {note!r}")
             found.setdefault(match.group("module"), []).extend(names)
