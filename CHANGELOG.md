@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.10.0
+### 0.11.0
 
 - Show the Captain’s Bridge Changes First view in the Claude mod
   ([#69](https://github.com/MachineWisdomAI/hermes-helmet/issues/69), part of
@@ -30,7 +30,17 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   pane. The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
   is called and nothing is sent.
 
+### 0.10.0
+
+- Captain’s Bridge Show Me and Retro now state a portable skill-discovery path
+  (`$CODEX_HOME/skills`, `.agents/skills`, plugin skills), require the
+  originating chat identity to match, and stop with a clear message rather than
+  substitute a skill when one is missing. The panel separates “delivered to this
+  chat” from skill completion, and optional setup is documented.
+
 ### 0.9.0
+
+Show Me and Retro in the Claude Bridge.
 
 - Run the Captain’s installed Show Me and Retro commands from the Claude
   Bridge pane

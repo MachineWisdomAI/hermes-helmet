@@ -36,7 +36,7 @@ function skillPrompt(skill,workItem){
  const threadId=deck?.threadId||portableView?.threadId;
  if(!threadId)throw Error('This view has no chat reference. Open its walkthrough before requesting a skill.');
  const scope='Originating chat: codex://threads/'+threadId+'. Verify that CODEX_THREAD_ID matches this chat before proceeding; if it differs, report the mismatch and stop.';
- const discovery='Read the installed skill before applying it. If it is not installed or unavailable, report that clearly and stop; do not silently substitute another skill.';
+ const discovery='Skill discovery: use the skill if it appears in this session’s available skills; otherwise look for its SKILL.md under $CODEX_HOME/skills (default ~/.codex/skills), the repository’s .agents/skills, or the Hermes Helmet plugin’s skills. Read the installed skill and follow it, respecting its license. If it is not installed or unavailable, say so plainly, point to the optional setup in the Captain’s Bridge README, and stop; do not silently substitute another skill or imitate it.';
  if(skill==='retro')return 'Use the installed $retro skill for a retrospective of this coding session. Present suggestions for improving future runs, grounded in the session’s sources. Do not apply the suggestions or resume the underlying project work.\n\n'+scope+'\n'+discovery;
  const reference=workItem?{title:workItem.title,summary:workItem.summary}:{objective:deck.walkthrough?.objective};
  return 'Use the installed $show-me skill to create a visual explanation of '+(workItem?'the selected work below.':'the substantive work in this chat, excluding viewer setup and navigation.')+' Show the result inside Codex and keep generated artifacts outside tracked project files. This is an explanation request; do not implement changes or resume the underlying project work.\n\n'+scope+'\n'+discovery+'\n\nReference material from the walkthrough; verify it against the original source records:\n'+JSON.stringify(reference);
@@ -48,11 +48,11 @@ async function requestSkill(skill,workItem,b){
   const text=skillPrompt(skill,workItem);messagePending=true;if(b)b.disabled=true;error('');status.hidden=false;status.textContent='Requesting '+label+' in this chat…';
   const result=await rpc('ui/message',{role:'user',content:[{type:'text',text}]});
   if(result?.isError)throw Error(result.content?.find(c=>c.type==='text')?.text||'The request could not be sent.');
-  status.textContent=label+' requested in this chat. The first officer will respond in the conversation.';
+  status.textContent=label+' request delivered to this chat. Delivery is not completion: the skill has not necessarily started or finished, and its result will appear in the conversation.';
  }catch(e){status.hidden=true;error(e.message)}finally{messagePending=false;if(b)b.disabled=false}
 }
 function skillButton(skill,workItem){const b=button(skill==='retro'?'Retro':'Show Me',()=>requestSkill(skill,workItem,b),'button');b.title=skill==='retro'?'Suggest improvements for future sessions':'Ask for a visual explanation';b.disabled=messagePending;return b}
-function chatActions(main){append(main,append(el('div',null,'chat-actions'),skillButton('show-me'),skillButton('retro')),el('p','Visual explanation or session retrospective. The first officer responds in this chat.','action-context'))}
+function chatActions(main){append(main,append(el('div',null,'chat-actions'),skillButton('show-me'),skillButton('retro')),el('p','Sends one request to this chat only when clicked. Requires the optional Show Me or Retro skill; Retro proposes suggestions and applies nothing.','action-context'))}
 async function connectChat(){try{await rpc('ui/message',{role:'user',content:[{type:'text',text:'Open Captain’s Bridge for this current chat with an updated source-grounded walkthrough. Use the observe-chat skill, read_chat_work, and present_chat_work. Preserve current-chat scope. Do not start or resume the underlying project work.'}]});error('')}catch(e){error(e.message)}}
 let prep=null,prepTimer=null,capturing=false,backgroundDelivery=false;
 const PREP_MS=600000;
