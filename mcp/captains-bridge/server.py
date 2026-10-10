@@ -89,7 +89,10 @@ def read_view(view):
     if account is not None:
         # Treat the app's explanation as untrusted input. Its citations must
         # still belong to this exact chat; preserve when it was prepared.
-        checked = validate(account, data)
+        try:
+            checked = validate(account, data)
+        except ValueError as error:
+            raise ValueError('Some records this explanation cites are not in the chat as it is now, so records were not refreshed. ' + str(error)) from error
         original = account.get('fingerprint', '')
         explained = account.get('explainedAt', '')
         if not isinstance(original, str) or not re.fullmatch(r'[0-9a-f]{64}', original):

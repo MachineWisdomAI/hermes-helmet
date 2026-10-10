@@ -96,7 +96,7 @@ The UI’s Refresh control rereads this exact chat and preserves selection.
 The prepared result carries an explicit chat reference and explanation so app
 calls do not depend on the model tool process’s memory. Each app read validates
 the citations again; it writes no transcript or standalone viewer file.
-If records changed it labels the explanation as older. “Update walkthrough”
+If records changed it labels the explanation as older, showing the record-read time apart from the explanation’s own source time, and never restamps or rewrites it. Refresh calls the read-only app tool directly: it sends no message to the first officer. A failed, timed-out, foreign or out-of-order refresh keeps the last view and reports why. “Update walkthrough”
 starts the background update above in this same chat. No automatic monitoring is added.
 The extension does not directly collect Hermes Docker events: use recorded
 worker results only when explicitly connected to this chat, and disclose missing

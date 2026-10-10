@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.5.0
+### 0.6.0
 
 - Captain’s Bridge can prepare an updated walkthrough in the background. The
   panel captures the originating chat and a verifiable snapshot (delivery is
@@ -16,6 +16,19 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   submission and late completion preserve the last useful view. Verified with
   synthetic protocol and panel tests only; acceptance in an installed Codex host
   is recorded separately in the pull request.
+
+### 0.5.0
+
+- Captain’s Bridge Refresh records now rereads the exact bound chat directly
+  through its read-only app tool, with no agent message, background explanation
+  or project task. Selection and navigation are kept, cited records are
+  validated against the chat as it is now, and “Records read” is shown apart
+  from “Explanation prepared from records read”. New records mark the
+  explanation older without changing its conclusions or restamping it. Read
+  errors, unsupported formats, missing evidence, timeouts, foreign and
+  out-of-order responses keep the last useful view and report the limitation;
+  a partially written final record is flagged rather than shown as a complete
+  chat.
 
 ### 0.4.0
 

@@ -17,7 +17,7 @@ run("source(['source'])");assert.match(text(roots.app),/<img src=x onerror=alert
 const walk=e=>[e,...e.children.flatMap(walk)];
 assert.ok(walk(roots.app).some(e=>e.tagName==='a'&&e.href==='https://github.com/example/repo/pull/1'&&e.rel.includes('noopener')),'Evidence opens the original referenced record.');
 run('back();back();back()');assert.equal(window.scrollY,177);assert.match(text(roots.app),/What changed/);
-run("navigate({page:'work',id:'interval'});payload._meta.deck.explanationStale=true;receive(payload)");assert.match(text(roots.app),/Records changed/);assert.match(text(roots.app),/Not accepted/);
+run("navigate({page:'work',id:'interval'});payload._meta.deck.explanationStale=true;receive(payload)");assert.match(text(roots.app),/Newer records were read/);assert.match(text(roots.app),/Not accepted/);
 // Focus returns to the control that opened the work, and the overview keeps time details collapsed.
 run("navigate({page:'overview'})");assert.match(text(roots.app),/Elapsed time and gaps/);
 const row=walk(roots.app).find(e=>e.tagName==='button'&&e.id==='work-interval');assert.ok(row);row.onclick();
