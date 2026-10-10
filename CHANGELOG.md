@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.9.0
+### 0.10.0
 
 - Show the Captain’s Bridge Changes First view in the Claude mod
   ([#69](https://github.com/MachineWisdomAI/hermes-helmet/issues/69), part of
@@ -27,6 +27,8 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   scrolling never skips a whole long block, and Back stays in the fixed header.
   The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
   is called and nothing is sent.
+
+### 0.9.0
 
 - Run the Captain’s installed Show Me and Retro commands from the Claude
   Bridge pane
