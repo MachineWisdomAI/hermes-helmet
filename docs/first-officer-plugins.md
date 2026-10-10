@@ -178,6 +178,60 @@ in this repository.
 Confirm with `claude plugin list` or `codex plugin marketplace list` when
 those CLIs are on the host.
 
+#### Codex: update and activation
+
+Each release carries a version bump in `.codex-plugin/plugin.json` (kept equal
+to the Claude manifest, `pyproject.toml` and the package version by
+`scripts/mw-version.py`), because a third-party marketplace does not
+auto-update.
+
+```sh
+codex plugin marketplace upgrade hermes-helmet
+codex plugin list --marketplace hermes-helmet --json
+```
+
+`codex plugin marketplace upgrade hermes-helmet` refreshes the marketplace
+catalog and installs the plugin's new version. Confirm what is installed with
+`codex plugin list --marketplace hermes-helmet --json`, which reports the
+plugins and versions installed from that marketplace; `codex plugin marketplace
+list` reports marketplace roots only, not installed versions.
+
+Updating replaces the plugin's files on disk. The running connection is
+separate: the plugin's MCP server (`codex.mcp.json` →
+`mcp/captains-bridge/server.py`) is started per session and skills are read when
+a session starts, so an update is picked up by starting a new Codex session or
+chat. Where the host requires it, that single new session is the one
+consolidated activation step; repeated global Codex restarts are not an update
+procedure and are not needed. A listed version or a successful install proves
+the installed files, not that a running connection or panel has adopted them.
+
+The plugin package is the repository tree selected by the marketplace entry. It
+needs no local marketplace, private toolkit or personal path. It does not
+contain chat records, screenshots, research artifacts, credentials or local
+prototypes; the Bridge reads the invoking chat's existing records at run time
+and writes nothing.
+
+#### Captain’s Bridge: host and storage compatibility
+
+| Area | Supported | Not supported or unverified |
+| --- | --- | --- |
+| Host | Codex with plugin MCP apps and the `CODEX_THREAD_ID` environment variable. | Other Codex-compatible hosts; the Claude plugin does not load this server (see the Claude Code section for its own pane). |
+| Runtime | Python 3.11 or newer on the host running the plugin's MCP server. | Older Python: the server does not start. |
+| Chat storage | Read-only access to the selected chat's existing local Codex records in the format the reader recognizes. | Any other or newer record format: rejected with an explicit message, never guessed. |
+| Background “Update walkthrough” | Only on a host that advertises `hostCapabilities.backgroundWalkthroughDelivery`. | The measured installed Codex does not: the button ends immediately, keeps the last view and starts no snapshot, agent or timer. |
+| Show Me / Retro | Sent on an explicit click to the originating chat when a skill with that name is discoverable. | Missing skill: the chat reports it and stops; nothing is substituted. |
+
+Failure states are visible in the panel and keep the last good view: missing
+chat identity (needs binding), unknown or foreign chat, empty or unsupported
+records, partially written final record, refresh error, stale source (flagged
+older), and the unsupported-background boundary. A successful tool call is not
+proof that a panel rendered; rendering is established only by opening the
+Bridge in Codex. The protocol, package and fixture tests in `scripts/verify.sh`
+do not stand in for that, and the Bridge guide records which cases were
+exercised in an installed Codex and which only with fixtures (for example,
+missing optional skills were tested with fixtures, not by removing installed
+skills).
+
 ## Starting a first-officer session
 
 After setup, keep non-secret deployment settings in a user-owned shell file
