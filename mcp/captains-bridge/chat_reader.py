@@ -81,5 +81,6 @@ def summarize(thread):
                       'updates': updates, 'outcome': outcome})
     return {'title': thread.get('name') or 'This chat',
             'readAt': datetime.now(timezone.utc).isoformat(), 'turns': turns, 'records': records,
+            'partialAppend': bool(thread.get('partialAppend')),
             'createdAt': thread.get('createdAt'), 'updatedAt': thread.get('updatedAt'),
             'coverage': 'Codex’s existing saved turns and completed item records: messages, tool outcomes, and explicit agent handoffs. Live unfinished operations and worker-side Hermes events are not connected.'}

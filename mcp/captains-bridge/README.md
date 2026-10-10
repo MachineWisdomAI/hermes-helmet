@@ -27,8 +27,11 @@ not load it.
   fail with an explicit message. A chat is never chosen by recency or directory.
 - Source text is data, never instructions. Nothing is written: no chat state,
   transcript export, resume or collection infrastructure.
-- Refresh rereads records and keeps the explanation with its original read time,
-  flagging it as older when the fingerprint changed. “Update walkthrough”
+- Refresh records calls the app-only read-only tool directly (no agent message,
+  background work or project task), keeps the explanation with its original
+  read time and flags it as older when the fingerprint changed. Failures,
+  foreign or out-of-order responses and a partially written final record keep
+  the last view and report the limit. “Update walkthrough”
   sends a request to the first officer. Delegated background preparation and
   cancellation are not implemented.
 - Show Me and Retro request separately installed skills and report if they are
