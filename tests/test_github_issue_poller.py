@@ -2001,12 +2001,29 @@ class ReviewRequestIntakeRunner:
         self.events = events if events is not None else {}
         self.creates: list[list[str]] = []
         self.tasks: dict[str, str] = {}
+        self.statuses: dict[str, str] = {}
         self.calls: list[list[str]] = []
 
     def run(self, command: list[str]) -> str:
         self.calls.append(command)
         if command[:3] == [poller.GH, "api", "user"]:
             return "agent-bot\n"
+        if command[:4] == [poller.HERMES, "kanban", "--board", "default"] and "list" in command:
+            listed = []
+            for create in self.creates:
+                key = create[create.index("--idempotency-key") + 1]
+                task_id = self.tasks[key]
+                if any(item["id"] == task_id for item in listed):
+                    continue
+                listed.append(
+                    {
+                        "id": task_id,
+                        "created_by": poller.CREATED_BY,
+                        "branch_name": create[create.index("--branch") + 1],
+                        "status": self.statuses.get(task_id, "ready"),
+                    }
+                )
+            return json.dumps(listed)
         if command[:3] == [poller.GH, "api", "--paginate"]:
             endpoint = command[-1]
             if endpoint.startswith(f"repos/{REVIEW_SLUG}/pulls?"):
@@ -2109,9 +2126,81 @@ class ReviewRequestIntakeTests(unittest.TestCase):
                 [review_pull(7)], {7: [review_request_event(11)]}
             )
             poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.statuses["t_review_1"] = "done"
             runner.events[7].append(review_request_event(20))
             poller.run_once(policy, root / "l.sqlite3", runner)
             self.assertEqual(len(runner.tasks), 2)
+
+    def test_push_while_pending_keeps_one_task_and_selects_no_second_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            pulls = [review_pull(7)]
+            runner = ReviewRequestIntakeRunner(pulls, {7: [review_request_event(11)]})
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            pulls[0] = review_pull(7, sha="c" * 40)
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(result.errors, [])
+            # The head moved, but the request is the same: one task, which the
+            # worker points at the live head; no second attempt is created.
+            self.assertEqual(len(runner.tasks), 1)
+
+    def test_renewed_request_waits_for_the_active_attempt_then_is_assigned(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            runner = ReviewRequestIntakeRunner(
+                [review_pull(7)], {7: [review_request_event(11)]}
+            )
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.events[7].append(review_request_event(20))
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            # At most one active attempt per pull request.
+            self.assertEqual(len(runner.tasks), 1)
+            self.assertEqual(result.review_tasks, [])
+            self.assertEqual(result.errors, [])
+            # A blocked attempt does not hold the renewed request.
+            runner.statuses["t_review_1"] = "blocked"
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual(
+                [request.request_id for request, _ in result.review_tasks], [20]
+            )
+            self.assertIn("review/demo-repo-pr-7-20", runner.creates[-1])
+
+    def test_completed_review_is_not_restarted_by_a_push_but_is_by_a_renewal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            pulls = [review_pull(7)]
+            runner = ReviewRequestIntakeRunner(pulls, {7: [review_request_event(11)]})
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.statuses["t_review_1"] = "done"
+            # Once GitHub records the review the request is no longer pending,
+            # so a later push alone produces nothing.
+            pulls[0] = review_pull(7, reviewers=(), sha="d" * 40)
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.tasks), 1)
+            # A renewed request at the same SHA is a fresh full review.
+            pulls[0] = review_pull(7)
+            runner.events[7].append(review_request_event(30))
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual([r.request_id for r, _ in result.review_tasks], [30])
+            body = runner.creates[-1][runner.creates[-1].index("--body") + 1]
+            self.assertIn(REVIEW_HEAD, body)
+
+    def test_task_carries_request_time_for_closeout_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            event = review_request_event(11)
+            event["created_at"] = "2026-10-10T12:00:00Z"
+            runner = ReviewRequestIntakeRunner([review_pull(7)], {7: [event]})
+            poller.run_once(self.policy(root), root / "l.sqlite3", runner)
+            body = runner.creates[0][runner.creates[0].index("--body") + 1]
+            self.assertIn("Review requested at: 2026-10-10T12:00:00Z", body)
+            self.assertIn("adopt it, do not post a second review", body)
+            self.assertIn("never satisfies this one", body)
 
     def test_repeated_cycle_without_a_new_request_reuses_the_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

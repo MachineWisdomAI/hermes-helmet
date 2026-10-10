@@ -881,6 +881,7 @@ class ReviewRequest:
     pull_number: int
     head_sha: str
     request_id: int
+    requested_at: str | None = None
 
     @property
     def pull_url(self) -> str:
@@ -894,6 +895,11 @@ class ReviewRequest:
     def branch(self) -> str:
         name = self.repository.slug.rsplit("/", 1)[1].lower()
         return f"review/{name}-pr-{self.pull_number}-{self.request_id}"
+
+    @property
+    def branch_prefix(self) -> str:
+        name = self.repository.slug.rsplit("/", 1)[1].lower()
+        return f"review/{name}-pr-{self.pull_number}-"
 
     @property
     def idempotency_key(self) -> str:
@@ -919,12 +925,13 @@ def _requests_worker(raw: dict[str, object], identity: str) -> bool:
 
 def _latest_request_id(
     repository: Repository, pull_number: int, identity: str, runner: Runner
-) -> int:
+) -> tuple[int, str | None]:
     records = _github_api(
         runner,
         f"repos/{repository.slug}/issues/{pull_number}/events?per_page=100",
     )
     latest = 0
+    requested_at: str | None = None
     for raw in records:
         if not isinstance(raw, dict) or raw.get("event") != "review_requested":
             continue
@@ -937,12 +944,15 @@ def _latest_request_id(
             and isinstance(event_id, int)
             and not isinstance(event_id, bool)
         ):
-            latest = max(latest, event_id)
+            if event_id > latest:
+                latest = event_id
+                created = raw.get("created_at")
+                requested_at = created if isinstance(created, str) and created else None
     if latest < 1:
         raise PollerError(
             f"no review-request event for {identity} on {repository.slug}#{pull_number}"
         )
-    return latest
+    return latest, requested_at
 
 
 def list_review_requests(
@@ -980,13 +990,15 @@ def list_review_requests(
                 warnings.append(f"Skipped malformed review request from {repository.slug}.")
                 continue
             try:
-                request_id = _latest_request_id(
+                request_id, requested_at = _latest_request_id(
                     repository, number, policy.github_identity, runner
                 )
             except PollerError as exc:
                 errors.append(f"Failed to read review request for {repository.slug}#{number}: {exc}")
                 continue
-            requests.append(ReviewRequest(repository, number, sha.lower(), request_id))
+            requests.append(
+                ReviewRequest(repository, number, sha.lower(), request_id, requested_at)
+            )
     return requests, warnings, errors
 
 
@@ -1016,6 +1028,7 @@ def create_review_task(request: ReviewRequest, policy: Policy, runner: Runner) -
                 head_sha=request.head_sha,
                 request_url=request.request_url,
                 policy=policy,
+                requested_at=request.requested_at,
             ),
             "--assignee",
             policy.assignee,
@@ -1040,12 +1053,66 @@ def create_review_task(request: ReviewRequest, policy: Policy, runner: Runner) -
     return task_id
 
 
+# Kanban statuses in which an earlier review attempt is still being worked.
+# Blocked and finished attempts are not active: a renewed request supersedes a
+# blocked one, and a completed one is history.
+_INACTIVE_REVIEW_STATUSES = frozenset({"done", "blocked", "archived"})
+
+
+def _active_review_branches(policy: Policy, runner: Runner) -> list[str]:
+    """Branches of review tasks still active on the board (existing Kanban list)."""
+
+    output = runner.run(
+        [
+            HERMES,
+            "kanban",
+            "--board",
+            policy.board,
+            "list",
+            "--json",
+            "--assignee",
+            policy.assignee,
+        ]
+    )
+    try:
+        tasks = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise PollerError("Kanban list returned invalid JSON") from exc
+    if not isinstance(tasks, list):
+        raise PollerError("Kanban list returned invalid task data")
+    return [
+        task["branch_name"]
+        for task in tasks
+        if isinstance(task, dict)
+        and task.get("created_by") == CREATED_BY
+        and isinstance(task.get("branch_name"), str)
+        and task["branch_name"].startswith("review/")
+        and task.get("status") not in _INACTIVE_REVIEW_STATUSES
+    ]
+
+
 def reconcile_review_requests(
     policy: Policy, runner: Runner
 ) -> tuple[list[tuple[ReviewRequest, str]], list[str], list[str]]:
     requests, warnings, errors = list_review_requests(policy, runner)
     assigned: list[tuple[ReviewRequest, str]] = []
+    if not requests:
+        return assigned, warnings, errors
+    try:
+        active = _active_review_branches(policy, runner)
+    except PollerError as exc:
+        errors.append(f"Failed to read active review tasks: {exc}")
+        return assigned, warnings, errors
     for request in requests:
+        # One active attempt per PR: while an attempt for an earlier request is
+        # still active, hold the renewed request; a later cycle submits it
+        # once that attempt finishes. The same request always reuses its task,
+        # and the worker re-reads the live head, so a push needs no new task.
+        if any(
+            branch.startswith(request.branch_prefix) and branch != request.branch
+            for branch in active
+        ):
+            continue
         try:
             assigned.append((request, create_review_task(request, policy, runner)))
         except PollerError as exc:

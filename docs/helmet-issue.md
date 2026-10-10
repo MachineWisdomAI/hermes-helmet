@@ -96,8 +96,27 @@ full pull request with its currently configured model, and submits one formal
 prerequisites use the blocked/error path rather than a verdict. The closeout
 records the review URL, verdict, reviewed commit, and six-question audit. The
 review never commits, pushes, merges, or triggers a repair task; the Captain
-keeps the merge decision. Following changed heads and renewed requests are
-covered in a later release.
+keeps the merge decision.
+
+Repeating and recovering a review use the same path:
+
+- A push while a request is pending does not create a second task. The task
+  names the head selected when it was queued; the worker re-reads the live head
+  at the start and before submitting, reviews the full current snapshot, and
+  binds the review to the commit it actually examined.
+- After a completed review, a push alone starts nothing. Remove and re-request
+  the worker for a fresh full review, including at the same commit; each
+  `review_requested` event id is a new request, so an earlier approval never
+  satisfies it. The runtime's currently configured model is used.
+- The poller keeps at most one active review task per pull request (existing
+  Kanban `list`). A renewed request arriving while an earlier attempt is
+  active is submitted on the first later cycle after that attempt is done or
+  blocked.
+- An interrupted attempt recovers through the existing Kanban retry/unblock
+  facilities. The task carries the request time; the retried worker lists the
+  pull request's reviews and, if one by the worker identity was submitted at or
+  after that time, adopts it and records its URL, verdict, and commit without
+  posting again. Reviews from before the request time are never reused.
 
 ## Named-request repository enrollment
 
