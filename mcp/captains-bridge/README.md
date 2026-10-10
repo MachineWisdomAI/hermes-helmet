@@ -33,8 +33,15 @@ not load it.
   foreign or out-of-order responses and a partially written final record keep
   the last view and report the limit. “Update walkthrough” rereads only; see
   Background preparation below.
-- Show Me and Retro request separately installed skills and report if they are
-  unavailable.
+- Show Me (the chat or a selected work item) and Retro (session suggestions)
+  are optional. Each is sent only by an explicit click, as one user message to
+  the originating chat carrying its exact `CODEX_THREAD_ID`; the skill must stop
+  on a mismatch. A second click is ignored while one is pending. “Delivered to
+  this chat” means only that Codex accepted the message, not that the skill ran
+  or finished. Failures keep the Bridge view. Retro only proposes; neither
+  action implements or resumes project work. Walkthrough excerpts sent with a
+  selected item are reference data to verify against the original records.
+  Generated explanations belong outside tracked project files.
 
 ## Background preparation lifecycle
 
@@ -98,6 +105,16 @@ both from the messages above. Whether a delivery reaches the panel when the pare
 turn has already finished, and whether work continues during preparation, depend
 on Codex host behavior that synthetic tests cannot establish; they require the
 installed-host acceptance recorded in the pull request.
+
+## Optional skill setup (Show Me and Retro)
+
+Install the skills you want from their own owners and follow their licenses;
+Hermes Helmet does not bundle or fork them. Codex discovers a skill named
+`show-me` or `retro` from `$CODEX_HOME/skills` (default `~/.codex/skills`), the
+repository’s `.agents/skills`, or an installed plugin’s `skills/`. No private
+toolkit or personal path is needed. If a skill is missing, the chat says so and
+stops without substituting another skill or imitating it; the rest of the
+Bridge is unaffected.
 
 ## Checks
 
