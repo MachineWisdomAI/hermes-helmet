@@ -108,6 +108,8 @@ const fixture: {
   releaseRead: (() => void) | null
   holdSet: ((e: any) => boolean) | null
   releaseSet: (() => void) | null
+  holdAck: ((e: any) => boolean) | null
+  releaseAck: (() => void) | null
 } = {
   model: () => answered(text()),
   read: null,
@@ -118,6 +120,8 @@ const fixture: {
   releaseRead: null,
   holdSet: null,
   releaseSet: null,
+  holdAck: null,
+  releaseAck: null,
 }
 
 type Harness = {
@@ -164,6 +168,8 @@ function host(on: any, opts: { id?: string; listed?: any[] } = {}): Harness {
   fixture.releaseRead = null
   fixture.holdSet = null
   fixture.releaseSet = null
+  fixture.holdAck = null
+  fixture.releaseAck = null
   on('state.get', async (_$: any, e: any, next: any) => {
     if (e.key === 'request' && fixture.seed !== null) {
       const seeded = fixture.seed
@@ -183,7 +189,15 @@ function host(on: any, opts: { id?: string; listed?: any[] } = {}): Harness {
         fixture.releaseSet = resolve
       })
     }
-    return next(e)
+    const outcome = await next(e)
+    // Delay only the acknowledgement: the write has already committed.
+    if (fixture.holdAck !== null && fixture.holdAck(e)) {
+      fixture.holdAck = null
+      await new Promise<void>(resolve => {
+        fixture.releaseAck = resolve
+      })
+    }
+    return outcome
   })
   on('session.version', () => ({ value: { version: '2.1.296' } }))
   on('session.id', () => ({ value: opts.id ?? 'sess-a' }))
@@ -281,6 +295,18 @@ function releaseRead() {
 // release it. Only the first match is held; a retried write passes through.
 function heldSet(match: (e: any) => boolean) {
   fixture.holdSet = match
+}
+
+function heldAck(match: (e: any) => boolean) {
+  fixture.holdAck = match
+}
+
+function releaseAck() {
+  if (fixture.releaseAck !== null) {
+    const release = fixture.releaseAck
+    fixture.releaseAck = null
+    release()
+  }
 }
 
 function releaseSet() {
@@ -863,6 +889,59 @@ describe('compare-and-set collisions', () => {
     state = await probe($)
     expect(state.request.status).toBe('idle')
     expect(state.walkthrough.body.objective).toBe('Fresh accepted explanation')
+    await pane.unmount()
+  })
+
+  test('a delayed acknowledgement of a cancelled adoption cannot restore over a newer accepted explanation', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Useful previous explanation' }))
+    await pressUpdate($, pane, clock)
+
+    delayed()
+    await pressUpdate($, pane, clock)
+    heldAck(isWalkthroughWrite)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'Cancelled older replacement' })))
+    await tick()
+    expect(fixture.releaseAck).not.toBe(null)
+    await pane.press({ key: 'cancel' })
+
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Fresh accepted explanation' }))
+    await pressUpdate($, pane, clock)
+    expect((await probe($)).walkthrough.body.objective).toBe('Fresh accepted explanation')
+
+    releaseAck()
+    await tick()
+    const state = await probe($)
+    expect(state.walkthrough.body.objective).toBe('Fresh accepted explanation')
+    expect(h.models.length).toBe(3)
+    await pane.unmount()
+  })
+
+  test('Cancel winning the final idle settlement keeps the last useful explanation', WITH, async ($, on) => {
+    const h = host(on)
+    const clock = (mock as any).clock(on)
+    await open($)
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    fixture.model = () => answered(text({ ...GOOD, objective: 'Useful previous explanation' }))
+    await pressUpdate($, pane, clock)
+
+    delayed()
+    await pressUpdate($, pane, clock)
+    heldSet(isRequestIdle)
+    fixture.gate.resolve(answered(text({ ...GOOD, objective: 'Cancelled replacement' })))
+    await tick()
+    expect(fixture.releaseSet).not.toBe(null)
+    await pane.press({ key: 'cancel' })
+    releaseSet()
+    await tick()
+
+    const state = await probe($)
+    expect(state.request.status).toBe('cancelled')
+    expect(state.walkthrough.body.objective).toBe('Useful previous explanation')
+    expect(h.models.length).toBe(2)
     await pane.unmount()
   })
 })

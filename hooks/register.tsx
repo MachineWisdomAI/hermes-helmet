@@ -664,16 +664,24 @@ async function installWalkthrough(
   if (adopted?.isSet !== true) return
   const after = await $.state.get({ plugin: 'hermes-helmet', key: 'request' })
   const settled = after?.value as BridgeState['request'] | null | undefined
+  // Restore only while this adoption's own write is still the current one: the
+  // set is fenced to the version it returned, so a newer accepted explanation
+  // that landed since is never overwritten.
+  const restore = async () => {
+    await $.state.set(key, prior?.value ?? null, { ifVersion: adopted.version })
+  }
   if (settled?.generation !== generation || settled?.status !== 'preparing') {
-    const landed = await $.state.get(key)
-    await $.state.set(key, prior?.value ?? null, { ifVersion: landed?.version ?? 0 })
+    await restore()
     return
   }
-  await settleRequest($, s =>
+  const done = await settleRequest($, s =>
     s.generation === generation && s.status === 'preparing'
       ? { generation, status: 'idle', retain: s.retain === true }
       : null,
   )
+  // Cancellation or supersession won the final settlement: keep the last
+  // useful view rather than the replacement it cancelled.
+  if (!done) await restore()
 }
 
 // A resolved `api-error`: the engine carries the HTTP status and the kind it
