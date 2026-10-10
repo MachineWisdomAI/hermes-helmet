@@ -163,7 +163,7 @@ PYTHONPATH=src "$PYTHON_BIN" -m unittest discover -s tests -v
     cd mcp/captains-bridge
     "$PYTHON_BIN" -B -m unittest discover -s . -p 'test_*.py' -v
     if command -v node >/dev/null 2>&1; then
-        for check in test_view.cjs test_delivery.cjs test_actions.cjs test_refresh.cjs; do
+        for check in test_view.cjs test_delivery.cjs test_actions.cjs test_refresh.cjs test_preparation.cjs; do
             node "$check"
         done
     elif [ -n "${CI:-}" ]; then
