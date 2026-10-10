@@ -83,6 +83,22 @@ Bridge never starts it.
    cancelled request never clears a newer one. A substantive new instruction from the Captain
    supersedes the request the same way unless the Captain says to keep it.
 
+Measured host limit (installed Codex, parent turn already finished): the preparation
+agent read the originating chat and `deliver_walkthrough_update` returned a validated
+walkthrough with the captured fingerprint, read time and request identity, so delivery
+to the server worked. The originating panel did not render it: it kept the old
+explanation and its progress notice until its own 10-minute timeout, and interrupting
+the agent reported it had already completed. This server keeps no state and cannot push
+to a panel, and the panel cannot tell whether the chat turn is still active, so
+rendering in the original panel is unsupported on this route as measured. The panel
+therefore ends the attempt at once: a request reports the boundary, captures no
+snapshot, dispatches no agent and starts no timer, and the last view is kept. The
+background lifecycle runs only when the host advertises
+`hostCapabilities.backgroundWalkthroughDelivery`; the installed Codex host does not.
+Agent completion alone does not establish a successful or validated delivery, so no
+message claims one. The server-side delivery, provenance, ownership, cancellation and
+Refresh behavior are unchanged, and no second queue, retry or observer was added.
+
 Unsupported boundaries, reported rather than hidden: the server cannot itself stop
 a subagent or know the Captain issued a new instruction; the first officer does
 both from the messages above. Whether a delivery reaches the panel when the parent

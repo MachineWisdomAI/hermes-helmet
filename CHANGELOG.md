@@ -20,7 +20,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
   submission and late completion preserve the last useful view. Verified with
   synthetic protocol and panel tests only; acceptance in an installed Codex host
-  is recorded separately in the pull request.
+  is recorded separately in the pull request. Measured Codex limit: after the
+  parent turn finishes, the originating panel does not render a delivery, so a
+  request on the installed host now ends with an unsupported-boundary message
+  (no capture, dispatch or timer) unless the host advertises background delivery.
 
 ### 0.5.0
 
