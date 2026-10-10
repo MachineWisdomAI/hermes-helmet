@@ -291,12 +291,49 @@ for (const surface of SURFACES) {
     test('the explanation stays intact around a press', async ($, on) => {
       const h = host(on, { listed: names('show-me') })
       await open($)
-      fixture.selected = 'widget'
+      // Overview: the walkthrough is drawn with its item, then an item press
+      // from the actual pane opens the detail and the action keeps it intact.
       const pane = await $.ui.mount({ ...PANE, surface })
+      expect(await pane.find({ text: 'Ship the synthetic widget' })).not.toBe(undefined)
+      expect(await pane.find({ key: 'item:widget' })).not.toBe(undefined)
+      await pane.press({ key: 'item:widget' })
       await pane.press({ key: 'show-me' })
       expect(h.runs.length).toBe(1)
-      expect(await pane.find({ text: 'Objective: Ship the synthetic widget' })).not.toBe(undefined)
-      expect(await pane.find({ text: '- Add the synthetic widget (Merged)' })).not.toBe(undefined)
+      expect(h.runs[0].args).toContain('Add the synthetic widget')
+      expect(await pane.find({ text: 'Explanation' })).not.toBe(undefined)
+      expect(await pane.find({ text: 'Add the synthetic widget' })).not.toBe(undefined)
+      await pane.unmount()
+    })
+
+    test('every Refresh records press discovers commands again', async ($, on) => {
+      const h = host(on, { listed: names() })
+      await open($)
+      const pane = await $.ui.mount({ ...PANE, surface })
+      expect(await pane.find({ key: 'show-me' })).toBe(undefined)
+      const before = h.listCalls
+      h.listed.current = names('show-me')
+      await pane.press({ key: 'refresh' })
+      expect(h.listCalls).toBeGreaterThan(before)
+      await pane.press({ key: 'refresh' })
+      expect(h.listCalls).toBeGreaterThan(before + 1)
+      await pane.press({ key: 'show-me' })
+      expect(h.runs.length).toBe(1)
+      await pane.unmount()
+    })
+
+    test('the item opened in the real pane sets the scope, and back returns to the session', async ($, on) => {
+      const h = host(on, { listed: names('show-me', 'retro') })
+      await open($)
+      const pane = await $.ui.mount({ ...PANE, surface })
+      await pane.press({ key: 'item:widget' })
+      await pane.press({ key: 'retro' })
+      expect(h.runs.length).toBe(1)
+      expect(h.runs[0].args).toContain('Add the synthetic widget')
+      expect(h.runs[0].args).toContain(`${REF(1)} (2026-10-09T16:00:00Z)`)
+      expect(h.runs[0].args).toContain(`${REF(2)} (2026-10-09T16:02:30Z)`)
+      await pane.press({ key: 'back' })
+      await pane.press({ key: 'show-me' })
+      expect(h.runs[1]).toEqual({ command: 'show-me', args: 'this session' })
       await pane.unmount()
     })
   })
