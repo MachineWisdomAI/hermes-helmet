@@ -64,6 +64,8 @@ ALLOWED_TOKENS = [
 ]
 SCAN_ROOTS = (
     "mcp",
+    "hooks",
+    "types",
     "config",
     "src",
     "tests",

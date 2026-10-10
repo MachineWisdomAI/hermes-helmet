@@ -34,8 +34,26 @@ first officer to start one read-only background preparation, cancellable from th
 panel; see the lifecycle in the Bridge guide. See the
 [source and test guide](../mcp/captains-bridge/README.md). The Claude Code port
 is tracked in
-[issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55); the
-Claude plugin does not load the Bridge.
+[issue #55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55); see
+[Captain's Bridge in Claude Code](#captains-bridge-in-claude-code) for what the
+Claude plugin ships so far.
+
+### Claude Code session records
+
+`helmet bridge read --session <id> [--transcript <path>] [--max-bytes 600000]`
+reads one Claude Code session's saved records for the Claude port of the
+Bridge. It opens files read-only, finds `<id>.jsonl` under
+`$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`) by exact file name
+only, and prints `hermes-helmet.bridge.records/1` JSON. Errors exit 2 with
+`session-not-found`, `ambiguous-session`, `session-mismatch`,
+`unsupported-format` or `unreadable`. Supported Claude Code versions are
+2.0.0 up to (not including) 2.2.0; others are `unsupported-format`.
+
+Every record's `ref` (and each `parentRef`) is a full 32-hex identity derived
+from that record's own source UUID, so it does not change when records are
+appended, a partial final line completes, or subagent records appear. When one
+source UUID expands into several output records, the first keeps the UUID-derived
+ref and later blocks get a deterministic 32-hex ref from the UUID and block index.
 
 ### Claude Code
 
@@ -48,6 +66,59 @@ Claude namespaces plugin skills. After a new session starts, or after you
 reload plugins in an existing session, invoke them as
 `/hermes-helmet:setup-helmet`, `/hermes-helmet:helmet-issue`, and
 `/hermes-helmet:helmet-epic`.
+
+### Captain's Bridge in Claude Code
+
+The Claude plugin now includes the Captain's Bridge mod. A mod runs code inside
+your Claude Code sessions, unlike the Codex plugin, which still copies
+instructions (and its own MCP server) only. The skills above are unchanged and
+keep working if your organization policy disables mods; only the Bridge is
+skipped.
+
+This release is the mod skeleton. Run `/captains-bridge` in any session to open
+the Captain's Bridge pane beside the conversation. It is bound to that exact
+session ID, starts no turn and messages no one, so it can be opened while the
+first officer is working and at narrow terminal widths. It never opens by
+itself and runs no timers. In VS Code and headless or SDK sessions, where no
+pane draws, the command returns a short text status instead. The walkthrough,
+refresh, background explanation, Show Me and Retro arrive in later releases
+under the same state contract.
+
+If the conversation changes (`/clear`, `/resume`, a fork, or the session
+ends), the Bridge ends its binding and shows exactly: "This conversation
+changed. Run /captains-bridge to open the Bridge for it." It never rebinds the
+open pane on its own; run `/captains-bridge` again.
+
+Requirements:
+
+- Claude Code 2.1.293 or newer. An older host names the required version in
+  the command and the pane. Mods are early access and their API can change
+  between Claude Code releases; this release is verified on Claude Code
+  2.1.296 by an exact, checksum-pinned CLI in CI (`claude plugin validate` and
+  `claude plugin test`, with no account credentials). Re-verify when the
+  minimum changes. CI is not an installed-host check: the Terminal and Desktop
+  Code tab are confirmed by hand before a release.
+- An organization policy that allows mods.
+- The `helmet` CLI reachable from Claude Code. Sessions started by Claude
+  Desktop may not inherit your shell `PATH`; set `helmetCommand` to an absolute
+  path then.
+
+Settings (plugin `userConfig`, defaults in parentheses): `helmetCommand`
+(`helmet`), `explanationModel` (`sonnet`), `explanationTimeoutSeconds` (`180`),
+`showMeCommand` (`show-me`), `retroCommand` (`retro`). The last four take
+effect with later releases.
+
+Update with `claude plugin update hermes-helmet@hermes-helmet`, then
+`/reload-plugins` or start a new session. Third-party marketplaces do not
+auto-update, so each release carries a version bump.
+
+The mod's calls are limited in CI to a read-only allowlist: `$.session.id`,
+`$.session.version`, `$.process.run`, `$.model.complete`, `$.command.register`,
+`$.command.list`, `$.command.run`, `$.ui.open`, `$.ui.resolve`, `$.ui.status`,
+`$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It cannot write
+files, spawn agents, submit prompts, send messages or reach the network. This
+slice uses only `$.command.register`, `$.session.id`, `$.session.version`,
+`$.state.get`, `$.state.set`, `$.ui.open` and `$.ui.resolve`.
 
 ### Codex
 

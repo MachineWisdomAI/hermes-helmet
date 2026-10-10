@@ -1,13 +1,48 @@
 {
   "name": "hermes-helmet",
   "displayName": "Hermes Helmet",
-  "version": "0.7.0",
-  "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, and dependent-issue coordination.",
+  "version": "0.8.0",
+  "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, and dependent-issue coordination, plus the Captain's Bridge mod, which opens a pane bound to the current conversation with /captains-bridge.",
   "author": {
     "name": "Machine Wisdom",
     "url": "https://machine-wisdom.ai"
   },
   "homepage": "https://github.com/MachineWisdomAI/hermes-helmet",
   "repository": "https://github.com/MachineWisdomAI/hermes-helmet",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "helmetCommand": {
+      "type": "string",
+      "title": "helmet command",
+      "description": "Executable that reads session records. An absolute path is accepted, for sessions that do not inherit the shell PATH.",
+      "default": "helmet"
+    },
+    "explanationModel": {
+      "type": "string",
+      "title": "Explanation model",
+      "description": "Model alias or ID used when the explanation is updated.",
+      "default": "sonnet"
+    },
+    "explanationTimeoutSeconds": {
+      "type": "number",
+      "title": "Explanation time limit (seconds)",
+      "description": "Time limit for one explanation update.",
+      "default": 180,
+      "min": 10,
+      "max": 900
+    },
+    "showMeCommand": {
+      "type": "string",
+      "title": "Show Me command",
+      "description": "Name of the slash command for Show Me.",
+      "default": "show-me"
+    },
+    "retroCommand": {
+      "type": "string",
+      "title": "Retro command",
+      "description": "Name of the slash command for Retro.",
+      "default": "retro"
+    }
+  }
 }

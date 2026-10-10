@@ -191,6 +191,148 @@ class FirstOfficerPluginTests(unittest.TestCase):
         self.assertNotIn("mcpServers", claude)
         self.assertFalse((ROOT / "prototypes").exists())
 
+    def test_claude_manifest_declares_the_bridge_mod(self) -> None:
+        claude = _load_json(".claude-plugin/plugin.json")
+        codex = _load_json(".codex-plugin/plugin.json")
+        self.assertIn("Captain's Bridge", claude["description"])
+        types_path = _resolve_inside(ROOT, claude["types"])
+        self.assertEqual(types_path, (ROOT / "types" / "index.d.ts").resolve())
+        self.assertTrue(types_path.name.endswith(".d.ts"))
+        contract = types_path.read_text(encoding="utf-8")
+        self.assertIn("declare module 'claude-code'", contract)
+        self.assertIn("interface PluginState", contract)
+        self.assertIn("export type BridgeState", contract)
+        for field in ("binding", "records", "walkthrough", "request", "view", "pending"):
+            self.assertRegex(contract, rf"(?m)^\s+{field}: BridgeState\['{field}'\]")
+        for key in ("sessionId", "transcriptPath", "fingerprint", "generation", "retain"):
+            self.assertIn(key, contract)
+        for status in ("idle", "preparing", "failed", "cancelled", "superseded", "timed-out"):
+            self.assertIn(f"'{status}'", contract)
+        # A self-contained, types-only contract (Claude Code enforces this too).
+        self.assertNotRegex(contract, r"(?m)^\s*(import|export \{|export \*|require)\b")
+        self.assertNotIn("/// <reference", contract)
+        self.assertEqual(
+            claude["userConfig"]["helmetCommand"]["default"], "helmet"
+        )
+        defaults = {key: value["default"] for key, value in claude["userConfig"].items()}
+        self.assertEqual(
+            defaults,
+            {
+                "helmetCommand": "helmet",
+                "explanationModel": "sonnet",
+                "explanationTimeoutSeconds": 180,
+                "showMeCommand": "show-me",
+                "retroCommand": "retro",
+            },
+        )
+        self.assertIn("absolute path", claude["userConfig"]["helmetCommand"]["description"])
+        # Codex packaging is untouched by the Claude mod.
+        for key in ("hooks", "modules", "types", "userConfig"):
+            self.assertNotIn(key, codex)
+        self.assertEqual(codex["skills"], "./skills/")
+        self.assertEqual(codex["mcpServers"], "./codex.mcp.json")
+
+    def test_hooks_modules_entry_resolves_inside_plugin_root(self) -> None:
+        hooks_json = ROOT / "hooks" / "hooks.json"
+        config = json.loads(hooks_json.read_text(encoding="utf-8"))
+        self.assertEqual(list(config), ["modules"])
+        modules = config["modules"]
+        self.assertEqual(len(modules), 1, "Claude Code allows one hooks module per plugin")
+        module = modules[0]
+        # Relative to hooks.json; it must stay inside the plugin root.
+        self.assertTrue(module.startswith("./"), module)
+        self.assertNotIn("..", Path(module).parts)
+        resolved = (hooks_json.parent / module).resolve()
+        resolved.relative_to(ROOT.resolve())
+        self.assertEqual(resolved, (ROOT / "hooks" / "register.tsx").resolve())
+        self.assertTrue(resolved.is_file())
+        source = resolved.read_text(encoding="utf-8")
+        self.assertRegex(source, r"export const register: Register")
+        for call in ("captains-bridge", "immediate: true", "$.ui.open"):
+            self.assertIn(call, source)
+        self.assertIn("This conversation changed. Run /captains-bridge to open the Bridge for it.", source)
+        self.assertNotIn("setInterval", source)
+        self.assertNotIn("$.clock.every", source)
+        self.assertNotIn("$.prompt", source)
+        self.assertNotIn("$.session.send", source)
+        # Every file the module imports from the plugin stays in the plugin.
+        for target in re.findall(r"from '(\.[^']*)'", source):
+            candidate = (resolved.parent / target).resolve()
+            candidate.relative_to(ROOT.resolve())
+
+    def test_mod_path_confinement_rejects_escapes(self) -> None:
+        for bad in ("../outside.d.ts", "./../outside.d.ts", "/abs/outside.d.ts", "types/x.d.ts"):
+            with self.assertRaises(AssertionError, msg=bad):
+                _resolve_inside(ROOT, bad)
+        _resolve_inside(ROOT, "./types/index.d.ts")
+
+    def test_marketplace_still_lists_exactly_one_root_plugin(self) -> None:
+        marketplace = _load_json(".claude-plugin/marketplace.json")
+        self.assertEqual(len(marketplace["plugins"]), 1)
+        entry = marketplace["plugins"][0]
+        self.assertEqual(entry["source"], "./")
+        self.assertEqual(entry["name"], PLUGIN_NAME)
+        self.assertNotIn("hooks", entry)
+        self.assertNotIn("strict", entry)
+
+    def test_mod_files_ship_in_the_plugin_cache_layout(self) -> None:
+        claude = _load_json(".claude-plugin/plugin.json")
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / MARKETPLACE_NAME / PLUGIN_NAME / claude["version"]
+            for relative in (
+                ".claude-plugin/plugin.json",
+                "hooks/hooks.json",
+                "hooks/register.tsx",
+                "types/index.d.ts",
+            ):
+                dest = cache / relative
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes((ROOT / relative).read_bytes())
+            manifest = json.loads((cache / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+            self.assertTrue(_resolve_inside(cache, manifest["types"]).is_file())
+            hooks = json.loads((cache / "hooks/hooks.json").read_text(encoding="utf-8"))
+            self.assertTrue((cache / "hooks" / hooks["modules"][0]).resolve().is_file())
+            # The skills are plain files and need no mod to load.
+            for skill in SKILLS:
+                self.assertTrue((ROOT / "skills" / skill / "SKILL.md").is_file(), skill)
+
+    def test_skills_do_not_depend_on_the_mod(self) -> None:
+        # With mods disabled by policy only hooks/ is skipped; skills load from skills/.
+        for skill in SKILLS:
+            text = (ROOT / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+            self.assertNotIn("hooks/register", text, skill)
+
+    def test_mod_files_are_in_the_public_boundary_scan(self) -> None:
+        self.assertIn("hooks", public_surface.SCAN_ROOTS)
+        self.assertIn("types", public_surface.SCAN_ROOTS)
+        self.assertEqual(public_surface.scan_public_surface(ROOT), [])
+        verify = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
+        for required in ("hooks/hooks.json", "hooks/register.tsx", "hooks/register.test.tsx", "types/index.d.ts"):
+            self.assertIn(required, verify)
+
+    def test_plugin_and_tests_use_only_synthetic_fixtures(self) -> None:
+        for relative in ("hooks/register.tsx", "hooks/register.test.tsx", "types/index.d.ts"):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            for marker in ("/Users/", "/home/", "/opt/data", ".claude/projects"):
+                self.assertNotIn(marker, text, f"{relative}: {marker}")
+
+    def test_install_guide_documents_the_bridge_mod(self) -> None:
+        guide = " ".join((ROOT / INSTALL_GUIDE).read_text(encoding="utf-8").split())
+        for phrase in (
+            "/captains-bridge",
+            "2.1.293",
+            "claude plugin update hermes-helmet@hermes-helmet",
+            "/reload-plugins",
+            "helmetCommand",
+            "explanationModel",
+            "explanationTimeoutSeconds",
+            "showMeCommand",
+            "retroCommand",
+            "organization policy",
+            "This conversation changed. Run /captains-bridge to open the Bridge for it.",
+        ):
+            self.assertIn(phrase, guide)
+
     def test_public_surface_scan_covers_plugin_manifests(self) -> None:
         self.assertIn(".claude-plugin", public_surface.SCAN_ROOTS)
         self.assertIn(".codex-plugin", public_surface.SCAN_ROOTS)
