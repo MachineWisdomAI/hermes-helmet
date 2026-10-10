@@ -307,11 +307,24 @@ class FirstOfficerPluginTests(unittest.TestCase):
         self.assertIn("types", public_surface.SCAN_ROOTS)
         self.assertEqual(public_surface.scan_public_surface(ROOT), [])
         verify = (ROOT / "scripts" / "verify.sh").read_text(encoding="utf-8")
-        for required in ("hooks/hooks.json", "hooks/register.tsx", "hooks/register.test.tsx", "types/index.d.ts"):
+        for required in (
+            "hooks/hooks.json",
+            "hooks/register.tsx",
+            "hooks/register.test.tsx",
+            "hooks/bridge.test.tsx",
+            "hooks/actions.test.tsx",
+            "types/index.d.ts",
+        ):
             self.assertIn(required, verify)
 
     def test_plugin_and_tests_use_only_synthetic_fixtures(self) -> None:
-        for relative in ("hooks/register.tsx", "hooks/register.test.tsx", "types/index.d.ts"):
+        for relative in (
+            "hooks/register.tsx",
+            "hooks/register.test.tsx",
+            "hooks/bridge.test.tsx",
+            "hooks/actions.test.tsx",
+            "types/index.d.ts",
+        ):
             text = (ROOT / relative).read_text(encoding="utf-8")
             for marker in ("/Users/", "/home/", "/opt/data", ".claude/projects"):
                 self.assertNotIn(marker, text, f"{relative}: {marker}")
