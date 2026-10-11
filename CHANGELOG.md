@@ -5,6 +5,11 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.16.1
+
+- Correct the quickstart's package label for the published Claude-capable
+  preview image to `0.2.0`.
+
 ### 0.16.0
 
 - Repeat and recover requested pull-request reviews
