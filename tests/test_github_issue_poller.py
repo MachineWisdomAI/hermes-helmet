@@ -28,6 +28,9 @@ FIXTURE_PR_URL = f"https://github.com/{FIXTURE_SLUG}/pull/49"
 FIXTURE_IDENTITY = "agent-bot"
 FIXTURE_ASSIGNEE = "builder"
 FIXTURE_BRANCH = "automation/demo-repo-48"
+REVIEW_SLUG = "example-org/demo-repo"
+REVIEW_HEAD = "a" * 40
+REVIEW_URL = f"https://github.com/{REVIEW_SLUG}/pull/7"
 
 
 class FakeRunner:
@@ -1210,7 +1213,11 @@ class GitHubIssuePollerTests(unittest.TestCase):
                 result.errors,
                 [
                     "Failed to list open pull requests for example-org/demo-repo: "
-                    "GitHub unavailable"
+                    "GitHub unavailable",
+                    # Review intake lists the same open pull requests and reports
+                    # the same failure through the existing error path.
+                    "Failed to list review requests for example-org/demo-repo: "
+                    "GitHub unavailable",
                 ],
             )
             self.assertFalse(any(call[0] == poller.HERMES for call in runner.calls))
@@ -1699,7 +1706,13 @@ class GitHubIssuePollerTests(unittest.TestCase):
             )
             self.assertEqual(
                 result.errors,
-                ["Failed to list example-org/bad: GitHub API returned a non-list page"],
+                [
+                    "Failed to list example-org/bad: GitHub API returned a non-list page",
+                    # Review intake lists pull requests for the same repository
+                    # set and fails the same way for the malformed repository.
+                    "Failed to list review requests for example-org/bad: "
+                    "GitHub API returned a non-list page",
+                ],
             )
 
     def test_example_policy_is_generic_and_explicit(self) -> None:
@@ -1801,6 +1814,8 @@ class GitHubIssuePollerTests(unittest.TestCase):
                     )
                     with self.assertRaisesRegex(poller.PollerError, error):
                         poller.load_policy(policy_path)
+
+
 
     def test_no_code_path_merges_or_force_pushes(self) -> None:
         source = Path(poller.__file__).read_text(encoding="utf-8")
@@ -1946,6 +1961,373 @@ class GitHubIssuePollerTests(unittest.TestCase):
                     configure_model=False,
                     reconcile_cron=False,
                 )
+
+
+def review_pull(
+    number: int,
+    *,
+    reviewers: tuple[str, ...] = ("agent-bot",),
+    state: str = "open",
+    sha: str = REVIEW_HEAD,
+    fork: bool = False,
+) -> dict[str, object]:
+    return {
+        "number": number,
+        "state": state,
+        "head": {
+            "sha": sha,
+            "repo": {"full_name": "forker/demo-repo" if fork else REVIEW_SLUG},
+        },
+        "requested_reviewers": [{"login": login} for login in reviewers],
+    }
+
+
+def review_request_event(event_id: int, login: str = "agent-bot") -> dict[str, object]:
+    return {
+        "id": event_id,
+        "event": "review_requested",
+        "requested_reviewer": {"login": login},
+    }
+
+
+class ReviewRequestIntakeRunner:
+    """Fake runner covering the review-request intake endpoints only."""
+
+    def __init__(
+        self,
+        pulls: list[object],
+        events: dict[int, list[object]] | None = None,
+    ) -> None:
+        self.pulls = pulls
+        self.events = events if events is not None else {}
+        self.creates: list[list[str]] = []
+        self.tasks: dict[str, str] = {}
+        self.statuses: dict[str, str] = {}
+        self.calls: list[list[str]] = []
+
+    def run(self, command: list[str]) -> str:
+        self.calls.append(command)
+        if command[:3] == [poller.GH, "api", "user"]:
+            return "agent-bot\n"
+        if command[:4] == [poller.HERMES, "kanban", "--board", "default"] and "list" in command:
+            listed = []
+            for create in self.creates:
+                key = create[create.index("--idempotency-key") + 1]
+                task_id = self.tasks[key]
+                if any(item["id"] == task_id for item in listed):
+                    continue
+                listed.append(
+                    {
+                        "id": task_id,
+                        "created_by": poller.CREATED_BY,
+                        "branch_name": create[create.index("--branch") + 1],
+                        "status": self.statuses.get(task_id, "ready"),
+                    }
+                )
+            return json.dumps(listed)
+        if command[:3] == [poller.GH, "api", "--paginate"]:
+            endpoint = command[-1]
+            if endpoint.startswith(f"repos/{REVIEW_SLUG}/pulls?"):
+                return json.dumps(self.pulls)
+            if endpoint.startswith(f"repos/{REVIEW_SLUG}/issues?"):
+                return "[]"
+            for number, events in self.events.items():
+                if endpoint == f"repos/{REVIEW_SLUG}/issues/{number}/events?per_page=100":
+                    return json.dumps(events)
+            # Any other allowlisted repository is empty in these fixtures.
+            return "[]"
+        if command[0] == "git":
+            return "true\n"
+        if (
+            command[:4] == [poller.HERMES, "kanban", "--board", "default"]
+            and "create" in command
+        ):
+            self.creates.append(command)
+            key = command[command.index("--idempotency-key") + 1]
+            task_id = self.tasks.setdefault(key, f"t_review_{len(self.tasks) + 1}")
+            return json.dumps({"id": task_id})
+        raise AssertionError(command)
+
+
+class ReviewRequestIntakeTests(unittest.TestCase):
+    def policy(self, root: Path) -> poller.Policy:
+        checkout = root / "demo-repo"
+        checkout.mkdir()
+        return poller.Policy(
+            schedule="every 15m",
+            board="default",
+            assignee="builder",
+            github_identity="agent-bot",
+            inference_provider="openai",
+            inference_model="gpt-4.1",
+            worker_max_turns=100,
+            required_label="hermes-kanban-go",
+            repositories=(poller.Repository(REVIEW_SLUG, checkout),),
+        )
+
+    def test_pending_request_creates_one_ordinary_task_reused_by_later_cycles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            runner = ReviewRequestIntakeRunner(
+                [
+                    review_pull(7),
+                    review_pull(8, reviewers=("someone-else",)),
+                    review_pull(9, state="closed"),
+                    review_pull(10, fork=True),
+                ],
+                {
+                    7: [
+                        review_request_event(5, "other"),
+                        review_request_event(11),
+                        review_request_event(12),
+                    ],
+                    10: [review_request_event(30)],
+                },
+            )
+            ledger = root / "ledger.sqlite3"
+            result = poller.run_once(policy, ledger, runner)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(result.warnings, [])
+            # One assignment for the requested pull request, one for the fork
+            # pull request; the other reviewer, the closed pull request and the
+            # pull request without the request produce nothing.
+            self.assertEqual(len(runner.creates), 2)
+            first = runner.creates[0]
+            self.assertEqual(first[first.index("--assignee") + 1], "builder")
+            self.assertEqual(first[first.index("--created-by") + 1], poller.CREATED_BY)
+            self.assertEqual(first[first.index("--board") + 1], "default")
+            self.assertEqual(
+                first[first.index("--idempotency-key") + 1],
+                f"github-pr-review-request:{REVIEW_SLUG}:7:12",
+            )
+            self.assertEqual(
+                first[first.index("--workspace") + 1],
+                f"worktree:{root / 'demo-repo'}",
+            )
+            self.assertIn("--max-runtime", first)
+            self.assertNotIn("--completion-contract", first)
+            self.assertIn("review/demo-repo-pr-7-12", first)
+            self.assertIn(REVIEW_HEAD, first[first.index("--body") + 1])
+            second = runner.creates[1]
+            self.assertIn(
+                f"{REVIEW_SLUG}:10:30",
+                second[second.index("--idempotency-key") + 1],
+            )
+            self.assertEqual(len(result.review_tasks), 2)
+            poller.run_once(policy, ledger, runner)
+            # The same request keys reuse the same tasks.
+            self.assertEqual(len(runner.tasks), 2)
+
+    def test_new_request_at_same_sha_is_a_distinct_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            runner = ReviewRequestIntakeRunner(
+                [review_pull(7)], {7: [review_request_event(11)]}
+            )
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.statuses["t_review_1"] = "done"
+            runner.events[7].append(review_request_event(20))
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.tasks), 2)
+
+    def test_push_while_pending_keeps_one_task_and_selects_no_second_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            pulls = [review_pull(7)]
+            runner = ReviewRequestIntakeRunner(pulls, {7: [review_request_event(11)]})
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            pulls[0] = review_pull(7, sha="c" * 40)
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(result.errors, [])
+            # The head moved, but the request is the same: one task, which the
+            # worker points at the live head; no second attempt is created.
+            self.assertEqual(len(runner.tasks), 1)
+
+    def test_renewed_request_is_recorded_behind_the_active_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            pulls = [review_pull(7)]
+            runner = ReviewRequestIntakeRunner(pulls, {7: [review_request_event(11)]})
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.events[7].append(review_request_event(20))
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            # B is retained at observation, as a child of the active attempt A.
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual(result.errors, [])
+            create_b = runner.creates[-1]
+            self.assertIn("review/demo-repo-pr-7-20", create_b)
+            self.assertEqual(
+                [create_b[i + 1] for i, arg in enumerate(create_b) if arg == "--parent"],
+                ["t_review_1"],
+            )
+            # A submits its formal review: GitHub clears requested_reviewers.
+            pulls[0] = review_pull(7, reviewers=())
+            runner.statuses["t_review_1"] = "done"
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            # B survives A's submission and is not recreated or lost.
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(runner.creates[-1], create_b)
+
+    def test_blocked_predecessor_gates_renewal_through_unblock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            runner = ReviewRequestIntakeRunner(
+                [review_pull(7)], {7: [review_request_event(11)]}
+            )
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.statuses["t_review_1"] = "blocked"
+            runner.events[7].append(review_request_event(20))
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            create_b = runner.creates[-1]
+            # The blocked, still-recoverable A gates B instead of being ignored.
+            self.assertEqual(
+                [create_b[i + 1] for i, arg in enumerate(create_b) if arg == "--parent"],
+                ["t_review_1"],
+            )
+            # Supported unblock returns A to ready; B stays behind it.
+            runner.statuses["t_review_1"] = "ready"
+            runner.events[7].append(review_request_event(30))
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            create_c = runner.creates[-1]
+            self.assertIn("review/demo-repo-pr-7-30", create_c)
+            self.assertEqual(
+                [create_c[i + 1] for i, arg in enumerate(create_c) if arg == "--parent"],
+                ["t_review_1", "t_review_2"],
+            )
+
+    def test_completed_review_is_not_restarted_by_a_push_but_is_by_a_renewal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            pulls = [review_pull(7)]
+            runner = ReviewRequestIntakeRunner(pulls, {7: [review_request_event(11)]})
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            runner.statuses["t_review_1"] = "done"
+            # Once GitHub records the review the request is no longer pending,
+            # so a later push alone produces nothing.
+            pulls[0] = review_pull(7, reviewers=(), sha="d" * 40)
+            poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.tasks), 1)
+            # A renewed request at the same SHA is a fresh full review.
+            pulls[0] = review_pull(7)
+            runner.events[7].append(review_request_event(30))
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.tasks), 2)
+            self.assertEqual([r.request_id for r, _ in result.review_tasks], [30])
+            body = runner.creates[-1][runner.creates[-1].index("--body") + 1]
+            self.assertIn(REVIEW_HEAD, body)
+
+    def test_task_binds_recovery_to_its_request_not_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = ReviewRequestIntakeRunner([review_pull(7)], {7: [review_request_event(11)]})
+            poller.run_once(self.policy(root), root / "l.sqlite3", runner)
+            body = runner.creates[0][runner.creates[0].index("--body") + 1]
+            marker = poller.review_correlation_marker(f"{REVIEW_URL}#event-11")
+            self.assertIn(f"`{marker}`", body)
+            self.assertIn("APPROVED or CHANGES_REQUESTED", body)
+            self.assertNotIn("requested at", body)
+
+    def test_recovery_adopts_only_the_matching_formal_verdict(self) -> None:
+        identity = "agent-bot"
+        url_a = f"{REVIEW_URL}#event-11"
+        url_b = f"{REVIEW_URL}#event-20"
+
+        def review(state: str, request_url: str, login: str = identity, commit: object = "a" * 40):
+            return {
+                "id": 1,
+                "user": {"login": login},
+                "state": state,
+                "commit_id": commit,
+                "body": f"Full review.\n{poller.review_correlation_marker(request_url)}\n",
+            }
+
+        # Interrupted publication of A: its own submitted verdict is adopted.
+        mine = review("APPROVED", url_a)
+        self.assertIs(poller.select_matching_review([mine], identity, url_a), mine)
+        # A late A verdict at the same SHA, submitted after B was requested,
+        # is never adopted by B, however recent.
+        self.assertIsNone(poller.select_matching_review([mine], identity, url_b))
+        # Non-verdict states, other authors, and missing commits do not count.
+        for bad in (
+            review("COMMENTED", url_b),
+            review("PENDING", url_b),
+            review("DISMISSED", url_b),
+            review("APPROVED", url_b, login="someone"),
+            review("APPROVED", url_b, commit=None),
+        ):
+            self.assertIsNone(poller.select_matching_review([bad], identity, url_b))
+        # B's own CHANGES_REQUESTED is found among older-request reviews.
+        own = review("CHANGES_REQUESTED", url_b)
+        self.assertIs(poller.select_matching_review([mine, own], identity, url_b), own)
+
+    def test_repeated_cycle_without_a_new_request_reuses_the_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy = self.policy(root)
+            runner = ReviewRequestIntakeRunner(
+                [review_pull(7)], {7: [review_request_event(11)]}
+            )
+            first = poller.run_once(policy, root / "l.sqlite3", runner)
+            second = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(len(runner.creates), 2)
+            self.assertEqual(
+                [task_id for _, task_id in first.review_tasks],
+                [task_id for _, task_id in second.review_tasks],
+            )
+
+    def test_pull_request_without_a_request_event_is_reported_not_guessed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = ReviewRequestIntakeRunner([review_pull(7)], {7: []})
+            result = poller.run_once(self.policy(root), root / "l.sqlite3", runner)
+            self.assertEqual(runner.creates, [])
+            self.assertEqual(result.review_tasks, [])
+            self.assertEqual(len(result.errors), 1)
+
+    def test_malformed_pull_request_record_is_skipped_with_a_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = ReviewRequestIntakeRunner(
+                [review_pull(7, sha="not-a-sha"), "not-a-record"],
+                {7: [review_request_event(11)]},
+            )
+            result = poller.run_once(self.policy(root), root / "l.sqlite3", runner)
+            self.assertEqual(runner.creates, [])
+            self.assertEqual(len(result.warnings), 1)
+            self.assertEqual(result.errors, [])
+
+    def test_repository_outside_allowlist_is_never_queried(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # The stop-listed repository is not in the policy allowlist, so the
+            # poller must never name a repository the policy does not list.
+            policy = poller.Policy(
+                schedule="every 15m",
+                board="default",
+                assignee="builder",
+                github_identity="agent-bot",
+                inference_provider="openai",
+                inference_model="gpt-4.1",
+                worker_max_turns=100,
+                required_label="hermes-kanban-go",
+                repositories=(poller.Repository("allowed-org/allowed-repo", root / "allowed"),),
+            )
+            runner = ReviewRequestIntakeRunner([review_pull(7)], {7: []})
+            result = poller.run_once(policy, root / "l.sqlite3", runner)
+            self.assertEqual(runner.creates, [])
+            self.assertEqual(result.errors, [])
+            # Every GitHub call names only the allowlisted repository.
+            for call in runner.calls:
+                endpoint = call[-1]
+                if endpoint.startswith("repos/"):
+                    self.assertTrue(endpoint.startswith("repos/allowed-org/allowed-repo"), call)
 
 
 class GitHubIssuePollerProcessIntegrationTests(unittest.TestCase):

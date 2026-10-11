@@ -47,6 +47,19 @@ for required in \
     skills/setup-helmet/SKILL.md \
     skills/helmet-issue/SKILL.md \
     skills/helmet-epic/SKILL.md \
+    skills/observe-chat/SKILL.md \
+    skills/helmet-review/SKILL.md \
+    codex.mcp.json \
+    hooks/hooks.json \
+    hooks/register.tsx \
+    hooks/register.test.tsx \
+    hooks/bridge.test.tsx \
+    hooks/actions.test.tsx \
+    hooks/explanation.test.tsx \
+    types/index.d.ts \
+    src/hermes_helmet/claude_mod_toolchain.py \
+    tests/test_claude_mod_toolchain.py \
+    mcp/captains-bridge/server.py \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
     src/hermes_helmet/repo_enroll.py \
@@ -154,6 +167,39 @@ fi
 # Behavioral parity suite.
 PYTHONPATH=src "$PYTHON_BIN" -m unittest discover -s tests -v
 
+# Captain Bridge MCP source and its synthetic checks. The view checks
+# read view.html relative to this directory.
+(
+    cd mcp/captains-bridge
+    "$PYTHON_BIN" -B -m unittest discover -s . -p 'test_*.py' -v
+    if command -v node >/dev/null 2>&1; then
+        for check in test_view.cjs test_delivery.cjs test_actions.cjs test_refresh.cjs test_preparation.cjs; do
+            node "$check"
+        done
+    elif [ -n "${CI:-}" ]; then
+        echo "verify: node is required in CI for Captain's Bridge view checks" >&2
+        exit 1
+    else
+        echo "verify: skipped Captain's Bridge view checks (node not found)" >&2
+    fi
+)
+
+# Captain's Bridge Claude Code mod: run the real `claude plugin validate` and
+# `claude plugin test` with the exact checked CLI, no account credentials, and
+# fail on any call outside the read-only allowlist. CI must have the CLI; a
+# local worker without it skips with a notice (CI is the authority).
+if command -v claude >/dev/null 2>&1; then
+    PYTHONPATH=src "$PYTHON_BIN" -m hermes_helmet.claude_mod_toolchain \
+        --check-binary "$(command -v claude)"
+    PYTHONPATH=src "$PYTHON_BIN" -m hermes_helmet.claude_mod_toolchain \
+        --check-mod "$(command -v claude)" .
+elif [ -n "${CI:-}" ]; then
+    echo "verify: the exact checked Claude Code CLI is required in CI for the Bridge mod" >&2
+    exit 1
+else
+    echo "verify: skipped Bridge mod validate/test (claude not found; CI is the authority)" >&2
+fi
+
 # Compose file must parse as YAML-ish structure (no docker required).
 "$PYTHON_BIN" - <<'PY'
 from pathlib import Path
@@ -254,6 +300,8 @@ assert bundled.is_dir(), bundled
 assert (bundled / "helmet-issue" / "SKILL.md").is_file()
 assert (bundled / "helmet-epic" / "SKILL.md").is_file()
 assert (bundled / "setup-helmet" / "SKILL.md").is_file()
+assert (bundled / "observe-chat" / "SKILL.md").is_file()
+assert (bundled / "helmet-review" / "SKILL.md").is_file()
 messages = static_validate_all_targets()
 assert any("helmet-issue" in item for item in messages), messages
 assert any("helmet-epic" in item for item in messages), messages
@@ -266,8 +314,8 @@ with tempfile.TemporaryDirectory() as tmp:
         targets=["codex", "claude", "hermes"],
         prefix=Path(tmp),
     )
-    # Three skills × three targets.
-    assert len(installed) == 9, installed
+    # Five skills × three targets.
+    assert len(installed) == 15, installed
 print("setup-helmet, helmet-issue, and helmet-epic validate for all targets")
 print("canonical skills validate; packaged sdist/wheel asset coverage runs in tests.test_packaged_release")
 PY

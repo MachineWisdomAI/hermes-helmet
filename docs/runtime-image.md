@@ -19,16 +19,15 @@ ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c6
 | Platforms | `linux/amd64`, `linux/arm64` |
 | Build record | [GitHub Actions run 37939434059](https://github.com/MachineWisdomAI/hermes-helmet/actions/runs/37939434059) |
 
-Anonymous pulls work. This image is a preview running Hermes Agent 0.21.6. Its
-`0.2.0` package label is the version declared in that source commit; it is not
-a stable release and it is not the
-[September 23, 2026 wheel](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-23).
+This image is a preview with package version `0.2.0`, built from the source
+commit above. It is separate from the dated Python wheel releases.
 
 The digest identifies the image built from that recorded source SHA.
 `/opt/hermes-helmet/SOURCE_COMMIT` inside the container is that SHA.
 
-This preview bundles the pinned Claude Code CLI and the Claude subscription
-model-provider plugin used by [Claude subscription workers](claude-subscription.md).
+This preview bundles Claude Code 2.1.286 and the Claude subscription
+model-provider plugin on Hermes Agent 0.21.6. It supports the published-image
+route for [Claude subscription workers](claude-subscription.md).
 
 ## Run the published image
 

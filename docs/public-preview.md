@@ -55,9 +55,9 @@ the shorter `helmet` command.
 
 A later worker-image preview is published to GHCR from
 `80726d21f11d3856e32d30c440123101c94f8664`. Pin it by digest as described in
-[runtime-image.md](runtime-image.md). That image carries the `0.2.0` package
-label from its source commit; it is not this September 29 wheel and it is not
-a stable release.
+[runtime-image.md](runtime-image.md). That image carries package version `0.2.0`
+and includes the Claude subscription provider. It is a worker-image preview,
+separate from the September 29 wheel.
 
 ## What you provide
 

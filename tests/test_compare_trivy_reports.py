@@ -351,5 +351,55 @@ class WrapperExceptionTests(unittest.TestCase):
                 self.assertTrue(exception["reason"].strip())
 
 
+class RetainedReportTests(unittest.TestCase):
+    """Run the shipped exceptions against actual retained arm64 Trivy reports.
+
+    Skipped unless the diagnostic reports are supplied through
+    HERMES_HELMET_TRIVY_REPORTS (a directory with base.json, derived.json and
+    trivy-db.sha256); the reports are not committed.
+    """
+
+    def setUp(self) -> None:
+        import os
+
+        directory = os.environ.get("HERMES_HELMET_TRIVY_REPORTS")
+        if not directory:
+            self.skipTest("HERMES_HELMET_TRIVY_REPORTS not set")
+        self.directory = Path(directory)
+
+    def run_gate(self, today: str):
+        base = MODULE._load(self.directory / "base.json")
+        derived = MODULE._load(self.directory / "derived.json")
+        ref = MODULE._labels(derived)[MODULE.BASE_LABEL]
+        return MODULE.compare(
+            base, derived,
+            expected_platform="linux/arm64", expected_base_ref=ref,
+            database_sha256=MODULE._database_sha256(self.directory / "trivy-db.sha256"),
+            java_database_sha256="absent",
+            today=MODULE.datetime.date.fromisoformat(today),
+        )
+
+    def test_vendor_client_records_are_excepted_and_nothing_else(self) -> None:
+        summary, failures = self.run_gate("2026-10-10")
+        self.assertEqual(failures, [])
+        excepted = summary["delta"]["excepted_high_or_critical"]
+        self.assertEqual(
+            sorted((i["id"], i["package"]) for i in excepted),
+            [
+                ("CVE-2026-78667", "stdlib"),
+                ("CVE-2026-78669", "golang.org/x/net"),
+                ("CVE-2026-78669", "stdlib"),
+                ("CVE-2026-97031", "stdlib"),
+            ],
+        )
+        self.assertEqual(len(summary["delta"]["inherited_high_or_critical"]), 250)
+        self.assertEqual(summary["derived"]["secret_findings"], 0)
+
+    def test_records_fail_again_after_expiry(self) -> None:
+        summary, failures = self.run_gate("2026-11-09")
+        self.assertEqual(len(summary["delta"]["added_high_or_critical"]), 4)
+        self.assertTrue(any("wrapper adds 4" in f for f in failures))
+
+
 if __name__ == "__main__":
     unittest.main()

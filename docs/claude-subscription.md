@@ -20,8 +20,9 @@ The provider id is `claude-subscription-directsdk-experimental`. The plugin is
 installed root-owned under `/opt/hermes/plugins/model-providers/`, so every
 Hermes profile in the container can select it.
 
-The published preview pinned in [runtime-image.md](runtime-image.md) includes
-both.
+The published 0.2.0 preview digest in [runtime-image.md](runtime-image.md)
+includes this integration. Pull that immutable image before configuring the
+subscription token and worker profile below.
 
 ## 1. Create a subscription token
 

@@ -5,13 +5,271 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.16.0
+
+- Repeat and recover requested pull-request reviews
+  ([#80](https://github.com/MachineWisdomAI/hermes-helmet/issues/80), part of
+  [#77](https://github.com/MachineWisdomAI/hermes-helmet/issues/77)). A push
+  while a request is pending keeps a single task and the worker reviews the
+  live head, binding the review to the commit it examined; a push after a
+  completed review starts nothing; a renewed request (including at the same
+  commit) is a fresh full review that no earlier approval satisfies. A renewed
+  request is recorded when observed, as a Kanban child of any unfinished
+  (running, queued, or blocked-but-recoverable) attempt for the same pull
+  request, so it survives GitHub clearing the pending request and never runs
+  beside a recovered predecessor. A retried worker adopts only a submitted
+  APPROVED/CHANGES_REQUESTED review whose body carries that request's
+  correlation line, never one chosen by timestamp. No new dispatcher, queue,
+  ledger, retry controller, or hook.
+
+### 0.15.0
+
+- Assign a requested Hermes review of a pull request through the existing
+  poller and Kanban runtime
+  ([#79](https://github.com/MachineWisdomAI/hermes-helmet/issues/79), part of
+  [#77](https://github.com/MachineWisdomAI/hermes-helmet/issues/77)). On each
+  poll cycle the `github-issue-poller` lists open pull requests in the policy
+  repository allowlist whose pending reviewers include `worker_github_login`
+  and submits one ordinary Kanban task per request, keyed by the repository,
+  pull-request number, and GitHub's native `review_requested` event id, so
+  repeated cycles reuse the assignment and a renewed request at the same commit
+  is a distinct review. The task carries the packaged review contract
+  (verify the selected head, full review with the runtime's configured model,
+  one formal `APPROVE` or `REQUEST_CHANGES` review bound to the examined
+  commit, blocked/error path for missing prerequisites, review URL and audit in
+  the closeout) and omits the PR-publication completion contract. Closed pull
+  requests, pull requests without the request, and repositories outside the
+  allowlist produce nothing; any request GitHub permits, including a fork pull
+  request, uses the same path. The thin `helmet-review` first-officer skill
+  requests the worker through GitHub's reviewer interface and reads the formal
+  result; it ships through both first-officer plugins and the skill installer.
+  The review does not commit, push, merge, change providers, or trigger a
+  repair task, and the Captain keeps the merge decision.
+
+### 0.14.0
+
+- Document the Claude Code Captain's Bridge and prepare its version update
+  ([#72](https://github.com/MachineWisdomAI/hermes-helmet/issues/72), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  `docs/first-officer-plugins.md` now states that the Claude plugin includes a
+  mod running code inside sessions (the Codex track is unchanged), the tested
+  Claude Code 2.1.296 and minimum 2.1.293, the reachable `helmet` CLI and
+  absolute `helmetCommand` for Desktop, the organization mod policy,
+  `/captains-bridge` with the pane versus the text fallback, existing skills
+  staying available when mods are disabled, the public install commands and the
+  one update path, one model call per Update billed to the session's own
+  credentials with cancellation and the time limit, the five `userConfig`
+  fields and defaults, optional Show Me and Retro, missing states, this-session
+  records, no direct Docker collection, and that a source-bound explanation is
+  not independent delivery verification. The version moves to 0.14.0 across
+  `pyproject.toml`, the Python package and both plugin manifests via
+  `scripts/mw-version.py`. No tag, release, publication or installed-host
+  acceptance is claimed.
+
+### 0.13.0
+
+- Prepare and cancel a source-bound explanation in the background from the
+  Claude Captain's Bridge mod
+  ([#70](https://github.com/MachineWisdomAI/hermes-helmet/issues/70), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  **Update explanation** takes one record snapshot with the reader, then makes
+  exactly one tool-less `$.model.complete` request started off the press
+  dispatch with `$.clock.after(0, …)`: the configured model,
+  `explanationTimeoutSeconds` × 1000, 16000 tokens, the fixed instructions with
+  `cache: true`, the walkthrough schema and the record summary. It starts no
+  turn, submits no prompt, calls no tool or subagent, sends nothing, polls
+  nothing and never retries. The pane shows Cancel and Keep preparing while it
+  prepares; a duplicate press is ignored. Cancel cuts the in-flight call
+  through the call's own `{ signal }` option (never a request field, which the
+  engine ignores), and a Cancel or a superseding instruction that lands while
+  the reader is still running is re-checked before the deferred start, so it
+  launches no request and never replaces a newer request's controller. The
+  result installs only when the request generation still matches under
+  compare-and-set, so a late, cancelled or superseded result is discarded
+  silently. A person's prompt supersedes the request unless Keep preparing is
+  on, and always passes through unchanged. The engine resolves an outcome
+  rather than rejecting over what the provider did: `aborted` (the time limit,
+  or the call cut) becomes timed-out; `api-error` becomes failed, naming the
+  HTTP status and classified kind; `empty-reply` becomes failed and empty; only
+  an engine refusal rejects. A non-JSON or wrongly shaped reply, empty
+  top-level or item evidence, an unknown ref, or a link absent from a cited
+  record becomes failed with "The explanation didn't match the records",
+  keeping the last walkthrough. A plugin reload that leaves a preparing request
+  with no live controller becomes failed with "Interrupted by a plugin
+  reload". Tests drive `claude plugin test` seams with synthetic delayed model
+  stand-ins on the mocked clock, and CI keeps the mod's calls inside the
+  read-only allowlist.
+
+### 0.12.0
+
+- Verify and document installing and updating the complete Captain’s Bridge
+  from the existing Codex plugin distribution
+  ([#61](https://github.com/MachineWisdomAI/hermes-helmet/issues/61), part of
+  [#53](https://github.com/MachineWisdomAI/hermes-helmet/issues/53)): Codex
+  update/activation (one new session, no restart loop), host/storage
+  compatibility and failure states in `docs/first-officer-plugins.md`. The
+  background “Update walkthrough” stays the measured unsupported-host
+  boundary on installed Codex.
+- The wrapper scan gate accepts the two additional records for the vendor
+  `gh` 2.101.0 finding CVE-2026-78669 (Go stdlib v1.27.1 and
+  golang.org/x/net v0.58.0, GO-2026-6611) until 2026-11-08, through the
+  existing exact-match `WRAPPER_EXCEPTIONS`; remove on a fixed `gh`. A test
+  runs the gate against retained real arm64 base/derived reports when
+  `HERMES_HELMET_TRIVY_REPORTS` points at them (not committed).
+
+
+### 0.11.0
+
+- Show the Captain’s Bridge Changes First view in the Claude mod
+  ([#69](https://github.com/MachineWisdomAI/hermes-helmet/issues/69), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)). The pane
+  runs `helmet bridge read` for the bound session (30 s limit, exact session ID,
+  known transcript path when present), validates the schema major and session
+  before adopting it, and draws one element tree for terminal and desktop:
+  objective and outcome, then What changed, What remains unresolved and Other
+  recorded activity, with the completion report and the disposition as separate
+  labeled boxes. Item detail adds actor-labeled steps, View before and after
+  only where supported, evidence-bound links, elapsed time from cited records,
+  collapsed supporting records and Back with its place restored. Refresh records
+  rereads saved records only, keeps the view stack and selection, never restamps
+  the walkthrough’s `readAt`, and shows “Explanation read records at {readAt};
+  {n} newer records since.” Reader failures name the cause and fix and keep the
+  last useful view. The reader answer must carry the expected schema, valid
+  records, coverage counts and warnings before it replaces anything. Long
+  explanations and supporting records are drawn as word-wrapped pieces, so
+  scrolling never skips a whole long block, and Back stays in the fixed header.
+  Each overview item button now carries its title and status as one string
+  label, which the advertised minimum Claude Code 2.1.293 requires to draw the
+  pane. The call-allowlist parser accepts Claude Code’s `(via helper)` tag. No model
+  is called and nothing is sent.
+
+### 0.10.0
+
+- Captain’s Bridge Show Me and Retro now state a portable skill-discovery path
+  (`$CODEX_HOME/skills`, `.agents/skills`, plugin skills), require the
+  originating chat identity to match, and stop with a clear message rather than
+  substitute a skill when one is missing. The panel separates “delivered to this
+  chat” from skill completion, and optional setup is documented.
+
+### 0.9.0
+
+Show Me and Retro in the Claude Bridge.
+
+- Run the Captain’s installed Show Me and Retro commands from the Claude
+  Bridge pane
+  ([#71](https://github.com/MachineWisdomAI/hermes-helmet/issues/71), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)).
+  Availability comes from `$.command.list()` when the Bridge opens and on each
+  refresh, for `showMeCommand`/`retroCommand` or `<plugin>:<name>`. A missing
+  command is a disabled action with the install wording and sends nothing; an
+  unknown-name rejection returns to that state. A present command calls
+  `$.command.run` once with the scope “this session” or the selected item’s
+  title, evidence refs and cited timestamps, relying on the host’s queue to wait
+  for an idle first officer. `pending` ignores repeat presses until settlement.
+  No prompt, subagent or cross-session send is used and neither skill is
+  bundled. The CI allowlist check now accepts the `(via helper)` annotation that
+  `claude plugin validate` adds to calls made in helper functions, while still
+  checking every call name.
+
+### 0.8.0
+
+- Add the Captain’s Bridge mod skeleton to the Claude plugin
+  ([#68](https://github.com/MachineWisdomAI/hermes-helmet/issues/68), part of
+  [#55](https://github.com/MachineWisdomAI/hermes-helmet/issues/55)). A hooks
+  module registers `/captains-bridge` (immediate) and opens a pane bound to the
+  exact `$.session.id()` without starting a turn or messaging the first
+  officer; non-drawing surfaces get a text status. `clear`, `resume`, `fork`
+  and session end end the binding and show “This conversation changed. Run
+  /captains-bridge to open the Bridge for it.” Claude Code older than 2.1.293
+  is told which version is needed. The manifest names a `PluginState`/
+  `BridgeState` type contract and `userConfig` (`helmetCommand`,
+  `explanationModel`, `explanationTimeoutSeconds`, `showMeCommand`,
+  `retroCommand`). CI installs an exact, checksum-verified Claude Code 2.1.296,
+  runs `claude plugin validate` and `claude plugin test` without credentials,
+  and fails on any call outside the read-only allowlist. MCP packaging and the skills
+  are unchanged. The version moves to 0.8.0 in `pyproject.toml`, the Python
+  package and both plugin manifests (the Codex manifest changes only its
+  version field), synchronized by `scripts/mw-version.py`.
+
+### 0.7.0
+
+Claude Code record reader.
+
+- `helmet bridge read --session ID [--transcript PATH] [--max-bytes N]` reads
+  one Claude Code session's saved transcript and its subagent transcripts
+  read-only and prints a bounded `hermes-helmet.bridge.records/1` summary with
+  stable refs, origins (`person`, `hook`, `plugin`, `meta`, `assistant`,
+  `agent`), coverage and warnings. Thinking is dropped, every record's session
+  ID is verified, an incomplete final line sets `pendingTail`, and the summary
+  budget keeps every person prompt and assistant text while excerpting and
+  then dropping the oldest tool results. `--max-bytes` bounds the exact stdout
+  bytes. Failures exit 2 with `session-not-found`, `ambiguous-session`,
+  `session-mismatch`, `unsupported-format` or `unreadable`; malformed core
+  text blocks or an unsupported version on any record return
+  `unsupported-format`.
+- Each ref is the record's full 32-hex UUID-derived identity, computed from that
+  record's own UUID only. It does not depend on other records, timestamps or
+  presentation order, so appends, partial-tail completion and subagent growth
+  never change an existing ref or `parentRef`. When one source UUID expands
+  into several output records, the first keeps the UUID and later blocks get a
+  deterministic 32-hex identity from the UUID and block index.
+
+### 0.6.0
+
+- Captain’s Bridge can prepare an updated walkthrough in the background. The
+  panel captures the originating chat and a verifiable snapshot (delivery is
+  rejected if captured records changed or digests are inconsistent), asks the first
+  officer to dispatch one bounded read-only agent without waiting, and keeps the
+  current walkthrough visible. A timeout asks the first officer to stop the agent
+  and reports the stop as requested, not confirmed. Cancel, supersession, timeout, failure, duplicate
+  submission and late completion preserve the last useful view. Verified with
+  synthetic protocol and panel tests only; acceptance in an installed Codex host
+  is recorded separately in the pull request. Measured Codex limit: after the
+  parent turn finishes, the originating panel does not render a delivery, so a
+  request on the installed host now ends with an unsupported-boundary message
+  (no capture, dispatch or timer) unless the host advertises background delivery.
+
+### 0.5.0
+
+- Captain’s Bridge Refresh records now rereads the exact bound chat directly
+  through its read-only app tool, with no agent message, background explanation
+  or project task. Selection and navigation are kept, cited records are
+  validated against the chat as it is now, and “Records read” is shown apart
+  from “Explanation prepared from records read”. New records mark the
+  explanation older without changing its conclusions or restamping it. Read
+  errors, unsupported formats, missing evidence, timeouts, foreign and
+  out-of-order responses keep the last useful view and report the limitation;
+  a partially written final record is flagged rather than shown as a complete
+  chat.
+
+### 0.4.0
+
+- Captain’s Bridge now presents the Changes First layout: purpose and outcome
+  in prose, grouped work items, and details for handoffs, review, evidence and
+  before/after changes. Evidence opens the original referenced records, Back
+  restores selection, scroll and focus, and elapsed time and gaps are collapsed
+  on the overview. Explicit handoff and wakeup relations are recorded without
+  implying causation or stalls; Hermes steps and readable names are validated
+  against the selected chat. The panel paints its own foreground and
+  background and follows the host's light or dark theme, so headings, strong
+  text and buttons stay readable in a dark Codex panel.
+
+### 0.3.0
+
+- Add Captain’s Bridge to the Codex plugin: a read-only panel for the invoking
+  chat that explains recorded work and opens its supporting records. It uses the
+  plugin's own MCP server (`codex.mcp.json`) and the `observe-chat` skill, reads
+  only the exact `CODEX_THREAD_ID`'s saved records, and writes nothing. The
+  Claude plugin and the setup, issue, and epic skills are unchanged. Background
+  preparation and cancellation are not included.
+
 ### 0.2.1
 
-- Pin the published preview runtime image to
-  `ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122`,
-  built from `80726d21f11d3856e32d30c440123101c94f8664` (Hermes Agent 0.21.6,
-  package label `0.2.0`). This preview includes the Claude Code CLI and the
-  Claude subscription model-provider plugin.
+- Point the quickstart, private-overlay examples, and Claude subscription guide
+  at the published 0.2.0 preview image from `80726d2`, including its immutable
+  digest and build record.
+- Clarify the bootstrap token comment and remove a time-sensitive claim from
+  the existing dated `gh` scan exception reason.
 
 ### 0.2.0
 
