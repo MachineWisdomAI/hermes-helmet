@@ -5,6 +5,23 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.16.0
+
+- Repeat and recover requested pull-request reviews
+  ([#80](https://github.com/MachineWisdomAI/hermes-helmet/issues/80), part of
+  [#77](https://github.com/MachineWisdomAI/hermes-helmet/issues/77)). A push
+  while a request is pending keeps a single task and the worker reviews the
+  live head, binding the review to the commit it examined; a push after a
+  completed review starts nothing; a renewed request (including at the same
+  commit) is a fresh full review that no earlier approval satisfies. A renewed
+  request is recorded when observed, as a Kanban child of any unfinished
+  (running, queued, or blocked-but-recoverable) attempt for the same pull
+  request, so it survives GitHub clearing the pending request and never runs
+  beside a recovered predecessor. A retried worker adopts only a submitted
+  APPROVED/CHANGES_REQUESTED review whose body carries that request's
+  correlation line, never one chosen by timestamp. No new dispatcher, queue,
+  ledger, retry controller, or hook.
+
 ### 0.15.0
 
 - Assign a requested Hermes review of a pull request through the existing

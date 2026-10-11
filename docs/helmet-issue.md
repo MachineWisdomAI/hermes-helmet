@@ -96,8 +96,30 @@ full pull request with its currently configured model, and submits one formal
 prerequisites use the blocked/error path rather than a verdict. The closeout
 records the review URL, verdict, reviewed commit, and six-question audit. The
 review never commits, pushes, merges, or triggers a repair task; the Captain
-keeps the merge decision. Following changed heads and renewed requests are
-covered in a later release.
+keeps the merge decision.
+
+Repeating and recovering a review use the same path:
+
+- A push while a request is pending does not create a second task. The task
+  names the head selected when it was queued; the worker re-reads the live head
+  at the start and before submitting, reviews the full current snapshot, and
+  binds the review to the commit it actually examined.
+- After a completed review, a push alone starts nothing. Remove and re-request
+  the worker for a fresh full review, including at the same commit; each
+  `review_requested` event id is a new request, so an earlier approval never
+  satisfies it. The runtime's currently configured model is used.
+- The poller records each observed request as its own Kanban task at once, so
+  it survives GitHub clearing the pending request when an earlier review is
+  submitted. Unfinished earlier tasks for the same pull request (running,
+  queued, or blocked) are its Kanban parents, so only one attempt is
+  executable at a time and an unblocked predecessor never runs beside it.
+- An interrupted attempt recovers through the existing Kanban retry/unblock
+  facilities. Each worker puts `Helmet-Review-Request: <request URL>` on its own
+  line in the review body. A retried worker lists the pull request's reviews and
+  adopts only a review by the worker identity that is APPROVED or
+  CHANGES_REQUESTED, names a commit, and carries that line; it records the URL,
+  verdict, and commit without posting again. A review for another request is
+  never reused, regardless of its commit or submission time.
 
 ## Named-request repository enrollment
 

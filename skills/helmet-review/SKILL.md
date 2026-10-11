@@ -40,9 +40,28 @@ under `worker_github_login`. You write no per-PR instructions.
    ```
 
 3. The next successful poll cycle creates one task. Repeated cycles reuse it.
-   To obtain a fresh full review (including at the same commit, for example
-   after changing the model), remove and re-request the worker; each new
-   request is a new review.
+
+## Repeat and recover
+
+- **Push while pending.** Nothing to do. There is still one active review
+  attempt per PR; the worker re-reads the live head before submitting and
+  attaches the review to the commit it actually examined.
+- **Push after a completed review.** Does not start another review.
+- **Renewed review** (including at the same commit, or after changing the
+  model): remove and re-request the worker. Each new request is a fresh full
+  review that no earlier approval satisfies. If an attempt is still active, the
+  renewed request is recorded at once as a task behind it (a Kanban child), so
+  it is not lost when the earlier review is submitted.
+- **Interrupted attempt.** Use the existing Kanban unblock/retry facilities on
+  the task. If GitHub already accepted this request's review, the retried
+  worker adopts the formal verdict carrying this request's
+  `Helmet-Review-Request` line and records it without posting again. No manual
+  instructions and no separate polling loop.
+
+```sh
+gh pr edit PR_URL --remove-reviewer WORKER_LOGIN
+gh pr edit PR_URL --add-reviewer WORKER_LOGIN
+```
 
 ## Read the result
 

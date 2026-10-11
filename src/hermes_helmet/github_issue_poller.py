@@ -896,6 +896,11 @@ class ReviewRequest:
         return f"review/{name}-pr-{self.pull_number}-{self.request_id}"
 
     @property
+    def branch_prefix(self) -> str:
+        name = self.repository.slug.rsplit("/", 1)[1].lower()
+        return f"review/{name}-pr-{self.pull_number}-"
+
+    @property
     def idempotency_key(self) -> str:
         # GitHub's native review_requested event id identifies the request, so
         # a renewed request at an unchanged SHA is distinct from the old one.
@@ -937,7 +942,8 @@ def _latest_request_id(
             and isinstance(event_id, int)
             and not isinstance(event_id, bool)
         ):
-            latest = max(latest, event_id)
+            if event_id > latest:
+                latest = event_id
     if latest < 1:
         raise PollerError(
             f"no review-request event for {identity} on {repository.slug}#{pull_number}"
@@ -986,11 +992,18 @@ def list_review_requests(
             except PollerError as exc:
                 errors.append(f"Failed to read review request for {repository.slug}#{number}: {exc}")
                 continue
-            requests.append(ReviewRequest(repository, number, sha.lower(), request_id))
+            requests.append(
+                ReviewRequest(repository, number, sha.lower(), request_id)
+            )
     return requests, warnings, errors
 
 
-def create_review_task(request: ReviewRequest, policy: Policy, runner: Runner) -> str:
+def create_review_task(
+    request: ReviewRequest,
+    policy: Policy,
+    runner: Runner,
+    parents: Sequence[str] = (),
+) -> str:
     """Submit one ordinary Kanban review task; the idempotency key reuses it."""
 
     repository = request.repository
@@ -1019,6 +1032,7 @@ def create_review_task(request: ReviewRequest, policy: Policy, runner: Runner) -
             ),
             "--assignee",
             policy.assignee,
+            *(arg for parent in parents for arg in ("--parent", parent)),
             "--created-by",
             CREATED_BY,
             "--workspace",
@@ -1040,14 +1054,108 @@ def create_review_task(request: ReviewRequest, policy: Policy, runner: Runner) -
     return task_id
 
 
+# Kanban statuses of a finished review attempt. A blocked attempt is NOT
+# finished: supported unblock/retry can return it to ready, so it keeps
+# gating any later request for the same pull request.
+_FINISHED_REVIEW_STATUSES = frozenset({"done", "archived"})
+
+REVIEW_STATE_VERDICTS = frozenset({"APPROVED", "CHANGES_REQUESTED"})
+
+
+def _open_review_attempts(policy: Policy, runner: Runner) -> list[tuple[str, str]]:
+    """(task id, branch) of unfinished review tasks (existing Kanban list)."""
+
+    output = runner.run(
+        [
+            HERMES,
+            "kanban",
+            "--board",
+            policy.board,
+            "list",
+            "--json",
+            "--assignee",
+            policy.assignee,
+        ]
+    )
+    try:
+        tasks = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise PollerError("Kanban list returned invalid JSON") from exc
+    if not isinstance(tasks, list):
+        raise PollerError("Kanban list returned invalid task data")
+    return [
+        (task["id"], task["branch_name"])
+        for task in tasks
+        if isinstance(task, dict)
+        and task.get("created_by") == CREATED_BY
+        and isinstance(task.get("id"), str)
+        and isinstance(task.get("branch_name"), str)
+        and task["branch_name"].startswith("review/")
+        and task.get("status") not in _FINISHED_REVIEW_STATUSES
+    ]
+
+
+def review_correlation_marker(request_url: str) -> str:
+    """Line a worker puts in its review body to bind it to one request."""
+
+    return f"Helmet-Review-Request: {request_url}"
+
+
+def select_matching_review(
+    reviews: Sequence[object], identity: str, request_url: str
+) -> dict[str, object] | None:
+    """The submitted formal verdict that answers exactly this request, if any.
+
+    Only a review by ``identity`` whose state is a verdict (never COMMENTED,
+    PENDING or DISMISSED), that names a commit, and whose body carries this
+    request's correlation marker qualifies. Timestamps are never consulted, so
+    a late verdict for an older request at the same SHA is not adopted.
+    """
+
+    marker = review_correlation_marker(request_url)
+    matches = [
+        review
+        for review in reviews
+        if isinstance(review, dict)
+        and isinstance(review.get("user"), dict)
+        and isinstance(review["user"].get("login"), str)
+        and review["user"]["login"].casefold() == identity.casefold()
+        and review.get("state") in REVIEW_STATE_VERDICTS
+        and isinstance(review.get("commit_id"), str)
+        and review["commit_id"]
+        and isinstance(review.get("body"), str)
+        and any(line.strip() == marker for line in review["body"].splitlines())
+    ]
+    return matches[-1] if matches else None
+
+
 def reconcile_review_requests(
     policy: Policy, runner: Runner
 ) -> tuple[list[tuple[ReviewRequest, str]], list[str], list[str]]:
     requests, warnings, errors = list_review_requests(policy, runner)
     assigned: list[tuple[ReviewRequest, str]] = []
+    if not requests:
+        return assigned, warnings, errors
+    try:
+        attempts = _open_review_attempts(policy, runner)
+    except PollerError as exc:
+        errors.append(f"Failed to read active review tasks: {exc}")
+        return assigned, warnings, errors
     for request in requests:
+        # Record every observed request now: GitHub drops the worker from
+        # requested_reviewers once it submits, so a deferred request would be
+        # lost. Earlier unfinished attempts for the same PR (running, queued,
+        # or blocked-but-recoverable) become Kanban parents, so only one
+        # attempt is executable at a time and an unblocked predecessor runs
+        # before, never beside, the renewed request. The same request always
+        # reuses its task (idempotency key); a push needs no new task.
+        parents = [
+            task_id
+            for task_id, branch in attempts
+            if branch.startswith(request.branch_prefix) and branch != request.branch
+        ]
         try:
-            assigned.append((request, create_review_task(request, policy, runner)))
+            assigned.append((request, create_review_task(request, policy, runner, parents)))
         except PollerError as exc:
             errors.append(f"Failed to queue review of {request.pull_url}: {exc}")
     return assigned, warnings, errors
