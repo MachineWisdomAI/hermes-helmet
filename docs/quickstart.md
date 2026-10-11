@@ -127,8 +127,8 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
 ```
 
 The digest identifies the image built from that recorded source SHA.
-`SOURCE_COMMIT` inside the container is that SHA. The `0.1.0rc1` package label
-on the image is not a new stable release and is not the September 23 wheel.
+`SOURCE_COMMIT` inside the container is that SHA. The `0.2.0` package label
+on the image is not a stable release and is not the September 23 wheel.
 
 The image entrypoint writes the worker token to its owner-only runtime file,
 copies the mounted policy into `/opt/data/github-issue-poller/policy.json`,
