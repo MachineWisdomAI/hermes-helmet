@@ -7,8 +7,14 @@ so the worker can continue on the same change after feedback.
 
 The runtime handles intake and repair in five parts:
 
-1. **Issue intake** — poll allowlisted repositories for open issues carrying the
-   configured dispatch label; create one Kanban root task per canonical issue URL.
+1. **Issue and review-request intake** — poll allowlisted repositories for open
+   issues carrying the configured dispatch label; create one Kanban root task
+   per canonical issue URL. In the same pass, poll open pull requests in the
+   allowlist for a pending request naming the configured worker among their
+   reviewers, and create one ordinary Kanban task per request keyed by GitHub's
+   `review_requested` event id. Review tasks carry the packaged review contract,
+   omit the PR-publication completion contract, and never merge or repair. See
+   [helmet-issue.md](helmet-issue.md#ask-hermes-to-review-a-pull-request).
 2. **SQLite ledger** — durable `issue_tasks` and `pull_request_watches` tables
    under `/opt/data/github-issue-poller/ledger.sqlite3` (configurable).
 3. **Pull-request discovery** — read current `published_pr` or legacy `pr_url`
@@ -44,6 +50,11 @@ watcher:
    explicit `Parent` / `Blocked by` body links), compute the ready frontier,
    and invoke helmet-issue with bounded parallelism. The epic root is never
    dispatch-labeled. See [helmet-epic.md](helmet-epic.md).
+8. **helmet-review** — portable skill that requests the configured worker as a
+   GitHub reviewer on an existing pull request and reads its formal verdict
+   from the review record and the task closeout, without a second watcher and
+   without per-PR instructions. Issue implementation still uses the dispatch
+   label; pull-request review uses the native review request.
 
 Adopter configuration is one versioned authority policy (version 1 or
 version 2). See `config/policy.example.json`, `docs/authority-schema.md`, and

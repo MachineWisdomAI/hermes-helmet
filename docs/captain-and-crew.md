@@ -29,8 +29,11 @@ with you and your planning system.
 
 Use the planning approach and skills you prefer, such as Matt Pocock's skills
 or your own. Planning skills are deliberately left out of the release so
-adopters can choose them. The bundled `setup-helmet`, `helmet-issue`, and
-`helmet-epic` skills provide setup and delivery orchestration.
+adopters can choose them. The bundled `setup-helmet`, `helmet-issue`,
+`helmet-epic`, and `helmet-review` skills provide setup and delivery
+orchestration. `helmet-review` requests the configured worker as the GitHub
+reviewer on an existing pull request, for example one authored under your own
+identity, and reads the formal verdict it returns.
 
 The handoff has three steps:
 

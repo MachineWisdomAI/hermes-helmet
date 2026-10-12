@@ -52,7 +52,7 @@ this secret-free file.
 Pin the current public preview with:
 
 ```text
-ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea
+ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122
 ```
 
 See [runtime-image.md](runtime-image.md) for provenance and how to change that
@@ -68,7 +68,7 @@ name: exampleco-hermes-helmet
 
 services:
   hermes:
-    image: ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea
+    image: ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122
     container_name: exampleco-hermes-helmet
     command: ["gateway", "run"]
     restart: unless-stopped
@@ -143,7 +143,7 @@ in extra files or tools. Inherit the pinned digest, keep the entrypoint, keep
 UID/GID `10000`, and leave `/opt/hermes-helmet` and `/usr/local/bin/gh` alone.
 
 ```dockerfile
-FROM ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea
+FROM ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122
 
 USER root
 COPY company-files/ /opt/exampleco/files/

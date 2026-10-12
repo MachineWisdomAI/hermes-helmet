@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "hermes_helmet_captains_bridge": {
+      "command": "python3",
+      "args": [
+        "-B",
+        "./mcp/captains-bridge/server.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME",
+        "HOME",
+        "PATH"
+      ]
+    }
+  }
+}

@@ -2,7 +2,7 @@
 
 Give Hermes the wings to carry your plan through, under its own identity.
 
-Install the bundled `setup-helmet`, `helmet-issue`, and `helmet-epic` skills
+Install the bundled `setup-helmet`, `helmet-issue`, `helmet-epic`, and `helmet-review` skills
 on a configured first-officer host. This repository is the plugin
 marketplace. It packages those existing skills for Claude Code and Codex; it
 does not fork them, change the worker, or replace `helmet` setup.
@@ -26,6 +26,32 @@ path. Do not delete unrelated host skills. Canonical behavior stays in
 
 ## Install
 
+The Codex plugin also carries Captain’s Bridge: a read-only panel that
+explains one recorded piece of work in the invoking chat and opens its
+supporting records. It is Codex-only and starts no second server beyond the
+plugin's own MCP server. From an open Bridge, “Update walkthrough” can ask the
+first officer to start one read-only background preparation, cancellable from the
+panel; see the lifecycle in the Bridge guide. See the
+[source and test guide](../mcp/captains-bridge/README.md). The Claude plugin carries its own Bridge as a Claude Code mod; see
+[Captain's Bridge in Claude Code](#captains-bridge-in-claude-code).
+
+### Claude Code session records
+
+`helmet bridge read --session <id> [--transcript <path>] [--max-bytes 600000]`
+reads one Claude Code session's saved records for the Claude port of the
+Bridge. It opens files read-only, finds `<id>.jsonl` under
+`$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`) by exact file name
+only, and prints `hermes-helmet.bridge.records/1` JSON. Errors exit 2 with
+`session-not-found`, `ambiguous-session`, `session-mismatch`,
+`unsupported-format` or `unreadable`. Supported Claude Code versions are
+2.0.0 up to (not including) 2.2.0; others are `unsupported-format`.
+
+Every record's `ref` (and each `parentRef`) is a full 32-hex identity derived
+from that record's own source UUID, so it does not change when records are
+appended, a partial final line completes, or subagent records appear. When one
+source UUID expands into several output records, the first keeps the UUID-derived
+ref and later blocks get a deterministic 32-hex ref from the UUID and block index.
+
 ### Claude Code
 
 ```sh
@@ -36,7 +62,163 @@ claude plugin install hermes-helmet@hermes-helmet
 Claude namespaces plugin skills. After a new session starts, or after you
 reload plugins in an existing session, invoke them as
 `/hermes-helmet:setup-helmet`, `/hermes-helmet:helmet-issue`, and
-`/hermes-helmet:helmet-epic`.
+`/hermes-helmet:helmet-epic`, and `/hermes-helmet:helmet-review` (ask the worker to review a PR; see [helmet-issue](helmet-issue.md#ask-hermes-to-review-a-pull-request)).
+
+### Captain's Bridge in Claude Code
+
+The Claude plugin now includes the Captain's Bridge mod. A mod runs code inside
+your Claude Code sessions. The Codex plugin is a separate track: it ships
+skills and its own MCP server, and loads no mod. The skills above are unchanged and
+keep working if your organization policy disables mods; only the Bridge is
+skipped.
+
+This release carries the reader, the Changes First view, the background
+explanation and the Show Me and Retro actions. Run `/captains-bridge` in any session to open
+the Captain's Bridge pane beside the conversation. It is bound to that exact
+session ID, starts no turn and messages no one, so it can be opened while the
+first officer is working and at narrow terminal widths. It never opens by
+itself and runs no timer of its own except the one deferred start of an
+explanation request. In VS Code and headless or SDK sessions, where no
+pane draws, the command returns a short text status instead.
+
+The Bridge now reads the session's saved records and draws the Changes First
+view. Opening the pane (and **Refresh records**) runs
+`helmet bridge read --session <id>` for this exact conversation, adding
+`--transcript <path>` when the plugin saw the path at session start; otherwise
+the reader looks the session up by its exact ID. The reader is read-only, the
+call stops after 30 seconds, and no model is called and no message is sent.
+Until an explanation exists the pane shows record counts, coverage and
+**Refresh records**, never the raw transcript. A walkthrough is drawn with its objective and outcome first, then *What changed*, *What
+remains unresolved* and *Other recorded activity*. Opening an item shows its
+explanation, actor-labeled handoff, review and repair steps, the completion
+report and the disposition as separate labeled boxes, **View before and
+after** only where the records support one, links whose address appears in a
+cited record, elapsed time from the cited record timestamps, and the
+supporting records collapsed. **Back** restores the previous item and scroll
+position. A completed run or a quiet interval is never presented as accepted
+delivery or a stall.
+
+**Update explanation** prepares a new explanation in the background with one
+tool-less model request over the record summary the reader just took. The first
+officer keeps working: the Bridge starts no turn, submits no prompt, calls no
+tool, starts no subagent, sends no message, polls nothing and never retries.
+The request uses `explanationModel` (`sonnet` by default), a
+`explanationTimeoutSeconds` × 1000 time limit, 16000 tokens, and the fixed
+instructions, the walkthrough schema and the record summary as its blocks. It
+bills to this session's own Claude credentials, so one Update is one model
+call. While it prepares the pane shows **Cancel** and **Keep preparing**; a
+duplicate Update press is ignored. **Cancel** cuts the in-flight call through
+the call's own AbortSignal option (not a request field) and keeps the last
+explanation; a Cancel or a new instruction that lands while the reader is still
+running starts no call at all. A new instruction you give the first officer
+supersedes a preparing request unless you chose **Keep preparing**; your prompt
+is always passed through unchanged. The engine resolves an outcome rather than
+rejecting over what the provider did: the time limit arrives as `aborted` and
+ends the request as timed out; an `api-error` ends it as failed, naming the
+provider's HTTP status and classified kind; a reply with no text ends it as
+failed and empty; only an engine refusal (a blocked model, a bad cap) rejects
+and ends it as failed. An explanation that cites a record it was not given (or
+links an address those records do not contain) ends it as failed with
+"The explanation didn't match the records". Every ending keeps the last
+explanation and never displays or retries a partial result. A late or stale
+result of a cancelled or superseded request is discarded silently. If a plugin
+reload interrupts a request, it ends as failed with "Interrupted by a plugin
+reload" and the last explanation stays.
+
+**Refresh records** rereads only the saved records. It keeps your place and
+never changes the time the explanation read the records. When the records have
+moved on, the header says "Explanation read records at {readAt}; {n} newer
+records since." and lists read time and coverage warnings. If `helmet` cannot
+be started or is too old, exits without a reader error, prints something that
+is not the expected JSON, or speaks an incompatible schema, the pane names the
+cause and the fix and keeps the last useful view; set `helmetCommand` to an
+absolute path when Claude Desktop does not inherit your shell `PATH`.
+
+Show Me and Retro run your own installed commands in this same session. The
+Bridge checks `$.command.list()` when it opens and on every refresh, and accepts
+the configured name (`showMeCommand`, default `show-me`; `retroCommand`, default
+`retro`) or `<plugin>:<name>`. When the command is present, the button calls
+`$.command.run` once, with the scope "this session" or, for a selected item, its
+title with its evidence refs and the timestamps of the records it cites. Claude
+Code queues that run until the first officer is idle, so it never interrupts a
+turn; the Bridge submits no prompt, starts no subagent and sends nothing to
+another session. Retro asks for suggestions and applies none. While a request
+is unsettled the button shows "(queued)" and repeat presses are ignored. When
+the command is missing the action is disabled and sends nothing: "Show Me isn't
+installed. Install a skill named show-me, or set showMeCommand." (and the same
+for Retro). If the host rejects the name as unknown, the action returns to that
+missing state. The Bridge bundles neither skill and works fully without them.
+
+If the conversation changes (`/clear`, `/resume`, a fork, or the session
+ends), the Bridge ends its binding and shows exactly: "This conversation
+changed. Run /captains-bridge to open the Bridge for it." It never rebinds the
+open pane on its own; run `/captains-bridge` again.
+
+Requirements:
+
+- Claude Code 2.1.293 or newer. An older host names the required version in
+  the command and the pane. Mods are early access and their API can change
+  between Claude Code releases; this release is verified on Claude Code
+  2.1.296 by an exact, checksum-pinned CLI in CI (`claude plugin validate` and
+  `claude plugin test`, with no account credentials). Re-verify when the
+  minimum changes. CI is not an installed-host check: the Terminal and Desktop
+  Code tab are confirmed by hand before a release.
+- An organization policy that allows mods.
+- The `helmet` CLI reachable from Claude Code. Sessions started by Claude
+  Desktop may not inherit your shell `PATH`; set `helmetCommand` to an absolute
+  path then.
+
+Settings (plugin `userConfig`, defaults in parentheses): `helmetCommand`
+(`helmet`), `explanationModel` (`sonnet`), `explanationTimeoutSeconds` (`180`),
+`showMeCommand` (`show-me`), `retroCommand` (`retro`). `helmetCommand`,
+`explanationModel` and `explanationTimeoutSeconds` are used by the reader and
+by **Update explanation**; `showMeCommand` and `retroCommand` name the Show Me
+and Retro commands.
+
+Install from the public marketplace:
+
+```sh
+claude plugin marketplace add MachineWisdomAI/hermes-helmet
+claude plugin install hermes-helmet@hermes-helmet
+```
+
+Update with one path:
+
+```sh
+claude plugin update hermes-helmet@hermes-helmet
+```
+
+then run `/reload-plugins` or start a new session. Third-party marketplaces do
+not auto-update, so each release carries a version bump; that update command is
+the whole procedure, and no repeated restart is needed.
+
+What the Bridge shows and does not show:
+
+- Records are this session only: the reader opens the bound session's saved
+  records (and its subagent records), never another session's.
+- Missing states are shown, not filled in: no records yet, partial coverage,
+  an unsupported record format, a missing Show Me or Retro command, and
+  records newer than the explanation are each named in the pane.
+- The Bridge does not collect Hermes Docker events directly. Worker results
+  appear only when they were recorded in this session, and missing coverage is
+  disclosed at the affected item.
+- An explanation is source-bound: it cites the records it was given. That is
+  not independent verification of delivery; the Captain's own review and
+  acceptance remain separate.
+- Source checks and CI validate the mod. They are not an installed-host
+  acceptance; that and any release are separate, human-only steps.
+
+The mod's calls are limited in CI to a read-only allowlist: `$.session.id`,
+`$.session.version`, `$.process.run`, `$.model.complete`, `$.command.register`,
+`$.command.list`, `$.command.run`, `$.ui.open`, `$.ui.resolve`, `$.ui.status`,
+`$.ui.toast`, `$.state.get`, `$.state.set` and `$.clock.after`. It uses no
+direct network, file-write, prompt-submission, subagent or message APIs. An
+explicit Update explanation makes the one documented tool-less model request
+through Claude Code, which reaches the configured model provider. This
+release uses `$.clock.after`, `$.command.list`, `$.command.register`,
+`$.command.run`, `$.model.complete`, `$.process.run`, `$.session.id`,
+`$.session.version`, `$.state.get`, `$.state.set`, `$.ui.open` and
+`$.ui.resolve`.
 
 ### Codex
 
@@ -51,6 +233,60 @@ in this repository.
 
 Confirm with `claude plugin list` or `codex plugin marketplace list` when
 those CLIs are on the host.
+
+#### Codex: update and activation
+
+Each release carries a version bump in `.codex-plugin/plugin.json` (kept equal
+to the Claude manifest, `pyproject.toml` and the package version by
+`scripts/mw-version.py`), because a third-party marketplace does not
+auto-update.
+
+```sh
+codex plugin marketplace upgrade hermes-helmet
+codex plugin list --marketplace hermes-helmet --json
+```
+
+`codex plugin marketplace upgrade hermes-helmet` refreshes the marketplace
+catalog and installs the plugin's new version. Confirm what is installed with
+`codex plugin list --marketplace hermes-helmet --json`, which reports the
+plugins and versions installed from that marketplace; `codex plugin marketplace
+list` reports marketplace roots only, not installed versions.
+
+Updating replaces the plugin's files on disk. The running connection is
+separate: the plugin's MCP server (`codex.mcp.json` →
+`mcp/captains-bridge/server.py`) is started per session and skills are read when
+a session starts, so an update is picked up by starting a new Codex session or
+chat. Where the host requires it, that single new session is the one
+consolidated activation step; repeated global Codex restarts are not an update
+procedure and are not needed. A listed version or a successful install proves
+the installed files, not that a running connection or panel has adopted them.
+
+The plugin package is the repository tree selected by the marketplace entry. It
+needs no local marketplace, private toolkit or personal path. It does not
+contain chat records, screenshots, research artifacts, credentials or local
+prototypes; the Bridge reads the invoking chat's existing records at run time
+and writes nothing.
+
+#### Captain’s Bridge: host and storage compatibility
+
+| Area | Supported | Not supported or unverified |
+| --- | --- | --- |
+| Host | Codex with plugin MCP apps and the `CODEX_THREAD_ID` environment variable. | Other Codex-compatible hosts; the Claude plugin does not load this server (see the Claude Code section for its own pane). |
+| Runtime | Python 3.11 or newer on the host running the plugin's MCP server. | Older Python: the server does not start. |
+| Chat storage | Read-only access to the selected chat's existing local Codex records in the format the reader recognizes. | Any other or newer record format: rejected with an explicit message, never guessed. |
+| Background “Update walkthrough” | Only on a host that advertises `hostCapabilities.backgroundWalkthroughDelivery`. | The measured installed Codex does not: the button ends immediately, keeps the last view and starts no snapshot, agent or timer. |
+| Show Me / Retro | Sent on an explicit click to the originating chat when a skill with that name is discoverable. | Missing skill: the chat reports it and stops; nothing is substituted. |
+
+Failure states are visible in the panel and keep the last good view: missing
+chat identity (needs binding), unknown or foreign chat, empty or unsupported
+records, partially written final record, refresh error, stale source (flagged
+older), and the unsupported-background boundary. A successful tool call is not
+proof that a panel rendered; rendering is established only by opening the
+Bridge in Codex. The protocol, package and fixture tests in `scripts/verify.sh`
+do not stand in for that, and the Bridge guide records which cases were
+exercised in an installed Codex and which only with fixtures (for example,
+missing optional skills were tested with fixtures, not by removing installed
+skills).
 
 ## Starting a first-officer session
 

@@ -81,6 +81,7 @@ Hermes does the implementation.
 | [`setup-helmet`](skills/setup-helmet/SKILL.md) | Configure identities, repositories, model access, and the worker runtime. |
 | [`helmet-issue`](skills/helmet-issue/SKILL.md) | Carry one issue through implementation, review, repairs, and acceptance. |
 | [`helmet-epic`](skills/helmet-epic/SKILL.md) | Coordinate dependent issues and run independent work in parallel. |
+| [`helmet-review`](skills/helmet-review/SKILL.md) | Request a worker review of a pull request and read its formal verdict. |
 
 Install those skills with `helmet install-skills`, or as a Claude Code / Codex
 plugin; see [First-officer plugin](docs/first-officer-plugins.md). Choosing
@@ -131,8 +132,8 @@ helmet --help
 ```
 
 Start the worker from the published preview digest
-`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:f6e2375441cec50cac370941f4bfa53e7b2af0b8bff45ee177da6e49b760caea`
-(source `c0fc5d883b56befcf1bd8354c6dab7c612ac6455`). The quickstart pulls that
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122`
+(source `80726d21f11d3856e32d30c440123101c94f8664`). The quickstart pulls that
 image and runs Compose with `--no-build`, then completes provider login and
 enables issue intake. Building from `deploy/Dockerfile` remains a development
 option. See the [runtime image notes](docs/runtime-image.md). Keep
