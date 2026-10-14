@@ -20,7 +20,7 @@ WRITING_RAW = json.loads(json.dumps(RAW))
 WRITING_RAW['worker_roles'] = {
     'profiles': {'builder': 'builder', 'reviewer': 'reviewer', 'writing': 'writing'},
     'max_in_progress': 12, 'max_in_progress_per_profile': 4,
-    'reasoning_effort': {'builder': 'high', 'reviewer': 'xhigh', 'writing': 'medium'},
+    'reasoning_effort': {'builder': 'xhigh', 'reviewer': 'max', 'writing': 'high'},
 }
 WRITING_POLICY = authority.policy_from_mapping(WRITING_RAW)
 

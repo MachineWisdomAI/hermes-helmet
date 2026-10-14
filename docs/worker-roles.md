@@ -20,9 +20,9 @@ and per-role reasoning policy are available from 0.18.0:
     "max_in_progress": 12,
     "max_in_progress_per_profile": 4,
     "reasoning_effort": {
-      "builder": "high",
-      "reviewer": "xhigh",
-      "writing": "medium"
+      "builder": "xhigh",
+      "reviewer": "max",
+      "writing": "high"
     }
   }
 }
