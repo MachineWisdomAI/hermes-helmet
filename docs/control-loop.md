@@ -67,3 +67,21 @@ Adopter configuration is one versioned authority policy (version 1 or
 version 2). See `config/policy.example.json`, `docs/authority-schema.md`, and
 `docs/private-overlay.md`. Machine Wisdom deployment values stay outside this
 repository.
+
+Native worker runtimes batch a reconciliation's read-only `kanban show --json`
+commands through one initialized native Kanban dispatcher. Board scoping,
+payloads and per-task errors use the same CLI handlers. This removes repeated
+Python/CLI startup without parallelizing mutations or retaining cross-cycle
+state. Runtimes without that dispatcher retain the bounded subprocess fallback.
+A read-only live benchmark dropped from 55 seconds to 21.3 seconds, leaving room
+for the gateway's minute tick phase. Actual cadence remains an acceptance check.
+
+Minute schedules also require a sufficiently frequent due-job check. The opt-in
+`helmet-minute` native provider delegates to Hermes's existing in-process ticker
+with a five-second interval. It remains the single scheduler and retains native
+claims, multiplexed profile scopes, pause/drain gates and delivery. Only due jobs
+execute; clock checks do not invoke a model. The portable installer helper writes
+a managed provider shim and selects it without replacing another custom provider.
+Activate it with the normal drained gateway restart. Missing provider support or
+plugin isolation incompatibility must fail runtime acceptance, not be reported as
+minute cadence. Rollback selects the prior `cron.provider` and restarts drained.
