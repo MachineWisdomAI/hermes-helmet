@@ -37,6 +37,13 @@ The runtime handles intake and repair in five parts:
    `metadata.published_pr`, and Captain merge gates stay independent of that
    hook.
 
+Within a poll cycle, repair reconciliation prefetches the needed Kanban root
+and repair task reads with at most four concurrent `show` commands. Each cycle
+uses a new snapshot, including terminal tasks whose PR metadata may arrive late.
+Failures remain associated with their individual tasks. Task creation and ledger
+updates remain serialized under the existing transactions and idempotency keys;
+this read optimization does not add a queue, scheduler, or persistent cache.
+
 Captain-side single-issue orchestration is layered on top without a second
 watcher:
 
