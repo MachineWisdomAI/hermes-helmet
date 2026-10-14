@@ -229,6 +229,51 @@ class GitHubIssuePollerTests(unittest.TestCase):
             worker_completion_contract=worker_completion_contract,
         )
 
+    def test_history_reads_overlap_but_remain_bounded_and_fresh(self) -> None:
+        class HistoryRunner(FakeRunner):
+            def __init__(self):
+                super().__init__([])
+                self.lock = threading.Lock()
+                self.overlap = threading.Event()
+                self.active = 0
+                self.peak = 0
+                self.reads = 0
+
+            def run(self, command):
+                if command[0] == poller.HERMES and "show" in command:
+                    with self.lock:
+                        self.active += 1
+                        self.reads += 1
+                        self.peak = max(self.peak, self.active)
+                        if self.active >= 2:
+                            self.overlap.set()
+                    try:
+                        self.overlap.wait(0.1)
+                        return json.dumps({"task": {"status": "done"}, "runs": []})
+                    finally:
+                        with self.lock:
+                            self.active -= 1
+                return super().run(command)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = self.policy(root)
+            ledger = root / "ledger.db"
+            with sqlite3.connect(ledger) as connection:
+                poller._ensure_ledger(connection)
+                connection.executemany(
+                    "INSERT INTO issue_tasks(issue_url, task_id) VALUES (?, ?)",
+                    [(f"https://github.com/{FIXTURE_SLUG}/issues/{n}", f"t_{n}")
+                     for n in range(8)],
+                )
+            runner = HistoryRunner()
+            for cycle in range(2):
+                self.assertEqual(poller.run_once(policy, ledger, runner).errors, [])
+                self.assertEqual(runner.reads, (cycle + 1) * 8)
+            self.assertGreater(runner.peak, 1, "serial history reads exhaust the scan interval")
+            self.assertLessEqual(runner.peak, 4)
+            self.assertEqual(runner.created, [])
+
     def eligible(self) -> dict[str, object]:
         return {
             "number": 48,
