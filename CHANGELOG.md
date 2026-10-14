@@ -5,6 +5,12 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.17.0
+
+- Add optional worker roles, shared capacity configuration, drained transactional
+  provisioning, and identity verification. Route issues and native reviews
+  through the existing poller, with deployment adapters consuming one core.
+
 ### 0.16.1
 
 - Correct the quickstart's package label for the published Claude-capable

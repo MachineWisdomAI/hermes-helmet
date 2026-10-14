@@ -145,6 +145,7 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
         "repositories",
         "skills",
         "model_lanes",
+        "worker_roles",
         "worker_access_scope",
         "worker_completion_contract",
         "enrollment",
@@ -270,6 +271,7 @@ class Policy:
     openviking_peers: tuple[OpenVikingPeer, ...] = ()
     skills: CompanySkillsConfig = CompanySkillsConfig()
     model_lanes: object | None = None
+    worker_roles: object | None = None
     worker_access_scope: str = DEFAULT_WORKER_ACCESS_SCOPE
     worker_completion_contract: str = DEFAULT_WORKER_COMPLETION_CONTRACT
     enrollment: EnrollmentPolicy = EnrollmentPolicy()
@@ -1007,7 +1009,14 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
             "must differ from worker_github_login",
         )
 
+    from .worker_roles import parse_roles
+    try:
+        worker_roles = parse_roles(raw)
+    except ValueError as exc:
+        raise _field_error("worker_roles", str(exc)) from exc
+
     return Policy(
+        worker_roles=worker_roles,
         version=version,
         schedule=schedule,
         board=board,

@@ -202,3 +202,9 @@ identities, hosts, paths, or service labels.
 See [private-overlay.md](private-overlay.md). A company repository supplies a
 concrete version-2 policy document (and optional rendered contract) and mounts
 it on the published image without forking Hermes Helmet source.
+
+## Worker roles
+
+Optional `worker_roles` selects execution profiles and shared capacity. See
+[worker roles](worker-roles.md) for the schema and drained installation contract.
+Omitting this field preserves existing single-profile behavior.
