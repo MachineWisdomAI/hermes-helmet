@@ -67,3 +67,11 @@ Adopter configuration is one versioned authority policy (version 1 or
 version 2). See `config/policy.example.json`, `docs/authority-schema.md`, and
 `docs/private-overlay.md`. Machine Wisdom deployment values stay outside this
 repository.
+
+Native worker runtimes batch a reconciliation's read-only `kanban show --json`
+commands through one initialized native Kanban dispatcher. Board scoping,
+payloads and per-task errors use the same CLI handlers. This removes repeated
+Python/CLI startup without parallelizing mutations or retaining cross-cycle
+state. Runtimes without that dispatcher retain the bounded subprocess fallback.
+A read-only live benchmark dropped from 55 seconds to 21.3 seconds, leaving room
+for the gateway's minute tick phase. Actual cadence remains an acceptance check.

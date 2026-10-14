@@ -132,7 +132,48 @@ class Runner(Protocol):
     def run(self, command: Sequence[str]) -> str: ...
 
 
+_BATCH_TASK_READ_PROGRAM = r"""
+import argparse, contextlib, io, json, sys
+from hermes_cli.kanban import build_parser, kanban_command
+parser = argparse.ArgumentParser()
+build_parser(parser.add_subparsers(dest='command'))
+results = {}
+for task_id in json.loads(sys.argv[2]):
+    output, errors = io.StringIO(), io.StringIO()
+    try:
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            args = parser.parse_args(['kanban', '--board', sys.argv[1], 'show', task_id, '--json'])
+            code = kanban_command(args)
+        results[task_id] = {'output': output.getvalue()} if code == 0 else {'error': True}
+    except (Exception, SystemExit):
+        results[task_id] = {'error': True}
+print(json.dumps(results))
+"""
+
+
 class SubprocessRunner:
+    def read_tasks(self, board: str, task_ids: Sequence[str]) -> dict[str, dict] | None:
+        """Amortize native CLI initialization; no writes or cross-cycle cache.
+
+        Alternate runtimes without the native dispatcher keep the ordinary
+        bounded CLI path. Per-task failures remain failures, never empty tasks.
+        """
+        python = Path(HERMES).parent / 'python'
+        if not python.is_file():
+            return None
+        try:
+            output = self.run([str(python), '-c', _BATCH_TASK_READ_PROGRAM,
+                               board, json.dumps(list(task_ids))])
+            results = json.loads(output)
+        except (PollerError, ValueError):
+            return None
+        if not isinstance(results, dict) or set(results) != set(task_ids):
+            return None
+        if not all(isinstance(v, dict) and (isinstance(v.get('output'), str)
+                   or v.get('error') is True) for v in results.values()):
+            return None
+        return results
+
     def run(self, command: Sequence[str]) -> str:
         completed = subprocess.run(
             list(command), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -769,6 +810,20 @@ class _TaskReadSnapshot:
     def __init__(self, runner: Runner, policy: Policy, task_ids: Sequence[str]):
         self.runner = runner
         self.reads: dict[tuple[str, ...], Future[str]] = {}
+        unique_ids = list(dict.fromkeys(task_ids))
+        reader = getattr(runner, 'read_tasks', None)
+        batch = reader(policy.board, unique_ids) if callable(reader) and unique_ids else None
+        if isinstance(batch, dict):
+            for task_id in unique_ids:
+                command = (HERMES, 'kanban', '--board', policy.board, 'show', task_id, '--json')
+                future = Future()
+                item = batch[task_id]
+                if item.get('error'):
+                    future.set_exception(PollerError(f'Kanban show failed for {task_id}; output withheld'))
+                else:
+                    future.set_result(item['output'])
+                self.reads[command] = future
+            return
         with ThreadPoolExecutor(max_workers=4) as pool:
             for task_id in dict.fromkeys(task_ids):
                 command = (HERMES, "kanban", "--board", policy.board,
