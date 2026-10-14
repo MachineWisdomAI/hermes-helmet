@@ -10,6 +10,8 @@ never reads, logs, or persists token values itself.
 
 from __future__ import annotations
 
+from hermes_helmet.worker_roles import for_issue, for_role
+
 import argparse
 from dataclasses import dataclass, field
 import json
@@ -354,7 +356,10 @@ def _tracked_tasks(ledger: Path) -> list[tuple[str, str]]:
 
 
 def _kanban_max_runtime_args(policy: Policy) -> list[str]:
-    return ["--max-runtime", str(policy.budgets.worker_max_runtime_seconds)]
+    seconds = policy.budgets.worker_max_runtime_seconds
+    if type(seconds) is not int or seconds < 1:
+        raise PollerError("policy budgets.worker_max_runtime_seconds must be a positive integer")
+    return ["--max-runtime", str(seconds)]
 
 
 def _kanban_task(policy: Policy, task_id: str, runner: Runner) -> dict[str, object]:
@@ -811,6 +816,10 @@ def reconcile_review_tasks(
 
 
 def create_task_once(issue: Issue, policy: Policy, ledger: Path, runner: Runner) -> tuple[str, bool]:
+    try:
+        policy = for_issue(policy, issue.body)
+    except ValueError as exc:
+        raise PollerError(str(exc)) from exc
     ledger.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     connection = sqlite3.connect(ledger, timeout=30, isolation_level=None)
     try:
@@ -1006,6 +1015,7 @@ def create_review_task(
 ) -> str:
     """Submit one ordinary Kanban review task; the idempotency key reuses it."""
 
+    policy = for_role(policy, "reviewer")
     repository = request.repository
     if not repository.worktree.is_dir():
         raise PollerError(f"allowlisted worktree is unavailable: {repository.worktree}")
@@ -1073,8 +1083,8 @@ def _open_review_attempts(policy: Policy, runner: Runner) -> list[tuple[str, str
             policy.board,
             "list",
             "--json",
-            "--assignee",
-            policy.assignee,
+            # Preserve predecessor dependencies across role migrations.
+            *([] if policy.worker_roles else ["--assignee", policy.assignee]),
         ]
     )
     try:
@@ -1188,13 +1198,13 @@ def run_once(policy: Policy, ledger: Path, runner: Runner) -> PollResult:
     )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, policy_loader=None, poll=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
     args = parser.parse_args(argv)
     try:
-        result = run_once(load_policy(args.config), args.ledger, SubprocessRunner())
+        result = (poll or run_once)((policy_loader or load_policy)(args.config), args.ledger, SubprocessRunner())
     except PollerError as exc:
         print(f"GitHub issue poller failed: {exc}", file=sys.stderr)
         return 1

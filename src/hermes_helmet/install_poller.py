@@ -9,6 +9,7 @@ OpenViking, WisdomLoop, FAVA Trails, or any skill pack.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -190,6 +191,9 @@ def install(
     reconcile_cron: bool = True,
     import_company_skills: bool = True,
     company_skills_state_root: Path | None = None,
+    worker_state_root: Path | None = None,
+    gh_bin: str = "gh",
+    git_credential_helper: str | None = None,
 ) -> None:
     if not policy_path.is_file():
         raise InstallError(f"policy is missing: {policy_path}")
@@ -198,13 +202,27 @@ def install(
     except poller.PollerError as exc:
         raise InstallError(f"invalid policy: {exc}") from exc
 
+    role_command = None
+    if policy.worker_roles is not None:
+        state_root = worker_state_root or Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
+        role_command = [str(_hermes_python(hermes_bin)), "-m", "hermes_helmet.worker_role_runtime",
+                        "--config", str(policy_path), "--state-root", str(state_root),
+                        "--hermes", str(hermes_bin), "--gh", gh_bin]
+        if git_credential_helper is not None:
+            role_command.extend(["--git-credential-helper", git_credential_helper])
+        _run([*role_command, "--check-drained"])
+
     ledger_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     _verify_worktrees(policy)
     _install_launcher(script_path, policy_path, ledger_path)
 
-    if configure_model and (hermes_bin.is_file() or shutil.which(str(hermes_bin))):
+    if configure_model and role_command is None and (hermes_bin.is_file() or shutil.which(str(hermes_bin))):
         resolved = hermes_bin if hermes_bin.is_file() else Path(shutil.which(str(hermes_bin)) or hermes_bin)
         _configure_worker_model(policy, resolved)
+
+    if role_command is not None:
+        # Provisioning owns profile model/capacity changes transactionally.
+        _run(role_command)
 
     if reconcile_cron:
         if not hermes_bin.is_file() and not shutil.which(str(hermes_bin)):
@@ -262,12 +280,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--skip-model-config",
         action="store_true",
-        help="Do not write provider/model/max_turns into the worker profile.",
+        help="Skip standalone model setup; configured roles still apply their policy.",
     )
     parser.add_argument(
         "--skip-cron",
         action="store_true",
-        help="Validate policy and worktrees only; do not touch Hermes cron.",
+        help="Do not touch Hermes cron; launcher and configured profiles are still installed.",
     )
     parser.add_argument(
         "--skip-company-skills",
@@ -280,6 +298,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Hermes-owned company-skills state root (default under HERMES_HOME).",
     )
+    parser.add_argument("--worker-state-root", type=Path)
+    parser.add_argument("--gh", default="gh")
+    parser.add_argument("--git-credential-helper")
     args = parser.parse_args(argv)
     try:
         install(
@@ -291,6 +312,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             reconcile_cron=not args.skip_cron,
             import_company_skills=not args.skip_company_skills,
             company_skills_state_root=args.company_skills_state_root,
+            worker_state_root=args.worker_state_root,
+            gh_bin=args.gh,
+            git_credential_helper=args.git_credential_helper,
         )
     except (InstallError, OSError) as exc:
         print(f"Hermes Helmet poller install failed: {exc}", file=sys.stderr)

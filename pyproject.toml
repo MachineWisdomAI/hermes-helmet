@@ -4,12 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-helmet"
-version = "0.16.2"
+version = "0.17.0"
 description = "Open-source software factory for coding agents: delegation, review, and repair"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Machine Wisdom AI" }]
+
+[project.optional-dependencies]
+worker = ["PyYAML>=6.0.2,<7"]
 
 [project.urls]
 Homepage = "https://github.com/MachineWisdomAI/hermes-helmet"
