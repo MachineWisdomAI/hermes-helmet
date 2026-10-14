@@ -2541,5 +2541,75 @@ class IncidentalCompletionEpicTests(unittest.TestCase):
         self.assertNotIn(dependent, buckets["completed"])
 
 
+class BlockedReviewedHeadEpicTests(unittest.TestCase):
+    """An unchanged blocked review releases its epic slot; other cases do not."""
+
+    HEAD = "abc123deadbeef"
+
+    def _classify(self, *, live_head: str, repair_status: str | None = None,
+                  live_error: str | None = None) -> dict[str, list[str]]:
+        policy = _policy()
+        root = he.EpicNode(
+            url=EPIC_URL, number=42, repository_slug=FIXTURE_SLUG, title="Epic",
+            body="Epic root\n", state="open", state_reason=None,
+            labels=("ready-for-agent",), is_root=True,
+        )
+        child = he.EpicNode(
+            url=CHILD_A, number=100, repository_slug=FIXTURE_SLUG, title="Child",
+            body=f"## Parent\n\n- {EPIC_URL}\n", state="open", state_reason=None,
+            labels=("ready-for-agent", "hermes-kanban-go"), parent_urls=(EPIC_URL,),
+        )
+        graph = he.EpicGraph(
+            root_url=EPIC_URL, root=root, children=(child,),
+            blocked_by={CHILD_A: frozenset()}, fingerprint="blocked-head", source="body",
+        )
+        pull = hi.PullRequestRef(
+            repository_slug=FIXTURE_SLUG, number=10,
+            url=f"https://github.com/{FIXTURE_SLUG}/pull/10", head_sha=live_head,
+            head_ref="automation/demo-repo-100", base_ref="main", author_login=WORKER,
+            state="open", merged=False, mergeable_state="clean", draft=False,
+        )
+        checkpoint = hi.Checkpoint(
+            version=hi.CHECKPOINT_VERSION, issue_url=CHILD_A, state="BLOCKED",
+            root_task_id="t_root", reviewed_head=self.HEAD, clean_head=None,
+        )
+
+        def _status(policy, url, **kwargs):
+            return hi.build_status(
+                policy, url, checkpoint, pull=pull,
+                repair_task_id="t_repair" if repair_status else None,
+                repair_status=repair_status, live_error=live_error,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            he, "status_issue", side_effect=_status
+        ):
+            return he.classify_children(
+                policy, graph, checkpoint_dir=Path(tmp), runner=mock.Mock(),
+                gh="gh", hermes="hermes", ledger=Path(tmp) / "ledger.sqlite3",
+                worker_runtime=(), epic_body="Epic\n",
+            )
+
+    def test_unchanged_blocked_head_is_awaiting_human(self) -> None:
+        buckets = self._classify(live_head=self.HEAD)
+        self.assertEqual(buckets["awaiting_human"], [CHILD_A])
+        self.assertEqual(buckets["active"], [])
+        self.assertEqual(buckets["completed"], [])
+
+    def test_changed_head_stays_active(self) -> None:
+        buckets = self._classify(live_head="fffffffffff999")
+        self.assertNotIn(CHILD_A, buckets["awaiting_human"])
+        self.assertNotIn(CHILD_A, buckets["completed"])
+        self.assertEqual(buckets["active"], [CHILD_A])
+
+    def test_active_repair_stays_active(self) -> None:
+        buckets = self._classify(live_head=self.HEAD, repair_status="running")
+        self.assertEqual(buckets["active"], [CHILD_A])
+
+    def test_live_uncertainty_stays_active(self) -> None:
+        buckets = self._classify(live_head=self.HEAD, live_error="err:live_uncertain")
+        self.assertEqual(buckets["active"], [CHILD_A])
+
+
 if __name__ == "__main__":
     unittest.main()

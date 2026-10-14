@@ -2250,10 +2250,22 @@ def build_status(
 
     # Read-only status must surface a new unreviewed head without claiming READY.
     head_needs_review = False
+    # An explicit BLOCKED review of the unchanged live head is a deliberate stop:
+    # it frees scheduling capacity but is never clean, approved, or mergeable.
+    blocked_reviewed_head = bool(
+        checkpoint
+        and state == "BLOCKED"
+        and clean is None
+        and pull
+        and reviewed
+        and reviewed.casefold() == pull.head_sha.casefold()
+        and repair_state in {"none", "n/a-merged"}
+    )
     if (
         pull
         and not pull.merged
         and live_error is None
+        and not blocked_reviewed_head
         and (
             clean is None
             or clean.casefold() != pull.head_sha.casefold()

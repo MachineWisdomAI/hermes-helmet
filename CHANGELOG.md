@@ -5,6 +5,15 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+### 0.17.1
+
+- Release the epic slot of a child explicitly reviewed BLOCKED at its unchanged
+  live pull-request head
+  ([#88](https://github.com/MachineWisdomAI/hermes-helmet/issues/88)). Status
+  reports it terminal so the epic lists it as awaiting human, without marking it
+  clean, approved, mergeable, or a satisfied dependency. A changed head, live-read
+  uncertainty, or an outstanding repair stays nonterminal.
+
 ### 0.17.0
 
 - Add optional worker roles, shared capacity configuration, drained transactional
