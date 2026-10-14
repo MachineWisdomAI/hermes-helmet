@@ -1,8 +1,6 @@
 {
   "name": "hermes-helmet",
   "version": "0.17.0",
-||||||| 88ae1bf
-  "version": "0.16.2",
   "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, and dependent-issue coordination.",
   "author": {
     "name": "Machine Wisdom",
