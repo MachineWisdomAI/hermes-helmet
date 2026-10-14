@@ -13,6 +13,7 @@ from __future__ import annotations
 from hermes_helmet.worker_roles import for_issue, for_role
 
 import argparse
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
@@ -757,6 +758,50 @@ def _reconcile_review_task(
     return task_id
 
 
+class _TaskReadSnapshot:
+    """One reconciliation's bounded Kanban reads; writes always pass through.
+
+    Prefetch only show commands. Completed futures retain per-task failures so
+    the existing serial reconciliation reports them without losing other work.
+    A new snapshot each cycle preserves late terminal PR metadata discovery.
+    """
+
+    def __init__(self, runner: Runner, policy: Policy, task_ids: Sequence[str]):
+        self.runner = runner
+        self.reads: dict[tuple[str, ...], Future[str]] = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for task_id in dict.fromkeys(task_ids):
+                command = (HERMES, "kanban", "--board", policy.board,
+                           "show", task_id, "--json")
+                self.reads[command] = pool.submit(runner.run, list(command))
+
+    def run(self, command: Sequence[str]) -> str:
+        future = self.reads.get(tuple(command))
+        return future.result() if future is not None else self.runner.run(command)
+
+
+def _task_reads_for_reconciliation(
+    policy: Policy,
+    ledger: Path,
+    tracked_tasks: Sequence[tuple[str, str]],
+    open_pulls: dict[str, set[str]],
+    runner: Runner,
+) -> Runner:
+    task_ids: list[str] = []
+    with sqlite3.connect(ledger, timeout=30) as connection:
+        for issue_url, root_task_id in tracked_tasks:
+            match = ISSUE_URL_RE.fullmatch(issue_url)
+            if match is None or match.group("slug") not in open_pulls:
+                continue
+            watch = _watch_state(connection, issue_url)
+            if watch.pull_url is not None and watch.pull_url not in open_pulls[match.group("slug")]:
+                continue
+            task_ids.append(root_task_id)
+            if watch.last_repair_task_id is not None:
+                task_ids.append(watch.last_repair_task_id)
+    return _TaskReadSnapshot(runner, policy, task_ids)
+
+
 def reconcile_review_tasks(
     policy: Policy,
     ledger: Path,
@@ -779,6 +824,12 @@ def reconcile_review_tasks(
         except PollerError as exc:
             errors.append(f"Failed to list open pull requests for {repository.slug}: {exc}")
 
+    # Read outside write transactions, with bounded concurrency. Re-read watch
+    # state under BEGIN IMMEDIATE below; newly referenced task IDs fall through
+    # to a live read rather than using an unrelated or cross-cycle snapshot.
+    runner = _task_reads_for_reconciliation(
+        policy, ledger, tracked_tasks, open_pulls, runner
+    )
     for issue_url, root_task_id in tracked_tasks:
         issue_match = ISSUE_URL_RE.fullmatch(issue_url)
         repository_slug = issue_match.group("slug") if issue_match is not None else None
