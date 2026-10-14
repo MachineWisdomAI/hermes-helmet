@@ -70,8 +70,10 @@ or issue does not satisfy its unfinished outcome.
    never a membership list for the epic root.
 2. **Explicit body fallback** (documented; required when native membership is empty):
    - Children: issues that declare a `Parent` section or `Parent:` line targeting the
-     epic (full issue URL or same-repository `#N` / `owner/repo#N`). Allowlisted-repo
-     search yields **candidates only** — each hit is kept only after its live Parent
+     epic (full issue URL or same-repository `#N` / `owner/repo#N`). Search runs only
+     in the epic repository, and only when native membership is empty or unavailable
+     (HTTP 404). Cross-repository children need native membership or explicit
+     `--child ISSUE_URL` seeds on each pass. Search yields **candidates only** — each hit is kept only after its live Parent
      relationship points at the epic. Ordinary mentions are skipped. `--child` seeds
      still require a strict Parent link (missing/wrong Parent fails closed).
    - Edges: `Blocked by` section or `Blocked by:` line with full URLs or same-repo short
