@@ -6,6 +6,7 @@ history or OAuth grants, and does not start workers or restart the gateway.
 from __future__ import annotations
 
 import json
+import io
 import logging
 import os
 from pathlib import Path
@@ -38,11 +39,37 @@ def require_drained(hermes_bin: str = HERMES) -> None:
             raise RuntimeError("running tasks remain; role installation requires a drained worker")
 
 
+def _yaml_load(text: str):
+    try:
+        import yaml
+    except ModuleNotFoundError as exc:
+        if exc.name != "yaml":
+            raise
+        from ruamel.yaml import YAML
+        return YAML(typ="safe").load(text)
+    return yaml.safe_load(text)
+
+
+def _yaml_dump(value: dict) -> str:
+    try:
+        import yaml
+    except ModuleNotFoundError as exc:
+        if exc.name != "yaml":
+            raise
+        from ruamel.yaml import YAML
+        serializer = YAML(typ="safe")
+        serializer.default_flow_style = False
+        serializer.sort_base_mapping_type_on_output = False
+        stream = io.StringIO()
+        serializer.dump(value, stream)
+        return stream.getvalue()
+    return yaml.safe_dump(value, sort_keys=False)
+
+
 def _read_config(path: Path) -> dict:
-    import yaml
     if path.is_symlink() or not path.is_file():
         raise RuntimeError(f"expected a regular config: {path}")
-    value = yaml.safe_load(path.read_text())
+    value = _yaml_load(path.read_text())
     if not isinstance(value, dict):
         raise RuntimeError(f"invalid config mapping: {path}")
     return value
@@ -81,7 +108,6 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
               guard: Callable[[], None] = require_drained,
               runtime_check: Callable[..., None] | None = None) -> None:
     """Transactional leaf updates; preserve unrelated profile state on reinstallation."""
-    import yaml
     guard()
     builder = root / "profiles" / roles.profile("builder")
     template = _read_config(builder / "config.yaml")
@@ -157,11 +183,11 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                 decompose=False, dispatch_in_gateway=False,
             )
             config.setdefault("delegation", {})["max_concurrent_children"] = 1
-            write(home / "config.yaml", yaml.safe_dump(config, sort_keys=False).encode())
+            write(home / "config.yaml", _yaml_dump(config).encode())
         config = _read_config(root / "config.yaml")
         config.setdefault("kanban", {}).update(max_in_progress=roles.max_in_progress,
                                                max_in_progress_per_profile=roles.max_in_progress_per_profile)
-        write(root / "config.yaml", yaml.safe_dump(config, sort_keys=False).encode())
+        write(root / "config.yaml", _yaml_dump(config).encode())
         verify(root, roles, provider=provider, model=model, turns=turns)
         if runtime_check is not None:
             runtime_check(root, roles)

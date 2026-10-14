@@ -62,6 +62,25 @@ class ProvisionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'capacity drift'):
             runtime.verify(self.root, POLICY.worker_roles, provider='approved', model='approved-model', turns=2000)
 
+    def test_hermes_ruamel_only_environment(self):
+        # The production Hermes image provides ruamel.yaml but not PyYAML.
+        import builtins
+        try:
+            import ruamel.yaml
+        except ImportError:
+            self.skipTest('Hermes ruamel.yaml is not installed')
+        original_import = builtins.__import__
+        def without_pyyaml(name, *args, **kwargs):
+            if name == 'yaml':
+                raise ModuleNotFoundError("No module named 'yaml'", name='yaml')
+            return original_import(name, *args, **kwargs)
+        with patch('builtins.__import__', side_effect=without_pyyaml):
+            self.provision()
+            self.provision()
+            runtime.verify(self.root, POLICY.worker_roles, provider='approved', model='approved-model', turns=2000)
+        self.assertEqual(len(self.created), 3)
+        self.assertIn('other: retained', (self.root / 'config.yaml').read_text())
+
     def test_failed_acceptance_rolls_back_files_and_new_profiles(self):
         original = (self.root / 'config.yaml').read_bytes()
         builder_config = (self.builder / 'config.yaml').read_bytes()

@@ -40,7 +40,7 @@ Existing queued tasks are not reassigned.
 
 ## Installation and verification
 
-Install the package's `worker` extra for PyYAML in non-Hermes environments.
+The provisioner supports Hermes' bundled `ruamel.yaml` and PyYAML. Install the package's `worker` extra for PyYAML in environments without either parser.
 Start with an approved builder profile, subprocess home, and company tools and
 skills. Run as the worker UID. Pause Hermes dispatch and drain running tasks
 on every board; the installer checks both before configuration writes.
