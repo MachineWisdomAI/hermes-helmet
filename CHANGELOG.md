@@ -5,7 +5,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.17.1
+### 0.17.2
 
 - Release the epic slot of a child explicitly reviewed BLOCKED at its unchanged
   live pull-request head
