@@ -603,6 +603,31 @@ class FrontierAndPassTests(unittest.TestCase):
             )
         )
 
+    def test_epic_scheduled_cadence_survives_resume_without_resetting_start(self) -> None:
+        raw = _policy_dict()
+        raw["first_officer_check_interval_minutes"] = 12
+        policy = policy_from_mapping(raw)
+
+        def invoker(policy, child_url, **kwargs):
+            return {"status": {"state": "WAIT_PR"}, "checkpoint": {"state": "WAIT_PR"}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            kwargs = dict(
+                checkpoint_dir=Path(tmp), runner=self.runner,
+                extra_child_urls=[CHILD_A], child_invoker=invoker,
+                host_continuation="cron",
+            )
+            first, report, _ = he.run_epic_pass(policy, EPIC_URL, accept_graph=True, **kwargs)
+            resumed, resumed_report, _ = he.run_epic_pass(policy, EPIC_URL, **kwargs)
+            self.assertEqual(resumed.started_at, first.started_at)
+            self.assertEqual(resumed.epic_merge_mode, first.epic_merge_mode)
+            self.assertEqual(resumed.merge_authority_fingerprint, first.merge_authority_fingerprint)
+            for result in (report, resumed_report):
+                details = json.loads(json.dumps(result.to_public_dict()))["details"]
+                self.assertEqual(details["first_officer_check_interval_minutes"], 12)
+                self.assertIn("12 minutes", details["budget_announcement"])
+                self.assertNotIn("waiter per child", details["budget_announcement"])
+
     def test_preflight_rejects_root_dispatch_label(self) -> None:
         self.runner.issues[42]["labels"] = [
             {"name": "ready-for-agent"},
