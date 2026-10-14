@@ -1627,6 +1627,28 @@ class CaptainReview5135755754RegressionTests(unittest.TestCase):
                 self.assertIn(CHILD_A, report.ready)
         self.assertFalse(any("search/issues?" in c[-1] for c in self.runner.calls))
 
+    def test_scoped_membership_change_requires_graph_acceptance(self) -> None:
+        self.runner.sub_issues[42] = [{"html_url": CHILD_A}]
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp)
+            checkpoint, _, graph = he.run_epic_pass(
+                self.policy, EPIC_URL, runner=self.runner,
+                checkpoint_dir=checkpoint_dir, extra_child_urls=[CHILD_B],
+                accept_graph=True, apply_dispatch=False,
+            )
+            self.assertEqual({n.url for n in graph.children}, {CHILD_A, CHILD_B})
+            accepted = checkpoint.accepted_fingerprint
+            # Models an old mixed graph after its body-only child is no longer
+            # discovered. It must not silently become a smaller accepted graph.
+            checkpoint, report, graph = he.run_epic_pass(
+                self.policy, EPIC_URL, runner=self.runner,
+                checkpoint_dir=checkpoint_dir, apply_dispatch=False,
+            )
+            self.assertEqual(report.state, "GRAPH_CHANGED")
+            self.assertEqual(checkpoint.accepted_fingerprint, accepted)
+            self.assertNotEqual(graph.fingerprint, accepted)
+            self.assertFalse(self.runner.labels_posted)
+
     def test_body_discovery_queries_only_root_repository(self) -> None:
         policy = _policy(repositories=[
             {"slug": FIXTURE_SLUG, "worktree": "/opt/data/repos/demo-repo"},

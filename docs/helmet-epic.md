@@ -44,8 +44,9 @@ sub-issues or supplied with repeated `--child ISSUE_URL` arguments on each pass.
 Explicit children still require a valid live Parent relationship; enrollment
 alone does not make a repository part of an epic's discovery scope.
 
-For existing body-only plans spanning repositories, link those children as native
-sub-issues or supply them explicitly before continuing. Changes to an accepted
+For existing body-only plans spanning repositories, or plans mixing native
+children with body-only children even in the same repository, link the body-only
+children as native sub-issues or supply them explicitly before continuing. Changes to an accepted
 graph still require `--accept-graph`. Parent relationships, dependencies, and
 membership authorization are revalidated live; this optimization does not cache
 a previously accepted graph as current truth.
