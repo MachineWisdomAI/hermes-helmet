@@ -88,13 +88,30 @@ def _install_launcher(script_path: Path, policy_path: Path, ledger_path: Path) -
     tmp.replace(script_path)
 
 
+def _delivery_resolution_program(deliver: str, target_env: str | None) -> str:
+    """Resolve an existing deployment target inside the worker, never on the host."""
+    return f"""
+import os
+delivery = {deliver!r}
+target_env = {target_env!r}
+if target_env:
+    if not delivery or ':' in delivery or delivery in ('none', 'origin'):
+        raise SystemExit('explicit delivery requires a platform name')
+    target = os.environ.get(target_env, '').strip()
+    if not target or any(c.isspace() for c in target):
+        raise SystemExit('configured delivery target is unavailable or invalid')
+    delivery += ':' + target
+"""
+
+
 def _cron_reconciliation_program(
     *,
     schedule: str,
     deliver: str,
     script_path: Path,
+    delivery_target_env: str | None = None,
 ) -> str:
-    return f"""
+    return _delivery_resolution_program(deliver, delivery_target_env) + f"""
 from cron.jobs import create_job, list_jobs, update_job
 jobs = [job for job in list_jobs(include_disabled=True) if job.get('name') == {JOB_NAME!r}]
 if len(jobs) > 1:
@@ -103,7 +120,7 @@ updates = {{
     'schedule': {schedule!r},
     'script': {str(script_path)!r},
     'no_agent': True,
-    'deliver': {deliver!r},
+    'deliver': delivery,
     'enabled': True,
     'state': 'scheduled',
 }}
@@ -115,7 +132,7 @@ else:
         prompt='',
         schedule={schedule!r},
         name={JOB_NAME!r},
-        deliver={deliver!r},
+        deliver=delivery,
         script={str(script_path)!r},
         no_agent=True,
     )
@@ -128,6 +145,7 @@ def _cron_validation_program(
     schedule: str,
     deliver: str,
     script_path: Path,
+    delivery_target_env: str | None = None,
 ) -> str:
     expected = {
         "schedule_display": schedule,
@@ -137,12 +155,14 @@ def _cron_validation_program(
         "enabled": True,
         "state": "scheduled",
     }
-    return f"""
+    return _delivery_resolution_program(deliver, delivery_target_env) + f"""
 from cron.jobs import list_jobs
+expected = {expected!r}
+expected['deliver'] = delivery
 jobs = [job for job in list_jobs(include_disabled=True) if job.get('name') == {JOB_NAME!r}]
 if len(jobs) != 1:
     raise SystemExit('expected exactly one {JOB_NAME} cron job')
-for key, value in {expected!r}.items():
+for key, value in expected.items():
     if jobs[0].get(key) != value:
         raise SystemExit(f'{{key}} is not configured as expected')
 """
