@@ -2809,6 +2809,26 @@ class NamedRequestEnrollmentTests(unittest.TestCase):
                 )
 
 
+class FirstOfficerContinuationStatusTests(unittest.TestCase):
+    def test_issue_json_reports_cadence_and_actual_mode_without_mutation(self) -> None:
+        policy = _policy(first_officer_check_interval_minutes=12)
+        for mode in ("session", "cron", "scheduled"):
+            with self.subTest(mode=mode):
+                cp = hi.Checkpoint(
+                    version=1, issue_url=ISSUE_URL, state="WAIT_PR",
+                    started_at=hi._utc_now(), host_continuation=mode,
+                )
+                before = dict(cp.__dict__)
+                report = hi.build_status(policy, ISSUE_URL, cp)
+                payload = json.loads(json.dumps(report.to_public_dict()))
+                self.assertEqual(payload["details"]["first_officer_check_interval_minutes"], 12)
+                self.assertEqual(payload["details"]["continuation"], mode)
+                self.assertEqual(cp.__dict__, before)
+                if mode != "session":
+                    self.assertIn("12 minutes", payload["details"]["budget_announcement"])
+                    self.assertNotIn("waiter per child", payload["details"]["budget_announcement"])
+
+
 class InstallSkillsTests(unittest.TestCase):
     def test_static_validate_and_install_all_targets(self) -> None:
         messages = skills.static_validate_all_targets()

@@ -75,6 +75,25 @@ def _answers(**overrides: object) -> dict[str, object]:
     return payload
 
 
+class FirstOfficerCadenceSetupTests(unittest.TestCase):
+    def test_setup_preserves_installation_cadence_and_defaults(self) -> None:
+        default = authority.policy_from_mapping(helmet_setup.answers_to_policy_mapping(_answers()))
+        self.assertEqual(default.first_officer_check_interval_minutes, 5)
+        explicit = authority.policy_from_mapping(helmet_setup.answers_to_policy_mapping(
+            _answers(first_officer_check_interval_minutes=12)
+        ))
+        self.assertEqual(explicit.first_officer_check_interval_minutes, 12)
+        self.assertEqual(explicit.schedule, default.schedule)
+
+    def test_setup_rejects_invalid_cadence(self) -> None:
+        for invalid in (True, 0, -1, "5", None):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex((helmet_setup.SetupError, authority.AuthorityError), "first_officer_check_interval_minutes"):
+                    authority.policy_from_mapping(helmet_setup.answers_to_policy_mapping(
+                        _answers(first_officer_check_interval_minutes=invalid)
+                    ))
+
+
 class FakeGitHub:
     def __init__(
         self,

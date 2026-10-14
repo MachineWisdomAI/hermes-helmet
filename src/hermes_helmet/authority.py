@@ -49,6 +49,7 @@ DEFAULT_MAX_REPAIR_ROUNDS = 10
 DEFAULT_WORKER_MAX_TURNS = 2000
 DEFAULT_WORKER_MAX_RUNTIME_SECONDS = 86400  # 24 hours per worker attempt
 MANAGED_WAIT_TIMEOUT_SECONDS = 1800
+DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES = 5
 ELAPSED_WINDOW_DISCLAIMER = (
     "These are bounded elapsed windows, not a promise of uninterrupted CPU "
     "execution or unlimited model spending."
@@ -125,6 +126,7 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
         "worker_github_login",
         "github_identity",
         "schedule",
+        "first_officer_check_interval_minutes",
         "board",
         "assignee",
         "inference_provider",
@@ -275,6 +277,7 @@ class Policy:
     worker_access_scope: str = DEFAULT_WORKER_ACCESS_SCOPE
     worker_completion_contract: str = DEFAULT_WORKER_COMPLETION_CONTRACT
     enrollment: EnrollmentPolicy = EnrollmentPolicy()
+    first_officer_check_interval_minutes: int = DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES
 
     @property
     def worker_github_login(self) -> str:
@@ -472,12 +475,29 @@ def render_budget_announcement(
         )
     else:
         windows = f"Captain issue window {issue_window}."
+    if continuation in {"cron", "scheduled"}:
+        continuation_text = (
+            f"Continuation mode is `{continuation}`; scheduled checks default to "
+            f"{policy.first_officer_check_interval_minutes} minutes. "
+            "The registered host schedule records any per-run cadence override."
+        )
+    elif continuation == "session":
+        continuation_text = (
+            "Continuation mode is `session`; automatic completion delivery is required "
+            f"for one waiter per active child with a {MANAGED_WAIT_TIMEOUT_SECONDS}-second bound."
+        )
+    elif continuation.startswith("one_pass_only") or continuation in {"none", "unknown"}:
+        continuation_text = "Continuation is unavailable; perform one pass only."
+    else:
+        continuation_text = (
+            f"Continuation mode is `{continuation}`; confirm automatic completion delivery "
+            "or a registered host schedule before promising resumption."
+        )
     return (
         f"{windows} Worker attempt quota {worker_seconds} seconds wall-clock and "
         f"{policy.worker_max_turns} turns; repair rounds capped at "
         f"{policy.budgets.max_repair_rounds}. Effective merge mode is `{merge_mode}` "
-        f"({merge_source}). Continuation is `{continuation}` with one event-driven "
-        f"waiter per child and a {MANAGED_WAIT_TIMEOUT_SECONDS}-second wait bound."
+        f"({merge_source}). {continuation_text}"
         f"{origin} {ELAPSED_WINDOW_DISCLAIMER}"
     )
 
@@ -497,6 +517,7 @@ def captain_budget_status_details(
         else policy.budgets.max_issue_runtime_minutes
     )
     return {
+        "first_officer_check_interval_minutes": policy.first_officer_check_interval_minutes,
         "budgets": effective_budgets_dict(policy),
         "budget_window": budget_provenance(
             policy, started_at, window_minutes=window_minutes
@@ -929,6 +950,9 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
     )
 
     schedule = _require_non_empty_string(raw, "schedule")
+    first_officer_check_interval_minutes = _optional_positive_int(
+        raw, "first_officer_check_interval_minutes", DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES
+    )
     board = _require_non_empty_string(raw, "board")
     assignee = _require_non_empty_string(raw, "assignee")
     worker = _worker_login(raw)
@@ -1019,6 +1043,7 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
         worker_roles=worker_roles,
         version=version,
         schedule=schedule,
+        first_officer_check_interval_minutes=first_officer_check_interval_minutes,
         board=board,
         assignee=assignee,
         github_identity=worker,
@@ -1514,6 +1539,7 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
         "captain_model_provider_consent": policy.captain_model_provider_consent,
         "worker_github_login": policy.github_identity,
         "schedule": policy.schedule,
+        "first_officer_check_interval_minutes": policy.first_officer_check_interval_minutes,
         "board": policy.board,
         "assignee": policy.assignee,
         "inference_provider": policy.inference_provider,

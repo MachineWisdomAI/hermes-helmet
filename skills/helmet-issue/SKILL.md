@@ -157,10 +157,9 @@ helmet install-skills --target hermes
    `helmet status --json` (`details.budget_announcement`, `details.budgets`,
    `details.budget_window`). Announce the actual policy values; do not promise
    six days when the effective window is shorter. These are bounded elapsed
-   windows, not uninterrupted CPU or unlimited model spend. For a session host,
-   keep exactly one bounded `helmet wait ISSUE_URL --timeout-seconds 1800`
-   handle and reconcile after meaningful wakes or timeouts; do not emit repeated
-   unchanged budget announcements or create duplicate waiters.
+   windows, not uninterrupted CPU or unlimited model spend. When a pass reaches
+   pending work, register continuation using the shared procedure below and
+   announce its confirmed mechanism and effective cadence once.
 4. Run `helmet issue ISSUE_URL` (or the Python helper) so identity,
    allowlist/enrollment, open issue state, ready/dispatch labels, and budgets
    are checked.
@@ -285,28 +284,11 @@ Leave the six-question audit in the session/Kanban closeout when you stop:
 
 ## Host continuation
 
-| Host capability | Behavior |
-| --- | --- |
-| managed process wait | Run one `helmet wait ISSUE_URL --timeout-seconds 1800`; keep its process handle; after exit 0, run one fresh `helmet-issue` pass and wait again only if still pending |
-| cron / scheduler | Fallback when the host cannot keep a process handle: re-invoke `helmet-issue ISSUE_URL` on interval until terminal |
-| long session without worker wait | Fallback with bounded backoff; do not spend turns repeatedly reading unchanged state |
-| none / unknown | One truthful pass, `--one-pass-only`, report limitation |
-
-The managed wait is read-only and deployment-side. Exit `0` means meaningful
-worker state changed; exit `2` means the bounded wait timed out. After every
-outcome, pass the returned cursor to the next wait with `--cursor`; this prevents
-an already-observed terminal task from waking the host again. Exit `1` is a
-transport or contract failure that must be reported. Store only the opaque
-cursor and process handle. On timeout, reconcile once and resume the bounded
-wait if still pending. Keep unchanged waiting in the process, avoiding repeated
-model turns that merely announce it is still waiting. Verify continuation after
-host interruption and report the first actionable blocker. Reduce quota use
-without treating zero model usage as a delivery requirement;
-never copy task bodies, logs, credentials, or review prose into host metadata.
-
-Do not ask the model to sleep, run a shell polling loop, or repeatedly call
-`status`. The single wait process observes the issue-poller ledger and Hermes
-Kanban. It does not dispatch, review, repair, merge, or create a second watcher.
+For pending work, follow [host continuation](references/host-continuation.md).
+It selects automatic completion delivery or one native schedule for this issue,
+with a configurable five-minute default. A process handle alone does not provide
+automatic continuation. The host owns waiting; the First Officer yields until
+the next completion event or scheduled wake.
 
 ## Common pitfalls
 

@@ -110,6 +110,18 @@ propagates it to children. Scheduled runs honor a valid persisted choice and
 otherwise use the policy default without asking. Authority or accepted-graph
 changes invalidate an unattended choice.
 
+## Host continuation
+
+Pending children use native completion delivery only when it automatically
+resumes the First Officer. Otherwise, one native schedule covers the whole
+epic at the policy's `first_officer_check_interval_minutes` cadence (default
+five minutes), with explicit per-run overrides saved in that schedule. Child
+passes reuse the epic's continuation. Each wake reconciles the entire frontier
+once and yields when unchanged. Scheduled continuation replaces child waiters;
+it stops when no authorized work remains, the original budget expires, or human
+action is required. See the shared
+[host continuation procedure](../skills/helmet-issue/references/host-continuation.md).
+
 ## Install targets
 
 | Target | Path |

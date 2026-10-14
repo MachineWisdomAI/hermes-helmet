@@ -178,13 +178,23 @@ command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,
 `dispatch-root`, `wait`) so an absent local ledger can still adopt worker truth
-without inventing a second queue. `helmet wait ISSUE_URL` holds one
-bounded, read-only worker-side wait and returns a secret-free cursor plus a wake
-reason. A long-lived host keeps that process handle, runs one fresh issue pass
-after a meaningful wake, and avoids model-driven status loops. Exit `2` is a
-clean timeout; exit `1` is a transport or contract failure. Pass the returned
-cursor to the next wait after every outcome so an observed terminal state does
-not wake repeatedly.
+without inventing a second queue. `helmet wait ISSUE_URL` holds one bounded,
+read-only worker-side wait and returns a secret-free cursor plus a wake reason.
+Use it through a native background facility that automatically resumes the
+First Officer on completion. A process handle requiring repeated output checks
+does not provide that capability. Exit `2` is a clean timeout; exit `1` is a
+transport or contract failure. Pass the returned cursor to the next wait after
+every outcome so an observed terminal state does not wake repeatedly.
+
+When completion delivery is unavailable, one native schedule resumes this
+issue at the policy's `first_officer_check_interval_minutes` cadence (default
+five minutes). An explicit per-run override is saved in that schedule. Each
+wake reconciles once, continues actionable authorized work, and yields silently
+when unchanged. The schedule replaces the process waiter and stops when the
+run completes, is cancelled, exhausts its original budget, or needs human
+action. Codex uses a same-chat heartbeat on its poll-only terminal surface.
+Hosts with neither capability perform one pass and report the limitation. See
+the bundled [host continuation procedure](../skills/helmet-issue/references/host-continuation.md).
 
 ## Legacy checkpoint compatibility
 

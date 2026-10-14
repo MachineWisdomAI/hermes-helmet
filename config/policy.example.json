@@ -8,6 +8,7 @@
   "captain_model_provider_consent": false,
   "worker_github_login": "example-agent",
   "schedule": "every 15m",
+  "first_officer_check_interval_minutes": 5,
   "board": "default",
   "assignee": "builder",
   "inference_provider": "openai",

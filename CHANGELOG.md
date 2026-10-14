@@ -5,6 +5,12 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Prefer automatic background completion delivery for First Officer waits;
+  use one native schedule when the host exposes only pollable process handles.
+  Add `first_officer_check_interval_minutes` with a five-minute default,
+  per-run schedule overrides, and truthful continuation status. Issue and epic
+  skills share the same continuation procedure.
+
 ### 0.17.3
 
 - Release the epic slot of a child explicitly reviewed BLOCKED at its unchanged

@@ -26,6 +26,53 @@ FORBIDDEN_PUBLIC_MARKERS = (
 
 
 class AuthorityTests(unittest.TestCase):
+    def test_first_officer_cadence_defaults_and_round_trips(self) -> None:
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        raw.pop("first_officer_check_interval_minutes", None)
+        default = authority.policy_from_mapping(raw)
+        self.assertEqual(default.first_officer_check_interval_minutes, 5)
+        for minutes in (1, 5, 12, 60):
+            with self.subTest(minutes=minutes):
+                policy = authority.policy_from_mapping(
+                    dict(raw, first_officer_check_interval_minutes=minutes)
+                )
+                restored = authority.policy_from_mapping(authority.authority_public_dict(policy))
+                self.assertEqual(restored.first_officer_check_interval_minutes, minutes)
+                self.assertEqual(restored.schedule, default.schedule)
+                self.assertEqual(restored.budgets, default.budgets)
+                self.assertEqual(
+                    authority.merge_authority_fingerprint(restored),
+                    authority.merge_authority_fingerprint(default),
+                )
+
+    def test_first_officer_cadence_rejects_invalid_values(self) -> None:
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        for invalid in (True, False, 0, -1, 1.5, "5", None, {}, []):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(authority.AuthorityError, "first_officer_check_interval_minutes"):
+                    authority.policy_from_mapping(
+                        dict(raw, first_officer_check_interval_minutes=invalid)
+                    )
+
+    def test_continuation_announcements_match_selected_mode(self) -> None:
+        raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
+        policy = authority.policy_from_mapping(dict(raw, first_officer_check_interval_minutes=12))
+        for mode in ("session", "cron", "scheduled", "unknown", "one_pass_only:continuation_unavailable"):
+            with self.subTest(mode=mode):
+                details = authority.captain_budget_status_details(
+                    policy, merge_mode="unattended_when_clean", merge_source="policy", continuation=mode
+                )
+                self.assertEqual(details["first_officer_check_interval_minutes"], 12)
+                text = details["budget_announcement"]
+                if mode in {"cron", "scheduled"}:
+                    self.assertIn("12 minutes", text)
+                    self.assertNotIn("waiter per child", text)
+                elif mode == "session":
+                    self.assertIn("automatic completion", text)
+                    self.assertIn("1800", text)
+                else:
+                    self.assertNotIn("waiter per child", text)
+
     def test_provider_consent_defaults_false_and_round_trips_explicit_choice(self) -> None:
         raw = json.loads(EXAMPLECO.read_text(encoding="utf-8"))
         raw.pop("captain_model_provider_consent", None)

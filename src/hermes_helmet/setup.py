@@ -68,6 +68,7 @@ ANSWER_KEYS = frozenset(
         "captain_model_provider_consent",
         "worker_github_login",
         "schedule",
+        "first_officer_check_interval_minutes",
         "board",
         "assignee",
         "inference_provider",
@@ -420,6 +421,7 @@ def answers_to_policy_mapping(answers: Mapping[str, object]) -> dict[str, object
         for key in (
             "company", "captain_github_login", "captain_model_provider_consent",
             "worker_github_login", "schedule",
+            "first_officer_check_interval_minutes",
             "board", "assignee", "inference_provider", "inference_model",
             "worker_max_turns", "ready_label", "dispatch_label", "github_owners",
             "repositories", "worker_access_scope",

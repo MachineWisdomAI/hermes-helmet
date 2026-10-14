@@ -2285,15 +2285,12 @@ def build_status(
     elif checkpoint and state == "DONE":
         merge_gate = f"{checkpoint.merge_mode}:done"
 
-    continuation = (
-        "one_pass_only:continuation_unavailable"
-        if checkpoint
-        and (
-            checkpoint.one_pass_only
-            or checkpoint.host_continuation in {"none", "unknown"}
-        )
-        else "managed"
-    )
+    if checkpoint is None:
+        continuation = "unknown"
+    elif checkpoint.one_pass_only or checkpoint.host_continuation in {"none", "unknown"}:
+        continuation = "one_pass_only:continuation_unavailable"
+    else:
+        continuation = checkpoint.host_continuation
     merge_mode = checkpoint.merge_mode if checkpoint else policy.merge_default_mode
     merge_source = checkpoint.merge_mode_source if checkpoint else "policy"
     started_at = checkpoint.started_at if checkpoint else ""

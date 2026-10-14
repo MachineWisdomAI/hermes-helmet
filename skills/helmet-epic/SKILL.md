@@ -197,8 +197,9 @@ helmet install-skills --target hermes
    `details.budget_window`). Announce actual explicit overrides rather than
    promising six days when policy is shorter. These are bounded elapsed windows,
    not uninterrupted CPU or unlimited model spend. Do not repeat an unchanged
-   announcement during managed waits. Keep one event-driven waiter per child
-   with a 1,800-second wait bound.
+   announcement while waiting. When a pass reaches pending work, register
+   continuation using the shared procedure below and announce its confirmed
+   mechanism and effective cadence once.
 4. Verify observed GitHub login is Captain and differs from worker.
 5. Load epic root: must be open; must **not** carry `dispatch_label`.
 6. Stop on authority mismatch, closed root, missing label config, or bad budgets.
@@ -250,22 +251,11 @@ in session/Kanban closeout when you stop.
 
 ## Host continuation
 
-| Host capability | Behavior |
-| --- | --- |
-| managed process wait | For each active child (bounded by `max_parallelism`), keep one `helmet wait CHILD_URL --timeout-seconds 1800` process handle; rerun the epic pass after the first meaningful wake |
-| cron / scheduler | Fallback when managed waiting cannot resume the host; re-invoke `helmet-epic EPIC_URL` until children settle |
-| long session without worker wait | Loop with bounded backoff; do not repeatedly read unchanged state |
-| none / unknown | One truthful pass, `--one-pass-only`, report limitation |
-
-After the first meaningful wake, reconcile the entire graph once. Keep other
-bounded child wait handles until their natural wake or timeout; never start a
-duplicate handle for the same child. If a completed handle no longer belongs to
-the active frontier, discard its result after it exits. Pass each child's
-returned cursor to its next wait after every outcome, including a meaningful
-wake. On timeout, reconcile once and resume only still-pending waits. Keep
-unchanged waiting out of repeated model turns; notify on actionable change and
-verify resumption after interruption. Do not add a second heartbeat or observer
-to watch the waiter. Do not use model-managed sleeps or a shell polling loop.
+For pending work, follow [host continuation](../helmet-issue/references/host-continuation.md).
+An epic owns either one automatically delivered bounded waiter per active child
+or one native schedule covering its entire frontier. Child invocations belong
+to this epic's continuation and do not create separate schedules. Reconcile the
+whole graph once on each wake, then yield while work remains pending.
 
 ## Common pitfalls
 
