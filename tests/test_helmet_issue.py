@@ -5209,6 +5209,97 @@ class ResidualReviewRegressionTests(unittest.TestCase):
             self.assertNotIn("personal access token", message)
 
 
+class BlockedReviewedHeadStatusTests(unittest.TestCase):
+    """A BLOCKED review of the unchanged live head is a terminal scheduling stop."""
+
+    HEAD = "abc123deadbeef"
+
+    def _pull(self, head: str | None = None) -> hi.PullRequestRef:
+        return hi.PullRequestRef(
+            repository_slug=FIXTURE_SLUG,
+            number=10,
+            url=PR_URL,
+            head_sha=head or self.HEAD,
+            head_ref="automation/demo-repo-2",
+            base_ref="main",
+            author_login=WORKER,
+            state="open",
+            merged=False,
+            mergeable_state="clean",
+            draft=False,
+        )
+
+    def _blocked(self, reviewed: str | None = None) -> hi.Checkpoint:
+        return hi.Checkpoint(
+            version=1,
+            issue_url=ISSUE_URL,
+            state="BLOCKED",
+            root_task_id="t_root",
+            pr_url=PR_URL,
+            pr_number=10,
+            reviewed_head=reviewed or self.HEAD,
+            clean_head=None,
+        )
+
+    def _status(self, checkpoint, pull, **kwargs):
+        return hi.build_status(_policy(), ISSUE_URL, checkpoint, pull=pull, **kwargs)
+
+    def test_unchanged_blocked_head_is_terminal_and_not_clean(self) -> None:
+        status = self._status(self._blocked(), self._pull())
+        self.assertEqual(status.state, "BLOCKED")
+        self.assertTrue(status.terminal)
+        self.assertIsNone(status.clean_head)
+        self.assertFalse(status.details["head_needs_review"])
+        self.assertNotIn(":ready", status.merge_gate)
+        self.assertNotIn(":done", status.merge_gate)
+
+    def test_case_insensitive_head_match_is_terminal(self) -> None:
+        status = self._status(self._blocked(self.HEAD.upper()), self._pull())
+        self.assertTrue(status.terminal)
+
+    def test_changed_head_is_nonterminal_and_needs_review(self) -> None:
+        status = self._status(self._blocked(), self._pull("fffffffffff999"))
+        self.assertEqual(status.state, "BLOCKED")
+        self.assertFalse(status.terminal)
+        self.assertTrue(status.details["head_needs_review"])
+
+    def test_missing_reviewed_head_stays_nonterminal(self) -> None:
+        checkpoint = self._blocked()
+        checkpoint.reviewed_head = None
+        status = self._status(checkpoint, self._pull())
+        self.assertFalse(status.terminal)
+        self.assertTrue(status.details["head_needs_review"])
+
+    def test_live_read_uncertainty_stays_nonterminal(self) -> None:
+        status = self._status(
+            self._blocked(), self._pull(), live_error="err:live_uncertain"
+        )
+        self.assertFalse(status.terminal)
+
+    def test_active_repair_still_occupies_capacity(self) -> None:
+        status = self._status(
+            self._blocked(),
+            self._pull(),
+            repair_task_id="t_repair",
+            repair_status="running",
+        )
+        self.assertFalse(status.terminal)
+        self.assertTrue(status.details["head_needs_review"])
+
+    def test_pending_repair_is_not_terminal(self) -> None:
+        checkpoint = self._blocked()
+        checkpoint.pending_repair = True
+        status = self._status(checkpoint, self._pull())
+        self.assertFalse(status.terminal)
+
+    def test_non_blocked_state_with_reviewed_head_still_needs_review(self) -> None:
+        checkpoint = self._blocked()
+        checkpoint.state = "WAIT_REPAIR"
+        status = self._status(checkpoint, self._pull())
+        self.assertFalse(status.terminal)
+        self.assertTrue(status.details["head_needs_review"])
+
+
 class ResidualReview575bf70RegressionTests(unittest.TestCase):
     """Captain residual findings against 575bf70 (PR #19 review 5134620371)."""
 
