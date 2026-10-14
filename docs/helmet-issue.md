@@ -24,6 +24,7 @@ worker-authored PR after conflicting external state is resolved.
 ```sh
 helmet issue ISSUE_URL --config /path/to/policy.json
 helmet status ISSUE_URL --config /path/to/policy.json
+helmet merge ISSUE_URL --expected-head SHA --config /path/to/policy.json
 ```
 
 Expected result: a checkpoint past preflight, a recorded root task or a
@@ -50,7 +51,10 @@ rechecked on the configured checkpoint directory (custom `--checkpoint-dir`
 when used). An expired managed parent fails closed; standalone issues and
 actually completed `DONE` truth stay as they are. A whole-line `Merge when
 clean: no` on the issue (or an inheriting parent epic) requires separate
-explicit approval.
+explicit approval. The supported operation is `helmet merge ISSUE_URL
+--expected-head SHA`. It reads current required checks rather than treating
+GitHub `mergeable_state=clean` as those checks, submits at most one SHA-bound
+request, and reconciles a confirmed merge without a second task or queue.
 
 Interactive session hosts ask once before dispatch when no valid persisted
 choice exists. `helmet issue --merge-mode …` stores the choice, source, and
@@ -162,6 +166,7 @@ consent.
 | --- | --- |
 | `skills/helmet-issue/SKILL.md` | Portable skill (also packaged under `hermes_helmet/bundled_skills/`) |
 | `helmet issue ISSUE_URL` | Deterministic preflight/adopt/discover pass + checkpoint |
+| `helmet merge ISSUE_URL --expected-head SHA` | Captain exact-head merge through the existing gate; no second queue |
 | `helmet status ISSUE_URL` | Read-only status |
 | `helmet prepare-repo REQUEST_REF --purpose work\|review` | Named-request enrollment of one exact repository (Captain-authorized, idempotent) |
 | `helmet install-skills` | Install skill into host skill directories |

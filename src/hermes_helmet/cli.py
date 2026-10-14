@@ -65,6 +65,7 @@ from hermes_helmet.helmet_issue import (
     SubprocessRunner,
     apply_review_outcome,
     load_policy_for_issue,
+    merge_issue,
     observed_github_login,
     parse_worker_runtime,
     run_preflight_and_adopt,
@@ -204,6 +205,40 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"blocker:        {report.blocker or '-'}")
         print(f"terminal:       {report.terminal}")
     return 0
+
+
+def cmd_merge(args: argparse.Namespace) -> int:
+    try:
+        policy = load_policy_for_issue(args.config)
+        runner = SubprocessRunner(gh=args.gh, hermes=args.hermes)
+        report = merge_issue(
+            args.issue_url,
+            expected_head=args.expected_head,
+            policy=policy,
+            ledger=args.ledger,
+            checkpoint_dir=args.checkpoint_dir,
+            runner=runner,
+            gh=args.gh,
+            hermes=args.hermes,
+            worker_runtime=args.worker_runtime,
+            enrollment_store=_enrollment_store(args),
+        )
+    except HelmetIssueError as exc:
+        print(f"helmet merge failed: {exc}", file=sys.stderr)
+        return 1
+    payload = report.to_public_dict()
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(f"issue:          {report.issue_url}")
+        print(f"decision:       {report.decision}")
+        print(f"merged:         {report.merged}")
+        print(f"merge_submitted:{report.merge_submitted}")
+        print(f"head:           {report.head_sha or '-'}")
+        print(f"pr:             {report.pr_url or '-'}")
+        print(f"blocker:        {report.blocker or '-'}")
+        print(f"state:          {report.checkpoint_state}")
+    return 0 if report.merged else 1
 
 
 def cmd_wait(args: argparse.Namespace) -> int:
@@ -1254,6 +1289,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Persist one merge choice for this issue until authority changes",
     )
     issue_p.set_defaults(func=cmd_issue)
+
+    merge_p = sub.add_parser(
+        "merge",
+        help="Captain exact-head merge of the canonical issue pull request",
+    )
+    _add_common(merge_p)
+    merge_p.add_argument("issue_url")
+    merge_p.add_argument(
+        "--expected-head",
+        required=True,
+        help="Exact live pull-request head SHA this merge may submit",
+    )
+    merge_p.add_argument("--json", action="store_true")
+    merge_p.set_defaults(func=cmd_merge)
 
     epic_p = sub.add_parser(
         "epic",

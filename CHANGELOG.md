@@ -5,6 +5,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add `helmet merge ISSUE_URL --expected-head SHA`, a Captain exact-head merge
+  that reuses the existing gate and SHA-bound merge helper, reads current
+  required checks, and reconciles a confirmed merge without a second queue.
+
 - Add a consolidated writing profile and per-role reasoning policy that survives
   provisioning. Keep documentation/media declarations as writing aliases, retain
   four-profile policies, and verify managed model-specific effort alongside capacity.
