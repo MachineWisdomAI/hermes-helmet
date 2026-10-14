@@ -36,6 +36,20 @@ child blocks, and never dispatch-labels the epic root.
 | Native per-child `dependencies/blocked_by` | Prerequisite edges only (not membership) |
 | Explicit body `Parent` / `Blocked by` links | Documented fallback (full URLs or same-repo `#N`) |
 
+Native membership avoids GitHub Search entirely on both execution and status
+passes. When the native child list is empty or unavailable (HTTP 404), body-link
+discovery searches only the epic's repository (three queries regardless of how
+many repositories are enrolled). Cross-repository children must be native
+sub-issues or supplied with repeated `--child ISSUE_URL` arguments on each pass.
+Explicit children still require a valid live Parent relationship; enrollment
+alone does not make a repository part of an epic's discovery scope.
+
+For existing body-only plans spanning repositories, link those children as native
+sub-issues or supply them explicitly before continuing. Changes to an accepted
+graph still require `--accept-graph`. Parent relationships, dependencies, and
+membership authorization are revalidated live; this optimization does not cache
+a previously accepted graph as current truth.
+
 Never infer edges from table row order or narrative prose; same-repo `#N` refs resolve only inside operative Parent/Blocked-by sections.
 
 Validation rejects cycles, self-edges, missing or closed-as-incomplete blockers,

@@ -1110,17 +1110,16 @@ def _try_native_blocked_by(
 
 
 def _search_parent_children(
-    policy: Policy,
     root_url: str,
     runner: Runner,
     *,
     gh: str,
-    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> list[str]:
-    """Discover child issues via search for explicit Parent body links.
+    """Discover legacy body-linked children within the epic's repository.
 
-    Searches each allowlisted repository for the full epic URL and the same-repo
-    ``#N`` short form. Distinguishes failed/incomplete search from empty hits.
+    Cross-repository children require native membership or explicit child seeds.
+    Searches the full epic URL and the same-repo ``#N`` short form.
+    Distinguishes failed/incomplete search from empty hits.
     Does not invent edges from prose; membership still requires a validated
     Parent declaration on each candidate. Any failed query fails closed — a
     successful unrelated query does not complete missing discovery.
@@ -1134,60 +1133,58 @@ def _search_parent_children(
     root_number = root_match.group("number")
     root_slug = root_match.group("slug")
     queries: list[str] = [f'"{root_url}"']
-    # Same-repo short Parent form (e.g. "#42") only meaningful inside root repo,
-    # but we still search all allowlisted repos and validate Parent afterward.
+    # Short Parent references are meaningful only within the epic repository.
     queries.append(f'"{root_slug}#{root_number}"')
     queries.append(f'"#{root_number}"')
 
     search_errors: list[str] = []
-    for repo in repo_enroll.effective_repositories(policy, enrollment_store):
-        for query in queries:
-            quoted = quote(query, safe="")
-            endpoint = (
-                f"search/issues?q=repo:{repo.slug}+is:issue+{quoted}&per_page=100"
+    for query in queries:
+        quoted = quote(query, safe="")
+        endpoint = (
+            f"search/issues?q=repo:{root_slug}+is:issue+{quoted}&per_page=100"
+        )
+        try:
+            payload = _github_json(runner, gh, endpoint)
+        except HelmetIssueError as exc:
+            search_errors.append(f"{root_slug}:{query}:{type(exc).__name__}")
+            continue
+        if not isinstance(payload, dict):
+            raise HelmetEpicError(checkpoint_note("err", "search_payload_invalid"))
+        if payload.get("incomplete_results") is True:
+            raise HelmetEpicError(
+                checkpoint_note("err", "search_incomplete_results", root_slug)
             )
-            try:
-                payload = _github_json(runner, gh, endpoint)
-            except HelmetIssueError as exc:
-                search_errors.append(f"{repo.slug}:{query}:{type(exc).__name__}")
+        total = payload.get("total_count")
+        items = payload.get("items")
+        if items is None:
+            raise HelmetEpicError(checkpoint_note("err", "search_items_missing"))
+        if not isinstance(items, list):
+            raise HelmetEpicError(checkpoint_note("err", "search_items_invalid"))
+        if isinstance(total, int) and total > len(items) and total > 100:
+            # Single-page cap — fail closed rather than silently shrink graph.
+            raise HelmetEpicError(
+                checkpoint_note(
+                    "err",
+                    "search_results_truncated",
+                    root_slug,
+                    str(total),
+                )
+            )
+        for item in items:
+            if not isinstance(item, dict):
+                raise HelmetEpicError(checkpoint_note("err", "search_item_invalid"))
+            html = item.get("html_url")
+            if not isinstance(html, str):
                 continue
-            if not isinstance(payload, dict):
-                raise HelmetEpicError(checkpoint_note("err", "search_payload_invalid"))
-            if payload.get("incomplete_results") is True:
-                raise HelmetEpicError(
-                    checkpoint_note("err", "search_incomplete_results", repo.slug)
-                )
-            total = payload.get("total_count")
-            items = payload.get("items")
-            if items is None:
-                raise HelmetEpicError(checkpoint_note("err", "search_items_missing"))
-            if not isinstance(items, list):
-                raise HelmetEpicError(checkpoint_note("err", "search_items_invalid"))
-            if isinstance(total, int) and total > len(items) and total > 100:
-                # Single-page cap — fail closed rather than silently shrink graph.
-                raise HelmetEpicError(
-                    checkpoint_note(
-                        "err",
-                        "search_results_truncated",
-                        repo.slug,
-                        str(total),
-                    )
-                )
-            for item in items:
-                if not isinstance(item, dict):
-                    raise HelmetEpicError(checkpoint_note("err", "search_item_invalid"))
-                html = item.get("html_url")
-                if not isinstance(html, str):
-                    continue
-                try:
-                    url = normalize_issue_url(html)
-                except HelmetEpicError:
-                    continue
-                if url == root_url:
-                    continue
-                if url not in seen:
-                    seen.add(url)
-                    found.append(url)
+            try:
+                url = normalize_issue_url(html)
+            except HelmetEpicError:
+                continue
+            if url == root_url:
+                continue
+            if url not in seen:
+                seen.add(url)
+                found.append(url)
     if search_errors:
         # Partial success must not hide a failed discovery query.
         raise HelmetEpicError(
@@ -1264,8 +1261,10 @@ def build_epic_graph(
 
     native_children_result = _try_native_sub_issues(root, runner, gh=gh)
     native_children = list(native_children_result or ())
-    search_hits = _search_parent_children(
-        policy, root_url, runner, gh=gh, enrollment_store=enrollment_store
+    # Native membership is authoritative. Discovery of legacy body links is
+    # a same-repository fallback, never an installation-wide search.
+    search_hits = (
+        [] if native_children else _search_parent_children(root_url, runner, gh=gh)
     )
 
     # Explicit operator seeds: duplicates in the same seed list are rejected.

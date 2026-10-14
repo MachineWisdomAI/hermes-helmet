@@ -191,6 +191,12 @@ class FakeEpicRunner:
                         )
                     )
                 return json.dumps(self.blocked_by.get(number, []))
+            if path.startswith("repos/") and "/issues/" in path:
+                # Match the actual URL so cross-repository fixtures cannot alias
+                # an issue with the same number in another repository.
+                for issue in self.issues.values():
+                    if issue["html_url"] == "https://github.com/" + path.removeprefix("repos/"):
+                        return json.dumps(issue)
             if path.startswith(f"repos/{FIXTURE_SLUG}/issues/"):
                 number = int(path.rsplit("/", 1)[-1])
                 if number not in self.issues:
@@ -1598,6 +1604,65 @@ class CaptainReview5135755754RegressionTests(unittest.TestCase):
                 labels=["ready-for-agent"],
             )
         )
+
+    def test_native_passes_do_not_search_with_ten_enrolled_repositories(self) -> None:
+        policy = _policy(repositories=[
+            {"slug": FIXTURE_SLUG, "worktree": "/opt/data/repos/demo-repo"},
+            *[{"slug": f"{FIXTURE_ORG}/other-{n}", "worktree": f"/tmp/other-{n}"}
+              for n in range(9)],
+        ])
+        self.runner.sub_issues[42] = [{"html_url": CHILD_A}]
+        self.runner.search_fail = True  # Search outages cannot block native graphs.
+        with tempfile.TemporaryDirectory() as tmp:
+            _, report, graph = he.run_epic_pass(
+                policy, EPIC_URL, runner=self.runner, checkpoint_dir=Path(tmp),
+                accept_graph=True, apply_dispatch=False,
+            )
+            self.assertIsNotNone(graph)
+            self.assertIn(CHILD_A, report.ready)
+            for _ in range(2):
+                report = he.status_epic(
+                    policy, EPIC_URL, runner=self.runner, checkpoint_dir=Path(tmp),
+                )
+                self.assertIn(CHILD_A, report.ready)
+        self.assertFalse(any("search/issues?" in c[-1] for c in self.runner.calls))
+
+    def test_body_discovery_queries_only_root_repository(self) -> None:
+        policy = _policy(repositories=[
+            {"slug": FIXTURE_SLUG, "worktree": "/opt/data/repos/demo-repo"},
+            *[{"slug": f"{FIXTURE_ORG}/other-{n}", "worktree": f"/tmp/other-{n}"}
+              for n in range(9)],
+        ])
+        self.runner.search_items = [{"html_url": CHILD_A}]
+        for native_status in (None, 404):
+            with self.subTest(native_status=native_status):
+                if native_status:
+                    self.runner.sub_issues_http[42] = native_status
+                self.runner.calls.clear()
+                graph = he.build_epic_graph(policy, EPIC_URL, self.runner)
+                self.assertEqual([n.url for n in graph.children], [CHILD_A])
+                searches = [c[-1] for c in self.runner.calls if "search/issues?" in c[-1]]
+                self.assertEqual(len(searches), 3)
+                self.assertTrue(all(f"repo:{FIXTURE_SLUG}+" in q for q in searches))
+
+    def test_explicit_cross_repo_child_preserves_membership_checks(self) -> None:
+        foreign_slug = f"{FIXTURE_ORG}/other"
+        foreign = f"https://github.com/{foreign_slug}/issues/101"
+        policy = _policy(repositories=[
+            {"slug": FIXTURE_SLUG, "worktree": "/opt/data/repos/demo-repo"},
+            {"slug": foreign_slug, "worktree": "/tmp/other"},
+        ])
+        self.runner.issues[101]["html_url"] = foreign
+        self.runner.sub_issues[42] = [{"html_url": CHILD_A}]
+        graph = he.build_epic_graph(policy, EPIC_URL, self.runner, extra_child_urls=[foreign])
+        self.assertEqual({n.url for n in graph.children}, {CHILD_A, foreign})
+        self.runner.issues[101]["body"] = "No parent declaration"
+        with self.assertRaisesRegex(he.HelmetEpicError, "child_missing_parent_link"):
+            he.build_epic_graph(policy, EPIC_URL, self.runner, extra_child_urls=[foreign])
+        self.runner.issues[101]["body"] = f"Parent: {EPIC_URL}"
+        self.runner.parent_of[101] = _issue_payload(99, title="Other", body="")
+        with self.assertRaisesRegex(he.HelmetEpicError, "child_native_parent_not_epic"):
+            he.build_epic_graph(policy, EPIC_URL, self.runner, extra_child_urls=[foreign])
 
     def test_search_mention_without_parent_is_not_membership(self) -> None:
         mention = f"https://github.com/{FIXTURE_SLUG}/issues/51"
