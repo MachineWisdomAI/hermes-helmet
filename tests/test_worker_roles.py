@@ -16,6 +16,13 @@ RAW['worker_roles'] = {
     'max_in_progress': 4, 'max_in_progress_per_profile': 2,
 }
 POLICY = authority.policy_from_mapping(RAW)
+WRITING_RAW = json.loads(json.dumps(RAW))
+WRITING_RAW['worker_roles'] = {
+    'profiles': {'builder': 'builder', 'reviewer': 'reviewer', 'writing': 'writing'},
+    'max_in_progress': 12, 'max_in_progress_per_profile': 4,
+    'reasoning_effort': {'builder': 'high', 'reviewer': 'xhigh', 'writing': 'medium'},
+}
+WRITING_POLICY = authority.policy_from_mapping(WRITING_RAW)
 
 class ProvisionTests(unittest.TestCase):
     def setUp(self):
@@ -42,9 +49,45 @@ class ProvisionTests(unittest.TestCase):
         (home / 'skills').mkdir()
         (home / 'SOUL.md').write_text('Default identity')
 
-    def provision(self, **kwargs):
-        runtime.provision(self.root, POLICY.worker_roles, provider='approved', model='approved-model', turns=2000,
+    def provision(self, roles=POLICY.worker_roles, **kwargs):
+        runtime.provision(self.root, roles, provider='approved', model='approved-model', turns=2000,
                           create=self.create, guard=lambda: None, **kwargs)
+
+    def test_writing_reprovision_restores_efforts_and_preserves_retired_histories(self):
+        # Start from four profiles with work history, then consolidate future routing.
+        self.provision()
+        for role in ('documentation', 'media'):
+            (self.root / 'profiles' / role / 'state.db').write_bytes(b'retained history')
+        reviewer = self.root / 'profiles/reviewer/config.yaml'
+        config = runtime._read_config(reviewer)
+        config.setdefault('agent', {})['reasoning_overrides'] = {'fallback-model': 'low'}
+        reviewer.write_text(runtime._yaml_dump(config))
+        self.provision(WRITING_POLICY.worker_roles)
+        # Drift the reviewer and reinstall: policy must win over builder inheritance.
+        config = runtime._read_config(reviewer)
+        config['agent']['reasoning_overrides']['approved-model'] = 'low'
+        reviewer.write_text(runtime._yaml_dump(config))
+        with self.assertRaisesRegex(RuntimeError, 'reasoning effort drift'):
+            runtime.verify(self.root, WRITING_POLICY.worker_roles, provider='approved', model='approved-model', turns=2000)
+        self.provision(WRITING_POLICY.worker_roles)
+        for role, effort in WRITING_POLICY.worker_roles.reasoning_effort:
+            config = runtime._read_config(self.root / 'profiles' / role / 'config.yaml')
+            self.assertEqual(config['agent']['reasoning_overrides']['approved-model'], effort)
+            self.assertEqual(config['kanban']['max_in_progress'], 12)
+            self.assertEqual(config['kanban']['max_in_progress_per_profile'], 4)
+        self.assertEqual(runtime._read_config(reviewer)['agent']['reasoning_overrides']['fallback-model'], 'low')
+        for role in ('documentation', 'media'):
+            self.assertEqual((self.root / 'profiles' / role / 'state.db').read_bytes(), b'retained history')
+        self.assertEqual(self.created.count('writing'), 1)
+
+    def test_failed_writing_acceptance_restores_role_efforts(self):
+        self.provision(WRITING_POLICY.worker_roles)
+        before = {p: p.read_bytes() for p in (self.root / 'profiles').glob('*/config.yaml')}
+        def fail(*args):
+            raise RuntimeError('identity mismatch')
+        with self.assertRaisesRegex(RuntimeError, 'identity mismatch'):
+            self.provision(WRITING_POLICY.worker_roles, runtime_check=fail)
+        self.assertTrue(all(p.read_bytes() == content for p, content in before.items()))
 
     def test_idempotent_roles_keep_separate_state_and_configure_limits(self):
         self.provision()
@@ -146,6 +189,56 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(check.call_count, 8)
 
 class RoutingTests(unittest.TestCase):
+    def test_policy_canonicalization_preserves_roles_limits_and_efforts(self):
+        for policy in (POLICY, WRITING_POLICY):
+            with self.subTest(profiles=policy.worker_roles.profiles):
+                canonical = authority.authority_public_dict(policy)
+                self.assertEqual(authority.policy_from_mapping(canonical).worker_roles, policy.worker_roles)
+
+    def test_writing_and_legacy_issue_names_select_one_profile(self):
+        for declaration in ('writing', 'documentation', 'media'):
+            with self.subTest(declaration=declaration):
+                selected = for_issue(WRITING_POLICY, f'Worker role: {declaration}')
+                self.assertEqual(selected.assignee, 'writing')
+                self.assertEqual(selected.repositories, WRITING_POLICY.repositories)
+                self.assertEqual(selected.integrations, WRITING_POLICY.integrations)
+        self.assertEqual(for_issue(WRITING_POLICY, '').assignee, 'builder')
+        self.assertEqual(for_role(WRITING_POLICY, 'reviewer').assignee, 'reviewer')
+        with self.assertRaisesRegex(ValueError, 'not configured'):
+            for_issue(POLICY, 'Worker role: writing')
+
+    def test_invalid_efforts_or_mixed_role_layouts_fail_closed(self):
+        for efforts in ({}, {'builder': 'high'}, [],
+                        {'builder': True, 'reviewer': 'xhigh', 'writing': 'medium'},
+                        {'builder': 'high', 'reviewer': 'extra high', 'writing': 'medium'},
+                        {'builder': 'high', 'reviewer': 'xhigh', 'writing': 'medium', 'media': 'medium'}):
+            bad = json.loads(json.dumps(WRITING_RAW))
+            bad['worker_roles']['reasoning_effort'] = efforts
+            with self.subTest(efforts=efforts), self.assertRaises(authority.AuthorityError):
+                authority.policy_from_mapping(bad)
+        bad = json.loads(json.dumps(WRITING_RAW))
+        bad['worker_roles']['profiles']['media'] = 'media'
+        with self.assertRaises(authority.AuthorityError):
+            authority.policy_from_mapping(bad)
+
+    def test_writing_issue_intake_and_repair_keep_the_assignment(self):
+        from tests.test_github_issue_poller import FakeRunner
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = replace(WRITING_POLICY.repositories[0], worktree=Path(tmp))
+            issue = poller.Issue(repo, 131, 'Writing', 'Worker role: media')
+            runner = FakeRunner([])
+            ledger = Path(tmp) / 'ledger.sqlite3'
+            self.assertTrue(poller.create_task_once(issue, WRITING_POLICY, ledger, runner)[1])
+            self.assertFalse(poller.create_task_once(issue, WRITING_POLICY, ledger, runner)[1])
+            context = poller.PullRequestContext(repo, 131, 3, 'https://github.com/example-org/demo-repo/pull/3',
+                't_root', 'writing', Path(tmp), 'automation/writing-131')
+            event = poller.ReviewEvent(2, 'reviewed', 'changes_requested', 'exampleco-captain',
+                                      context.pull_url + '#review-2', '2026-10-14T00:00:00Z')
+            poller._create_review_task(context, event, 't_root', WRITING_POLICY, runner)
+            creations = [c for c in runner.calls if 'create' in c]
+            self.assertEqual(len(creations), 2)
+            self.assertTrue(all(c[c.index('--assignee') + 1] == 'writing' for c in creations))
+
     def test_roles_preserve_authority_and_defaults(self):
         for role in ('builder', 'documentation', 'media'):
             selected = for_issue(POLICY, f'Work to do\nWorker role: {role}\n')

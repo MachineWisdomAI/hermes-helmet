@@ -9,6 +9,7 @@ import json
 import io
 import logging
 import os
+import copy
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,6 +19,7 @@ from .worker_roles import WorkerRoles
 
 HERMES = "hermes"
 DESCRIPTIONS = {
+    "writing": "Documentation, technical specifications, media, marketing and public writing within the accepted task scope.",
     "reviewer": "Independent pull request review against acceptance criteria and repository rules.",
     "documentation": "Documentation, technical specifications and user-facing instructions.",
     "media": "Media, marketing and public writing within the accepted task scope.",
@@ -90,6 +92,10 @@ def verify(root: Path, roles: WorkerRoles, *, provider: str, model: str, turns: 
             raise RuntimeError(f"worker model drift: {home.name}")
         if config.get("agent", {}).get("max_turns") != turns:
             raise RuntimeError(f"worker budget drift: {home.name}")
+        role = next(role for role, name in roles.profiles if name == home.name)
+        effort = dict(roles.reasoning_effort).get(role)
+        if effort is not None and config.get("agent", {}).get("reasoning_overrides", {}).get(model) != effort:
+            raise RuntimeError(f"worker reasoning effort drift: {home.name}")
         if kanban.get("decompose") is not False or kanban.get("dispatch_in_gateway") is not False:
             raise RuntimeError(f"worker dispatcher/decomposition drift: {home.name}")
         if config.get("delegation", {}).get("max_concurrent_children") != 1:
@@ -148,10 +154,13 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                 create(name, role)
             config = _read_config(home / "config.yaml") if (home / "config.yaml").exists() else {}
             if role != "builder":
+                existing_overrides = copy.deepcopy(config.get("agent", {}).get("reasoning_overrides", {}))
                 # Use company-approved configuration, but retain unrelated role-specific keys.
                 for key in ("model", "agent", "fallback_providers", "provider_routing", "providers"):
                     if key in template:
-                        config[key] = template[key]
+                        config[key] = copy.deepcopy(template[key])
+                if existing_overrides:
+                    config.setdefault("agent", {}).setdefault("reasoning_overrides", {}).update(existing_overrides)
                 for filename in (".env", "home/.gitconfig"):
                     source = builder / filename
                     if source.is_file() and not source.is_symlink():
@@ -177,6 +186,9 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                                 link(tool.resolve(), home / relative / tool.name)
             config.setdefault("model", {}).update(provider=provider, default=model)
             config.setdefault("agent", {})["max_turns"] = turns
+            effort = dict(roles.reasoning_effort).get(role)
+            if effort is not None:
+                config["agent"].setdefault("reasoning_overrides", {})[model] = effort
             config.setdefault("kanban", {}).update(
                 max_in_progress=roles.max_in_progress,
                 max_in_progress_per_profile=roles.max_in_progress_per_profile,
@@ -246,7 +258,7 @@ def verification_program(policy, *, state_root: str, gh_bin: str = "gh",
         "from pathlib import Path; "
         "from hermes_helmet.worker_roles import WorkerRoles; "
         "from hermes_helmet.worker_role_runtime import verify, verify_identity; "
-        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}); "
+        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}, {roles.reasoning_effort!r}); "
         f"verify(Path({state_root!r}), roles, provider={policy.inference_provider!r}, "
         f"model={policy.inference_model!r}, turns={policy.worker_max_turns!r}); "
         f"verify_identity(Path({state_root!r}), roles, {policy.worker_github_login!r}, "

@@ -1529,7 +1529,7 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
                     key: value for key, value in lane_raw.items() if key != "lane"
                 }
 
-    return {
+    result = {
         "version": policy.version,
         "company": {
             "display_name": policy.company_display_name,
@@ -1591,3 +1591,12 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
             else {}
         ),
     }
+    if policy.worker_roles is not None:
+        roles = policy.worker_roles
+        result["worker_roles"] = {
+            "profiles": dict(roles.profiles),
+            "max_in_progress": roles.max_in_progress,
+            "max_in_progress_per_profile": roles.max_in_progress_per_profile,
+            **({"reasoning_effort": dict(roles.reasoning_effort)} if roles.reasoning_effort else {}),
+        }
+    return result

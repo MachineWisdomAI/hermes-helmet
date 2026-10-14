@@ -5,6 +5,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add a consolidated writing profile and per-role reasoning policy that survives
+  provisioning. Keep documentation/media declarations as writing aliases, retain
+  four-profile policies, and verify managed model-specific effort alongside capacity.
+
 - Prefer automatic background completion delivery for First Officer waits;
   use one native schedule when the host exposes only pollable process handles.
   Add `first_officer_check_interval_minutes` with a five-minute default,
