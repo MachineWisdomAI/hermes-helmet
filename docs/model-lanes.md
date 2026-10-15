@@ -74,6 +74,10 @@ startup):
 `model_lanes.hermes_executor` override is allowed only when provider and model
 match those fields.
 
+For a deployment-supported operational primary and fallback selection, see
+[`helmet providers`](provider-selection.md). It changes worker inference without
+editing repository authority or optional model lanes.
+
 ## Setup and probes
 
 ```sh

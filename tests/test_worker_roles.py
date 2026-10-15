@@ -54,6 +54,31 @@ class ProvisionTests(unittest.TestCase):
         runtime.provision(self.root, roles, provider='approved', model='approved-model', turns=2000,
                           create=self.create, guard=lambda: None, **kwargs)
 
+    def test_provider_chain_and_manual_pin_survive_role_reprovisioning(self):
+        from hermes_helmet import provider_selection as selection
+        chain = selection.configure(['sonnet=anthropic:sonnet-test', 'grok=provider-two:grok-test'])
+        selection.configure_profile(self.builder / 'config.yaml', chain)
+        runtime.provision(self.root, WRITING_POLICY.worker_roles, provider='anthropic', model='sonnet-test', turns=2000,
+                          create=self.create, guard=lambda: None)
+        for role, name in WRITING_POLICY.worker_roles.profiles:
+            config = runtime._read_config(self.root / 'profiles' / name / 'config.yaml')
+            self.assertEqual(config['fallback_providers'], [{'provider': 'provider-two', 'model': 'grok-test'}])
+            self.assertEqual(config['agent']['reasoning_overrides']['grok-test'], dict(WRITING_POLICY.worker_roles.reasoning_effort)[role])
+        reviewer = self.root / 'profiles/reviewer/config.yaml'
+        config = runtime._read_config(reviewer)
+        config['fallback_model'] = {'provider': 'unselected', 'model': 'legacy'}
+        reviewer.write_text(runtime._yaml_dump(config))
+        history = reviewer.parent / 'state.db'
+        history.write_bytes(b'retained sessions')
+        selection.configure_profile(self.builder / 'config.yaml', selection.choose(chain, 'grok'))
+        runtime.provision(self.root, WRITING_POLICY.worker_roles, provider='provider-two', model='grok-test', turns=2000,
+                          create=self.create, guard=lambda: None)
+        for _, name in WRITING_POLICY.worker_roles.profiles:
+            config = runtime._read_config(self.root / 'profiles' / name / 'config.yaml')
+            self.assertEqual(config['fallback_providers'], [])
+            self.assertNotIn('fallback_model', config)
+        self.assertEqual(history.read_bytes(), b'retained sessions')
+
     def test_writing_reprovision_restores_efforts_and_preserves_retired_histories(self):
         # Start from four profiles with work history, then consolidate future routing.
         self.provision()

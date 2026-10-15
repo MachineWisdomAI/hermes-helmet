@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -1210,6 +1212,38 @@ def cmd_models_rollback_embedding(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_providers(args: argparse.Namespace) -> int:
+    from hermes_helmet import provider_selection as providers
+
+    try:
+        request = {"action": args.provider_action}
+        if args.provider_action == "configure":
+            request["selection"] = providers.configure(args.route)
+        elif args.provider_action == "use":
+            request["name"] = args.name
+        report = providers.transport_request(shlex.split(args.worker_runtime), request)
+    except (providers.ProviderSelectionError, ValueError) as exc:
+        print(f"helmet providers failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        selection = report.get("selection")
+        if selection is None:
+            print("No operational selection; the deployment baseline applies.")
+        else:
+            primary, backups = providers.effective(selection)
+            print(f"mode:       {selection['selected']}")
+            print(f"primary:    {primary['name']} ({primary['provider']}/{primary['model']})")
+            print("fallbacks:  " + (" -> ".join(f"{r['provider']}/{r['model']}" for r in backups) or "none"))
+        activation = report.get("activation") or {}
+        if activation:
+            print(f"application: {activation.get('state', 'unknown')}")
+        if report.get("note"):
+            print(report["note"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="helmet",
@@ -1219,6 +1253,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    providers_p = sub.add_parser("providers", help="Configure ordered fallback routes or manually select one")
+    providers_sub = providers_p.add_subparsers(dest="provider_action", required=True)
+    for action in ("configure", "status", "use", "auto"):
+        command = providers_sub.add_parser(action)
+        command.add_argument("--worker-runtime", default=os.environ.get("HERMES_HELMET_WORKER_RUNTIME", ""))
+        command.add_argument("--json", action="store_true")
+        if action == "configure":
+            command.add_argument("--route", action="append", required=True, help="NAME=PROVIDER:MODEL, repeated in priority order")
+        elif action == "use":
+            command.add_argument("name", help="Configured route name; disables automatic fallback until auto")
+        command.set_defaults(func=cmd_providers)
 
     status_p = sub.add_parser("status", help="Read-only orchestration status for one issue")
     _add_common(status_p)

@@ -5,14 +5,17 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
-### 0.19.1
-
 - Deliver the accepted company contract to an unchanged stock builder persona,
   and fail verification when that delivery is missing or stale. Custom personas
   and unexpected symlinks stay unchanged and report action required. Replaced
   stock identities are backed up outside discovery paths and can be restored
   while drained; recovery stages and validates the replacement before swapping,
   so an occupied temporary path or failed write leaves the prior identity intact.
+
+- Add `helmet providers configure/status/use/auto` for ordered native Hermes
+  fallbacks and manual selection through deployment-owned persistent state.
+  Provision role effort for backup models and remove obsolete inherited legacy
+  fallbacks when the canonical chain replaces them.
 
 - Add `helmet merge ISSUE_URL --expected-head SHA`, a Captain exact-head merge
   that reuses the existing gate and SHA-bound merge helper, reads current
