@@ -1465,17 +1465,22 @@ def render_review_task_body(
         "worktree on its local review branch; verify with `git rev-parse HEAD` "
         "that the checkout matches before any analysis or validation. If the "
         "selected head cannot be fetched or verified, block the task.\n\n"
-        "Perform a full review of the complete pull request, not an incremental "
-        "diff, against its description, the linked issue, and the repository's "
-        "instructions (AGENTS.md and equivalents). Use an installed review skill "
-        "when one is available and run the repository's own validation where it "
-        "is essential. Prior reviews and approvals can guide attention but never "
-        "substitute for this review. Use whatever model and provider this "
-        "runtime is configured with; do not select or change either.\n\n"
+        "Review the complete merge-base-to-head diff against the PR's actual base "
+        "branch, description, linked issue and repository instructions. Inspect "
+        "surrounding code where needed to understand affected behavior. Run relevant "
+        "existing checks; add a focused temporary probe only for a concrete unresolved "
+        "risk. Do not start unrelated hardening, mutation campaigns, new test frameworks "
+        "or another reviewer round. You are the assigned independent reviewer; do not "
+        "outsource this review. Conclude when the full diff is covered, relevant checks "
+        "are complete and specific suspected defects are resolved. Missing essential "
+        "evidence means incomplete, never approval. Submit the exact-head verdict "
+        "and stop. Use whatever model and provider this runtime is configured with; "
+        "do not select or change either. Respect the installed effort policy.\n\n"
         "The selected head is a snapshot taken when this task was queued. Pushes "
         "while this request is pending do not create another task: re-read the "
         "live pull request head when you start and again before submitting. If it "
-        "has moved from the selected head, review the full new snapshot first and "
+        "has moved from the selected head, inspect the changed portion and revalidate "
+        "affected conclusions, retaining valid prior evidence; cover the full PR and "
         "attach the review to the commit actually examined; never knowingly "
         "approve a head you did not examine.\n\n"
         "Correlate by request, never by time. Put this exact line on its own "
@@ -1598,5 +1603,6 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
             "max_in_progress": roles.max_in_progress,
             "max_in_progress_per_profile": roles.max_in_progress_per_profile,
             **({"reasoning_effort": dict(roles.reasoning_effort)} if roles.reasoning_effort else {}),
+            **({"sonnet_55_effort": dict(roles.sonnet_55_effort)} if roles.sonnet_55_effort else {}),
         }
     return result

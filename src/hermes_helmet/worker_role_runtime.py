@@ -10,6 +10,8 @@ with ``--recover-identity PROFILE``.
 """
 from __future__ import annotations
 
+from .effort_policy import is_sonnet_55, migrate_config
+
 import hashlib
 import json
 import io
@@ -366,7 +368,8 @@ def verify(root: Path, roles: WorkerRoles, *, provider: str, model: str, turns: 
         if config.get("agent", {}).get("max_turns") != turns:
             raise RuntimeError(f"worker budget drift: {home.name}")
         role = next(role for role, name in roles.profiles if name == home.name)
-        effort = dict(roles.reasoning_effort).get(role)
+        effort = (dict(roles.sonnet_55_effort).get(role) if roles.sonnet_55_effort and is_sonnet_55(model)
+                  else None if roles.sonnet_55_effort else dict(roles.reasoning_effort).get(role))
         if effort is not None and config.get("agent", {}).get("reasoning_overrides", {}).get(model) != effort:
             raise RuntimeError(f"worker reasoning effort drift: {home.name}")
         if kanban.get("decompose") is not False or kanban.get("dispatch_in_gateway") is not False:
@@ -375,6 +378,14 @@ def verify(root: Path, roles: WorkerRoles, *, provider: str, model: str, turns: 
             raise RuntimeError(f"worker delegation drift: {home.name}")
         if not (home / "home").is_dir() or not (home / "skills").is_dir():
             raise RuntimeError(f"worker profile incomplete: {home.name}")
+    if roles.sonnet_55_effort:
+        preferences = {name: dict(roles.sonnet_55_effort)[role] for role, name in roles.profiles}
+        for home in [root] + list((root / "profiles").iterdir()):
+            if not (home / "config.yaml").is_file():
+                continue
+            config = _read_config(home / "config.yaml")
+            if migrate_config(config, preferences.get(home.name, "medium")) != config:
+                raise RuntimeError(f"Sonnet effort policy drift: {home.name}")
     contract = _company_identity(root)
     for _, name in roles.profiles:
         _require_delivered_identity(root, root / "profiles" / name, contract)
@@ -430,13 +441,16 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                 create(name, role)
             config = _read_config(home / "config.yaml") if (home / "config.yaml").exists() else {}
             if role != "builder":
-                existing_overrides = copy.deepcopy(config.get("agent", {}).get("reasoning_overrides", {}))
+                existing_agent = copy.deepcopy(config.get("agent", {}))
+                existing_overrides = copy.deepcopy(existing_agent.get("reasoning_overrides", {}))
                 # Use company-approved configuration, but retain unrelated role-specific keys.
                 for key in ("model", "agent", "fallback_providers", "provider_routing", "providers"):
                     if key in template:
                         config[key] = copy.deepcopy(template[key])
                 if "fallback_providers" in template and "fallback_model" not in template:
                     config.pop("fallback_model", None)
+                if roles.sonnet_55_effort:
+                    config.setdefault("agent", {}).update(existing_agent)
                 if existing_overrides:
                     config.setdefault("agent", {}).setdefault("reasoning_overrides", {}).update(existing_overrides)
                 for filename in (".env", "home/.gitconfig"):
@@ -467,11 +481,13 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
             config.setdefault("model", {}).update(provider=provider, default=model)
             config.setdefault("agent", {})["max_turns"] = turns
             effort = dict(roles.reasoning_effort).get(role)
-            if effort is not None:
+            if effort is not None and not roles.sonnet_55_effort:
                 config["agent"].setdefault("reasoning_overrides", {})[model] = effort
                 for backup in config.get("fallback_providers", []):
                     if isinstance(backup, dict) and isinstance(backup.get("model"), str):
                         config["agent"]["reasoning_overrides"][backup["model"]] = effort
+            if roles.sonnet_55_effort:
+                config = migrate_config(config, dict(roles.sonnet_55_effort)[role])
             config.setdefault("kanban", {}).update(
                 max_in_progress=roles.max_in_progress,
                 max_in_progress_per_profile=roles.max_in_progress_per_profile,
@@ -479,7 +495,17 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
             )
             config.setdefault("delegation", {})["max_concurrent_children"] = 1
             write(home / "config.yaml", _yaml_dump(config).encode())
+        # Retired/discovered profiles may still be selected directly. Preserve all
+        # their configuration except Sonnet policy values.
+        if roles.sonnet_55_effort:
+            managed = {name for _, name in roles.profiles}
+            for home in (root / "profiles").iterdir():
+                if home.name not in managed and (home / "config.yaml").is_file():
+                    config = migrate_config(_read_config(home / "config.yaml"), "medium")
+                    write(home / "config.yaml", _yaml_dump(config).encode())
         config = _read_config(root / "config.yaml")
+        if roles.sonnet_55_effort:
+            config = migrate_config(config, "medium")
         config.setdefault("kanban", {}).update(max_in_progress=roles.max_in_progress,
                                                max_in_progress_per_profile=roles.max_in_progress_per_profile)
         write(root / "config.yaml", _yaml_dump(config).encode())
@@ -541,7 +567,7 @@ def verification_program(policy, *, state_root: str, gh_bin: str = "gh",
         "from pathlib import Path; "
         "from hermes_helmet.worker_roles import WorkerRoles; "
         "from hermes_helmet.worker_role_runtime import verify, verify_identity; "
-        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}, {roles.reasoning_effort!r}); "
+        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}, {roles.reasoning_effort!r}, {roles.sonnet_55_effort!r}); "
         f"verify(Path({state_root!r}), roles, provider={policy.inference_provider!r}, "
         f"model={policy.inference_model!r}, turns={policy.worker_max_turns!r}); "
         f"verify_identity(Path({state_root!r}), roles, {policy.worker_github_login!r}, "

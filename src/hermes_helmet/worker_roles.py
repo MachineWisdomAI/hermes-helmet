@@ -17,6 +17,7 @@ class WorkerRoles:
     max_in_progress: int
     max_in_progress_per_profile: int
     reasoning_effort: tuple[tuple[str, str], ...] = ()
+    sonnet_55_effort: tuple[tuple[str, str], ...] = ()
 
     def profile(self, role: str) -> str:
         profiles = dict(self.profiles)
@@ -31,7 +32,7 @@ def parse_roles(raw: Mapping[str, Any]) -> WorkerRoles | None:
         return None
     required = {"profiles", "max_in_progress", "max_in_progress_per_profile"}
     if (not isinstance(value, dict) or not required <= set(value)
-            or set(value) - required - {"reasoning_effort"}):
+            or set(value) - required - {"reasoning_effort", "sonnet_55_effort"}):
         raise ValueError("worker_roles requires profiles and both concurrency limits")
     profiles = value["profiles"]
     if not isinstance(profiles, dict) or set(profiles) not in (set(ROLES), set(LEGACY_ROLES)):
@@ -52,8 +53,15 @@ def parse_roles(raw: Mapping[str, Any]) -> WorkerRoles | None:
             raise ValueError("worker_roles.reasoning_effort requires one level for every configured role")
         if any(not isinstance(e, str) or e not in REASONING_EFFORTS for e in efforts.values()):
             raise ValueError("worker_roles.reasoning_effort levels must be low|medium|high|xhigh|max")
+    sonnet = value.get("sonnet_55_effort", {})
+    if "sonnet_55_effort" in value:
+        if not isinstance(sonnet, dict) or set(sonnet) != set(roles):
+            raise ValueError("worker_roles.sonnet_55_effort requires every configured role")
+        if any(e not in ("medium", "high") for e in sonnet.values()):
+            raise ValueError("Sonnet 5.5 standing effort must be medium or high")
     return WorkerRoles(tuple((r, profiles[r]) for r in roles), *limits,
-                       tuple((r, efforts[r]) for r in roles if r in efforts))
+                       tuple((r, efforts[r]) for r in roles if r in efforts),
+                       tuple((r, sonnet[r]) for r in roles if r in sonnet))
 
 
 class AssignedPolicy:

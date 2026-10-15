@@ -728,3 +728,35 @@ class BuilderContractTests(unittest.TestCase):
 
 def _private_backup_root():
     return ".helmet-private"
+
+class SonnetPolicyTests(unittest.TestCase):
+    setUp = ProvisionTests.setUp
+    create = ProvisionTests.create
+    provision = ProvisionTests.provision
+
+    def test_sonnet_policy_migrates_all_profiles_without_lowering_other_models(self):
+        raw = json.loads(json.dumps(WRITING_RAW))
+        raw['worker_roles']['sonnet_55_effort'] = {
+            'builder': 'high', 'reviewer': 'medium', 'writing': 'medium'}
+        try:
+            policy = authority.policy_from_mapping(raw)
+        except ValueError as exc:
+            self.fail(f'Model-specific Sonnet policy is not supported: {exc}')
+        config = runtime._read_config(self.builder / 'config.yaml')
+        config['agent'] = {'reasoning_overrides': {
+            'claude-sonnet-5-5': 'max', 'anthropic/claude-sonnet-5.5': 'xhigh',
+            'grok-4.7': 'max', 'custom-model': 'low'}}
+        config['fallback_providers'] = [{'provider': 'anthropic', 'model': 'sonnet'}]
+        (self.builder / 'config.yaml').write_text(runtime._yaml_dump(config))
+        self.provision(policy.worker_roles)
+        for role, name in policy.worker_roles.profiles:
+            cfg = runtime._read_config(self.root / 'profiles' / name / 'config.yaml')
+            overrides = cfg['agent']['reasoning_overrides']
+            expected = 'high' if role == 'builder' else 'medium'
+            self.assertEqual(overrides['claude-sonnet-5-5'], expected)
+            self.assertEqual(overrides['anthropic/claude-sonnet-5.5'], expected)
+            self.assertEqual(overrides['sonnet'], expected)
+            self.assertEqual(overrides['grok-4.7'], 'max')
+            self.assertEqual(overrides['custom-model'], 'low')
+        self.provision(policy.worker_roles)
+        authority.policy_from_mapping(authority.authority_public_dict(policy))
