@@ -1228,7 +1228,19 @@ def cmd_providers(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
-        print(json.dumps(report, indent=2))
+        selection = report.get("selection")
+        if selection is None:
+            print("No operational selection; the deployment baseline applies.")
+        else:
+            primary, backups = providers.effective(selection)
+            print(f"mode:       {selection['selected']}")
+            print(f"primary:    {primary['name']} ({primary['provider']}/{primary['model']})")
+            print("fallbacks:  " + (" -> ".join(f"{r['provider']}/{r['model']}" for r in backups) or "none"))
+        activation = report.get("activation") or {}
+        if activation:
+            print(f"application: {activation.get('state', 'unknown')}")
+        if report.get("note"):
+            print(report["note"])
     return 0
 
 
