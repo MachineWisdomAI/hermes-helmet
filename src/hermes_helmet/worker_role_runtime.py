@@ -167,6 +167,27 @@ def _atomic_private_write(path: Path, content: bytes) -> None:
     os.chmod(path, 0o600)
 
 
+def _atomic_replace_identity(soul: Path, content: bytes) -> None:
+    """Swap an active identity for prepared content without a destructive gap.
+
+    The replacement is fully staged and written before ``os.replace`` touches the
+    active path, so an occupied temporary path or any staging failure leaves the
+    previous symlink or bytes exactly as they were. ``os.replace`` swaps the
+    directory entry atomically and replaces a symlink rather than following it.
+    """
+    temporary = soul.with_name(soul.name + ".new")
+    if temporary.exists() or temporary.is_symlink():
+        raise RuntimeError(f"refusing occupied temporary path: {temporary.name}")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(content)
+        os.replace(temporary, soul)
+    finally:
+        temporary.unlink(missing_ok=True)
+    os.chmod(soul, 0o600)
+
+
 def _backup_owned_identity(root: Path, profile: str, soul: Path) -> Path:
     """Copy a replaced persona outside profile, skill, and memory discovery."""
     if soul.is_symlink() or not soul.is_file():
@@ -240,14 +261,15 @@ def recover_owned_identity(root: Path, profile: str) -> None:
     if soul.is_symlink():
         if not _approved_soul_link(soul, source):
             raise RuntimeError(f"refusing to replace an unexpected SOUL symlink for {profile}")
-        soul.unlink()
     elif soul.exists():
         current = soul.read_bytes()
         source_bytes = source.read_bytes() if source.is_file() and not source.is_symlink() else None
         if current != data and current != source_bytes:
             raise RuntimeError(f"refusing to overwrite a custom persona for {profile}")
-        soul.unlink()
-    _atomic_private_write(soul, data)
+    # Validate the prior identity, then stage and swap atomically. An occupied
+    # temporary path or a failed staging write leaves the prior symlink or bytes
+    # untouched, and the same backup can still be recovered once the path clears.
+    _atomic_replace_identity(soul, data)
 
 
 def _load_effective_identity(home: Path) -> str | None:

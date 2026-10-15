@@ -595,6 +595,42 @@ class BuilderContractTests(unittest.TestCase):
         self.assertEqual(outside.read_text(), "elsewhere")
         self.assertEqual(soul.resolve(), outside.resolve())
 
+    def test_recover_keeps_prior_identity_when_temporary_path_is_occupied(self):
+        original = b"owned stock persona bytes"
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(original)
+        runtime._backup_owned_identity(self.root, "builder", soul)
+        soul.unlink()
+        soul.symlink_to(self.root / "SOUL.md")
+        occupied = self.builder / "SOUL.md.new"
+        occupied.write_bytes(b"unrelated occupant")
+        with self.assertRaisesRegex(RuntimeError, "occupied temporary path: SOUL.md.new"):
+            runtime.recover_owned_identity(self.root, "builder")
+        # The prior identity survives exactly, and the occupant is untouched.
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), (self.root / "SOUL.md").resolve())
+        self.assertEqual(occupied.read_bytes(), b"unrelated occupant")
+        occupied.unlink()
+        runtime.recover_owned_identity(self.root, "builder")
+        self.assertFalse(soul.is_symlink())
+        self.assertEqual(soul.read_bytes(), original)
+
+    def test_recover_keeps_prior_identity_when_staging_write_fails(self):
+        original = b"owned stock persona bytes"
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(original)
+        runtime._backup_owned_identity(self.root, "builder", soul)
+        soul.unlink()
+        soul.symlink_to(self.root / "SOUL.md")
+        with patch.object(runtime.os, "replace", side_effect=OSError("staging failed")):
+            with self.assertRaisesRegex(OSError, "staging failed"):
+                runtime.recover_owned_identity(self.root, "builder")
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), (self.root / "SOUL.md").resolve())
+        self.assertFalse((self.builder / "SOUL.md.new").exists())
+        runtime.recover_owned_identity(self.root, "builder")
+        self.assertEqual(soul.read_bytes(), original)
+
     def test_recover_refuses_receipt_path_traversal(self):
         original = b"owned stock persona bytes"
         soul = self.builder / "SOUL.md"

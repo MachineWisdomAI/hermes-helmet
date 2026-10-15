@@ -85,6 +85,8 @@ filename, length, or a marker. That persona is then linked to the accepted root
 operational guidance is left in the runtime prompt. The replaced persona is
 copied under `.helmet-private/identity-backups/`, outside profile, skill, and
 memory discovery, and can be restored while drained with `--recover-identity`.
+Recovery stages and validates the replacement before swapping the active path, so
+an occupied temporary path or a failed write leaves the prior identity untouched.
 A custom persona or unexpected symlink stays byte-identical. Verification then
 reports action required instead of success, and missing or stale company
 delivery fails for every configured role. Each role must verify as the configured

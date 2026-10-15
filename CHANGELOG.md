@@ -11,7 +11,8 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   and fail verification when that delivery is missing or stale. Custom personas
   and unexpected symlinks stay unchanged and report action required. Replaced
   stock identities are backed up outside discovery paths and can be restored
-  while drained.
+  while drained; recovery stages and validates the replacement before swapping,
+  so an occupied temporary path or failed write leaves the prior identity intact.
 
 - Add `helmet merge ISSUE_URL --expected-head SHA`, a Captain exact-head merge
   that reuses the existing gate and SHA-bound merge helper, reads current
