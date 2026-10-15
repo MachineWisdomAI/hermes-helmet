@@ -468,6 +468,54 @@ def cmd_prepare_repo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _artifact_transport(args: argparse.Namespace):  # type: ignore[no-untyped-def]
+    from hermes_helmet import task_artifacts
+
+    return task_artifacts.WorkerRuntimeTransport(
+        parse_worker_runtime(args.worker_runtime) or DEFAULT_WORKER_RUNTIME
+    )
+
+
+def cmd_artifact(args: argparse.Namespace) -> int:
+    """Upload, list, or retrieve task-owned artifacts through the worker transport."""
+    from hermes_helmet import task_artifacts as ta
+
+    try:
+        transport = _artifact_transport(args)
+        if args.artifact_action == "upload":
+            ref = ta.upload_artifact(
+                transport,
+                board=args.board,
+                task_id=args.task_id,
+                path=args.path,
+                name=args.name,
+                media_type=args.media_type,
+                role=args.role,
+                original=args.original,
+            )
+            payload: object = ref.to_public_dict()
+        elif args.artifact_action == "list":
+            refs = ta.list_artifacts(
+                transport, board=args.board, task_id=args.task_id, role=args.role
+            )
+            payload = [item.to_public_dict() for item in refs]
+        else:
+            ref = ta.save_artifact(
+                transport,
+                args.reference,
+                args.output,
+                board=args.board,
+                task_id=args.task_id,
+                overwrite=args.overwrite,
+            )
+            payload = ref.to_public_dict()
+    except ta.TaskArtifactError as exc:
+        print(f"helmet artifact {args.artifact_action} failed: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_bridge_read(args: argparse.Namespace) -> int:
     """Read one Claude Code session's records (read-only); JSON on stdout."""
     from hermes_helmet import claude_bridge
@@ -1459,6 +1507,69 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     prep_p.set_defaults(func=cmd_prepare_repo)
+
+    artifact_p = sub.add_parser(
+        "artifact",
+        help=(
+            "Upload inputs to, list, or retrieve deliverables from a native Kanban "
+            "task through the worker-runtime transport"
+        ),
+    )
+    artifact_sub = artifact_p.add_subparsers(dest="artifact_action", required=True)
+
+    def _artifact_common(command: argparse.ArgumentParser) -> None:
+        command.add_argument(
+            "--worker-runtime",
+            default="",
+            help=(
+                "Captain→worker transport command prefix (env "
+                "HERMES_HELMET_WORKER_RUNTIME); must support artifact-upload, "
+                "artifact-list and artifact-download"
+            ),
+        )
+        command.set_defaults(func=cmd_artifact)
+
+    artifact_up = artifact_sub.add_parser(
+        "upload", help="Attach one local file to a task as a new artifact"
+    )
+    artifact_up.add_argument("board")
+    artifact_up.add_argument("task_id")
+    artifact_up.add_argument("path", help="Existing regular local file")
+    artifact_up.add_argument("--name", default=None, help="Stored file name")
+    artifact_up.add_argument(
+        "--media-type", default=None, help="Media type (default from the file name)"
+    )
+    artifact_up.add_argument(
+        "--role",
+        choices=("original", "preview", "extracted-text"),
+        default="original",
+        help="preview and extracted-text are companions of an original",
+    )
+    artifact_up.add_argument(
+        "--original", default=None, help="Reference of the original a companion belongs to"
+    )
+    _artifact_common(artifact_up)
+
+    artifact_ls = artifact_sub.add_parser(
+        "list", help="List the task's artifact references (JSON)"
+    )
+    artifact_ls.add_argument("board")
+    artifact_ls.add_argument("task_id")
+    artifact_ls.add_argument(
+        "--role", choices=("original", "preview", "extracted-text"), default=None
+    )
+    _artifact_common(artifact_ls)
+
+    artifact_dl = artifact_sub.add_parser(
+        "download",
+        help="Retrieve the exact bytes of a referenced revision to a new local file",
+    )
+    artifact_dl.add_argument("reference", help="kanban-artifact:v1:… reference")
+    artifact_dl.add_argument("output", type=Path, help="New destination file")
+    artifact_dl.add_argument("--board", default=None, help="Require this board")
+    artifact_dl.add_argument("--task-id", default=None, help="Require this task")
+    artifact_dl.add_argument("--overwrite", action="store_true")
+    _artifact_common(artifact_dl)
 
     bridge_p = sub.add_parser(
         "bridge",

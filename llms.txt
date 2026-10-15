@@ -36,4 +36,5 @@ Use these when you are the coding-agent first officer on the Captain host. The i
 - [setup-helmet reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/setup-helmet.md): Setup commands and diagnostics.
 - [helmet-issue reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-issue.md): First-officer single-issue orchestration.
 - [helmet-epic reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-epic.md): First-officer dependent-issue orchestration.
+- [Task artifacts](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/task-artifacts.md): Upload inputs to, list, and retrieve deliverables from a native Kanban task; the narrow worker-transport adapter contract.
 - [Private overlay](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/private-overlay.md): Company policy, mounts, and state outside this repository. Optional; not a product prerequisite.

@@ -34,6 +34,7 @@ for required in \
     docs/public-preview.md \
     docs/helmet-issue.md \
     docs/helmet-epic.md \
+    docs/task-artifacts.md \
     docs/fava-trails.md \
     docs/company-skills.md \
     docs/openviking.md \
@@ -63,6 +64,9 @@ for required in \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
     src/hermes_helmet/repo_enroll.py \
+    src/hermes_helmet/task_artifacts.py \
+    tests/test_task_artifacts.py \
+    tests/fixtures/artifact_adapter.py \
     src/hermes_helmet/fava_trails.py \
     src/hermes_helmet/cli.py \
     src/hermes_helmet/install_skills.py \

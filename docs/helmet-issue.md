@@ -172,6 +172,7 @@ consent.
 | `helmet merge ISSUE_URL --expected-head SHA` | Captain exact-head merge through the existing gate; no second queue |
 | `helmet status ISSUE_URL` | Read-only status |
 | `helmet prepare-repo REQUEST_REF --purpose work\|review` | Named-request enrollment of one exact repository (Captain-authorized, idempotent) |
+| `helmet artifact upload\|list\|download` | Task-owned DOCX/PPTX handoff through native attachments; see [task-artifacts.md](task-artifacts.md) |
 | `helmet install-skills` | Install skill into host skill directories |
 | `github-issue-poller` | Sole creator of repair Kanban tasks |
 
