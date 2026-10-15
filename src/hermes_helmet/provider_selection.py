@@ -110,6 +110,10 @@ def project_config(config: dict, selection: dict, *, effort: str | None = None) 
         overrides = result.setdefault("agent", {}).setdefault("reasoning_overrides", {})
         for route in validate(selection)["routes"]:
             overrides[route["model"]] = effort
+    sonnet = result.get("agent", {}).get("helmet_sonnet_55_effort")
+    if sonnet is not None:
+        from .effort_policy import migrate_config
+        result = migrate_config(result, sonnet)
     return result
 
 
