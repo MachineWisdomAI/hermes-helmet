@@ -132,6 +132,30 @@ exact skill directory names in `allowlist`.
 
 ## Recommended upstream additions (not bundled)
 
+### Implementation skills within a Helmet task
+
+An adopter can select implementation skills such as Superpowers TDD,
+systematic debugging, and verification before completion. Apply them inside
+the accepted task and assigned workspace. If an approved Blueprint exists,
+its relevant contracts and expected outcomes can inform the tests; otherwise
+use the accepted issue or specification. Blueprints are optional.
+
+Hermes Helmet continues to own dispatch, dependencies, task state, worker
+lifecycle, same-PR repair, independent review, and merge gates. Preserve the
+existing design approval and ticketing process. Exclude overlapping planning,
+dispatch, worktree, review, and branch-finishing hooks from a selective pack.
+Choose one active TDD instruction source per consumer and reconcile native
+skill precedence before activation.
+
+Record the upstream revision and installed files, then verify native discovery
+and skill loading in a fresh consuming session. To assess TDD, inspect the
+worker's chronological test edits, meaningful failing assertion, minimal fix,
+passing result, and refactor with tests still passing. A later regression
+reproduction is useful independent evidence but does not establish test-first
+chronology.
+
+### Other optional packs
+
 Setup may **recommend** operator-approved upstream skills as **pinned,
 provenance-documented, explicit installations**. They are **not** runtime
 dependencies of Hermes Helmet, are **not** shipped in this repository, and must

@@ -5,6 +5,20 @@ skill and needs no external planning, review, or company skill pack. The issue,
 repository rules, authority policy, and explicit operator decisions define the
 accepted outcome. Additional reviewer preferences do not redefine it.
 
+Optional implementation skills apply within that accepted outcome and the
+assigned workspace. If an approved Blueprint exists, TDD can use its relevant
+contracts and expected outcomes; otherwise use the accepted issue or
+specification. Blueprints are optional. Choose one active TDD instruction source.
+Helmet retains dispatch, dependencies, task state, worker lifecycle, same-PR
+repair, independent review, and merge gates. Implementation skills must not
+start a competing planning, dispatch, worktree, review, or merge workflow.
+
+Verify instruction loading and test-first claims against chronological worker
+tool events: test edit, meaningful assertion failure, minimal correction,
+passing result, then refactor while green. Label later regression reproduction
+separately; neither an installation receipt nor a final report proves this
+sequence.
+
 ## Repair the source, then reinstall
 
 Change Hermes Helmet behavior in its source repository and have a separate
