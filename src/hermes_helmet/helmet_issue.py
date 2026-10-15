@@ -3241,7 +3241,8 @@ def load_policy_for_issue(path: Path) -> Policy:
         return policy
 
 
-_PASSING_CHECK_CONCLUSIONS = frozenset({"success", "skipped"})
+# GitHub required-check success is success, skipped, and neutral.
+_PASSING_CHECK_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
 _FAILING_CHECK_CONCLUSIONS = frozenset(
     {
         "failure",
@@ -3253,7 +3254,6 @@ _FAILING_CHECK_CONCLUSIONS = frozenset(
         "startup_failure",
         "stale",
         "error",
-        "neutral",
     }
 )
 _PENDING_CHECK_STATUSES = frozenset(
@@ -3262,6 +3262,18 @@ _PENDING_CHECK_STATUSES = frozenset(
 _PASSING_STATUS_STATES = frozenset({"success"})
 _FAILING_STATUS_STATES = frozenset({"failure", "error"})
 _PENDING_STATUS_STATES = frozenset({"pending"})
+
+
+@dataclass(frozen=True)
+class RequiredCheck:
+    """One configured required status check.
+
+    ``app_id`` is the GitHub App that must report the check run. None means
+    any source, including GitHub's explicit any-app sentinel (-1).
+    """
+
+    context: str
+    app_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -3298,59 +3310,112 @@ def _github_http_status(exc: BaseException) -> int | None:
     return int(match.group(1))
 
 
-def _context_names(raw: object) -> list[str] | None:
-    """Extract configured check contexts. None means the payload is unusable."""
+_UNUSABLE_APP = object()
+
+
+def _parse_app_id(raw: object) -> int | None | object:
+    """Return an App id, None for any source, or ``_UNUSABLE_APP``."""
+
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return _UNUSABLE_APP
+    if raw == -1:
+        return None
+    if raw <= 0:
+        return _UNUSABLE_APP
+    return raw
+
+
+def _requirement_app_id(item: dict[str, object]) -> int | None | object:
+    present = [key for key in ("integration_id", "app_id") if key in item]
+    if not present:
+        return None
+    parsed = [_parse_app_id(item.get(key)) for key in present]
+    if any(value is _UNUSABLE_APP for value in parsed) or len(set(parsed)) > 1:
+        return _UNUSABLE_APP
+    return parsed[0]
+
+
+def _context_requirements(raw: object) -> list[tuple[RequiredCheck, bool]] | None:
+    """Extract configured checks. None means the payload is unusable.
+
+    The bool is true for a legacy name string. An explicit object for the same
+    context replaces that string so a mirrored ``contexts`` list does not add
+    a second, unconstrained requirement.
+    """
 
     if raw is None:
         return []
     if not isinstance(raw, list):
         return None
-    names: list[str] = []
+    items: list[tuple[RequiredCheck, bool]] = []
     for item in raw:
         if isinstance(item, str) and item.strip():
-            names.append(item.strip())
-        elif isinstance(item, dict):
-            context = item.get("context")
-            if isinstance(context, str) and context.strip():
-                names.append(context.strip())
-            else:
-                return None
-        else:
+            items.append((RequiredCheck(item.strip(), None), True))
+            continue
+        if not isinstance(item, dict):
             return None
-    return names
+        context = item.get("context")
+        if not isinstance(context, str) or not context.strip():
+            return None
+        parsed_app = _requirement_app_id(item)
+        if parsed_app is _UNUSABLE_APP or not isinstance(parsed_app, int | None):
+            return None
+        items.append((RequiredCheck(context.strip(), parsed_app), False))
+    return items
 
 
-def _contexts_from_check_parameters(params: object) -> list[str] | None:
+def _contexts_from_check_parameters(
+    params: object,
+) -> list[tuple[RequiredCheck, bool]] | None:
     if not isinstance(params, dict):
         return None
     if not any(key in params for key in ("required_status_checks", "checks", "contexts")):
         return None
-    names: list[str] = []
+    items: list[tuple[RequiredCheck, bool]] = []
     for key in ("required_status_checks", "checks", "contexts"):
         if key not in params:
             continue
-        parsed = _context_names(params.get(key))
+        parsed = _context_requirements(params.get(key))
         if parsed is None:
             return None
-        names.extend(parsed)
-    return names
+        items.extend(parsed)
+    return items
 
 
-def _dedupe_contexts(names: list[str]) -> tuple[str, ...]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for name in names:
-        if name in seen:
+def _collapse_requirements(
+    items: list[tuple[RequiredCheck, bool]],
+) -> tuple[RequiredCheck, ...]:
+    explicit = {item.context for item, legacy in items if not legacy}
+    seen: set[tuple[str, int | None]] = set()
+    ordered: list[RequiredCheck] = []
+    for item, legacy in items:
+        if legacy and item.context in explicit:
             continue
-        seen.add(name)
-        ordered.append(name)
+        key = (item.context, item.app_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(item)
     return tuple(ordered)
 
 
-def _configured_contexts_from_rules(payload: object) -> tuple[str, ...] | None:
+def _requirement_names(requirements: tuple[RequiredCheck, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    names: list[str] = []
+    for item in requirements:
+        if item.context in seen:
+            continue
+        seen.add(item.context)
+        names.append(item.context)
+    return tuple(names)
+
+
+def _configured_contexts_from_rules(payload: object) -> tuple[RequiredCheck, ...] | None:
     if not isinstance(payload, list):
         return None
-    names: list[str] = []
+    items: list[tuple[RequiredCheck, bool]] = []
     for rule in payload:
         if not isinstance(rule, dict):
             return None
@@ -3359,16 +3424,17 @@ def _configured_contexts_from_rules(payload: object) -> tuple[str, ...] | None:
         parsed = _contexts_from_check_parameters(rule.get("parameters"))
         if parsed is None:
             return None
-        names.extend(parsed)
-    return _dedupe_contexts(names)
+        items.extend(parsed)
+    return _collapse_requirements(items)
 
 
-def _configured_contexts_from_protection(payload: object) -> tuple[str, ...] | None:
-    return (
-        None
-        if (parsed := _contexts_from_check_parameters(payload)) is None
-        else _dedupe_contexts(parsed)
-    )
+def _configured_contexts_from_protection(
+    payload: object,
+) -> tuple[RequiredCheck, ...] | None:
+    parsed = _contexts_from_check_parameters(payload)
+    if parsed is None:
+        return None
+    return _collapse_requirements(parsed)
 
 
 def _read_github_payload(
@@ -3391,8 +3457,8 @@ def _configured_required_checks(
     base_ref: str,
     runner: Runner,
     gh: str,
-) -> tuple[tuple[str, ...] | None, str | None]:
-    """Return configured contexts, or (None, blocker) when the read is incomplete."""
+) -> tuple[tuple[RequiredCheck, ...] | None, str | None]:
+    """Return configured checks, or (None, blocker) when the read is incomplete."""
 
     branch = quote((base_ref or "").strip(), safe="")
     if not branch:
@@ -3484,11 +3550,34 @@ def _commit_statuses_for_sha(
     return statuses
 
 
+def _check_run_app_id(run: dict[str, object]) -> int | None:
+    app = run.get("app")
+    if isinstance(app, dict):
+        parsed = _parse_app_id(app.get("id"))
+        if isinstance(parsed, int):
+            return parsed
+    suite = run.get("check_suite")
+    if isinstance(suite, dict):
+        suite_app = suite.get("app")
+        if isinstance(suite_app, dict):
+            parsed = _parse_app_id(suite_app.get("id"))
+            if isinstance(parsed, int):
+                return parsed
+    return None
+
+
 def _latest_check_run(
     name: str,
     runs: list[dict[str, object]],
+    *,
+    app_id: int | None = None,
 ) -> dict[str, object] | None:
-    matches = [(index, run) for index, run in enumerate(runs) if run.get("name") == name]
+    matches = [
+        (index, run)
+        for index, run in enumerate(runs)
+        if run.get("name") == name
+        and (app_id is None or _check_run_app_id(run) == app_id)
+    ]
     if not matches:
         return None
 
@@ -3500,30 +3589,44 @@ def _latest_check_run(
     return max(matches, key=_key)[1]
 
 
-def _classify_required_check(
+def _latest_commit_status(
     name: str,
-    runs: list[dict[str, object]],
     statuses: list[dict[str, object]],
-) -> str:
-    run = _latest_check_run(name, runs)
-    if run is not None:
-        status = run.get("status")
-        conclusion = run.get("conclusion")
-        status_text = status.casefold() if isinstance(status, str) else ""
-        conclusion_text = conclusion.casefold() if isinstance(conclusion, str) else ""
-        if status_text in _PENDING_CHECK_STATUSES:
-            return "pending"
-        if status_text != "completed":
-            return "unknown"
-        if conclusion_text in _PASSING_CHECK_CONCLUSIONS:
-            return "success"
-        if conclusion_text in _FAILING_CHECK_CONCLUSIONS:
-            return "failed"
+) -> dict[str, object] | None:
+    matches = [
+        (index, item)
+        for index, item in enumerate(statuses)
+        if item.get("context") == name
+    ]
+    if not matches:
+        return None
+
+    def _key(item: tuple[int, dict[str, object]]) -> tuple[str, int]:
+        index, status = item
+        stamp = status.get("updated_at") or status.get("created_at") or ""
+        return (stamp if isinstance(stamp, str) else "", index)
+
+    return max(matches, key=_key)[1]
+
+
+def _classify_check_run(run: dict[str, object]) -> str:
+    status = run.get("status")
+    conclusion = run.get("conclusion")
+    status_text = status.casefold() if isinstance(status, str) else ""
+    conclusion_text = conclusion.casefold() if isinstance(conclusion, str) else ""
+    if status_text in _PENDING_CHECK_STATUSES:
+        return "pending"
+    if status_text != "completed":
         return "unknown"
-    matched = [item for item in statuses if item.get("context") == name]
-    if not matched:
-        return "missing"
-    state = matched[-1].get("state")
+    if conclusion_text in _PASSING_CHECK_CONCLUSIONS:
+        return "success"
+    if conclusion_text in _FAILING_CHECK_CONCLUSIONS:
+        return "failed"
+    return "unknown"
+
+
+def _classify_commit_status(item: dict[str, object]) -> str:
+    state = item.get("state")
     state_text = state.casefold() if isinstance(state, str) else ""
     if state_text in _PASSING_STATUS_STATES:
         return "success"
@@ -3532,6 +3635,44 @@ def _classify_required_check(
     if state_text in _FAILING_STATUS_STATES:
         return "failed"
     return "unknown"
+
+
+def _combine_check_sources(kinds: list[str]) -> str:
+    if not kinds:
+        return "missing"
+    if "unknown" in kinds:
+        return "unknown"
+    if "failed" in kinds:
+        return "failed"
+    if "pending" in kinds:
+        return "pending"
+    if all(kind == "success" for kind in kinds):
+        return "success"
+    return "unknown"
+
+
+def _classify_required_check(
+    requirement: RequiredCheck,
+    runs: list[dict[str, object]],
+    statuses: list[dict[str, object]],
+) -> str:
+    """Classify one requirement using GitHub's check and status sources.
+
+    A same-name check run and commit status must both pass. An expected App
+    must report the check run; another App or a commit status does not
+    substitute for it. Neutral, skipped, and success are passing conclusions.
+    """
+
+    run = _latest_check_run(requirement.context, runs, app_id=requirement.app_id)
+    if requirement.app_id is not None and run is None:
+        return "missing"
+    kinds: list[str] = []
+    if run is not None:
+        kinds.append(_classify_check_run(run))
+    status = _latest_commit_status(requirement.context, statuses)
+    if status is not None:
+        kinds.append(_classify_commit_status(status))
+    return _combine_check_sources(kinds)
 
 
 def read_required_check_evidence(
@@ -3546,17 +3687,19 @@ def read_required_check_evidence(
 
     Branch rules are authoritative when readable. A rules 404 falls back to
     classic branch protection. Neither source's absence invents a check.
-    ``mergeable_state`` is not consulted. Skipped is GitHub's required-check
-    success; neutral does not satisfy a required check.
+    ``mergeable_state`` is not consulted. A configured App id is part of the
+    requirement. When a check run and a commit status share the required name,
+    both must pass. GitHub accepts success, skipped, and neutral conclusions.
     """
 
     configured, blocker = _configured_required_checks(
         repository_slug, base_ref, runner, gh
     )
+    names = _requirement_names(configured or ())
     if blocker or configured is None:
         return RequiredCheckEvidence(
             readable=False,
-            configured=(),
+            configured=names,
             satisfied=False,
             blocker=blocker or checkpoint_note("err", "merge_check_evidence_missing"),
         )
@@ -3571,20 +3714,22 @@ def read_required_check_evidence(
             code = checkpoint_note("err", "merge_check_evidence_missing")
         return RequiredCheckEvidence(
             readable=False,
-            configured=configured,
+            configured=names,
             satisfied=False,
             blocker=code,
         )
-    for name in configured:
-        kind = _classify_required_check(name, runs, statuses)
+    for requirement in configured:
+        kind = _classify_required_check(requirement, runs, statuses)
         if kind == "success":
             continue
         if kind == "unknown":
             return RequiredCheckEvidence(
                 readable=False,
-                configured=configured,
+                configured=names,
                 satisfied=False,
-                blocker=checkpoint_note("err", "merge_check_state_unknown", name),
+                blocker=checkpoint_note(
+                    "err", "merge_check_state_unknown", requirement.context
+                ),
             )
         reason = {
             "pending": "required_check_pending",
@@ -3593,13 +3738,13 @@ def read_required_check_evidence(
         }.get(kind, "required_check_missing")
         return RequiredCheckEvidence(
             readable=True,
-            configured=configured,
+            configured=names,
             satisfied=False,
-            blocker=checkpoint_note("err", reason, name),
+            blocker=checkpoint_note("err", reason, requirement.context),
         )
     return RequiredCheckEvidence(
         readable=True,
-        configured=configured,
+        configured=names,
         satisfied=True,
         blocker=None,
     )
@@ -3716,10 +3861,13 @@ def merge_issue(
 
     Uses ``evaluate_merge_gate`` and ``merge_pull_request``. Required checks are
     read from branch rules or classic protection and from the SHA's check runs
-    and commit statuses. ``mergeable_state=clean`` is never treated as those
-    checks. Explicit-approval ceilings are not bypassed. At most one SHA-bound
-    merge request is submitted; a later call reconciles a confirmed merge and
-    does not create a task or queue.
+    and commit statuses, including a configured App. A same-name check run and
+    commit status must both pass. ``mergeable_state=clean`` is never treated as
+    those checks. The pull request is read again immediately before the merge
+    request; a newly observed draft, unknown, or non-clean state withholds
+    without submitting. Explicit-approval ceilings are not bypassed. At most
+    one SHA-bound merge request is submitted; a later call reconciles a
+    confirmed merge and does not create a task or queue.
     """
 
     expected = (expected_head or "").strip()
@@ -3987,6 +4135,15 @@ def merge_issue(
             pull=live,
             blocker=None,
         )
+    live_state = (live.mergeable_state or "").casefold()
+    if live.draft or live_state == "draft":
+        return _withhold(checkpoint_note("err", "pr_is_draft"), current=live)
+    if live_state in {"", "unknown"}:
+        return _withhold(
+            checkpoint_note("err", "merge_live_state_unknown"), current=live
+        )
+    if live_state != "clean":
+        return _withhold(checkpoint_note("err", "pr_not_mergeable"), current=live)
     checkpoint.merge_attempted_head = live.head_sha
     save_checkpoint(path, checkpoint)
     try:

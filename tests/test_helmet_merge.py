@@ -74,24 +74,47 @@ def _policy(**overrides: object):
     return policy_from_mapping(_policy_dict(**overrides))
 
 
-def _ci_rule(*contexts: str) -> dict[str, object]:
+def _ci_rule(*contexts: str, integration_id: int | None = None) -> dict[str, object]:
+    items: list[dict[str, object]] = []
+    for name in contexts:
+        item: dict[str, object] = {"context": name}
+        if integration_id is not None:
+            item["integration_id"] = integration_id
+        items.append(item)
     return {
         "type": "required_status_checks",
         "parameters": {
-            "required_status_checks": [{"context": name} for name in contexts],
+            "required_status_checks": items,
             "strict_required_status_checks_policy": False,
         },
     }
 
 
-def _check(name: str, *, status: str = "completed", conclusion: str = "success") -> dict[str, object]:
-    return {
+def _check(
+    name: str,
+    *,
+    status: str = "completed",
+    conclusion: str = "success",
+    app_id: int | None = None,
+    suite_app_id: int | None = None,
+    completed_at: str = "2026-01-01T00:01:00Z",
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "name": name,
         "status": status,
         "conclusion": conclusion,
         "started_at": "2026-01-01T00:00:00Z",
-        "completed_at": "2026-01-01T00:01:00Z",
+        "completed_at": completed_at,
     }
+    if app_id is not None:
+        payload["app"] = {"id": app_id}
+    if suite_app_id is not None:
+        payload["check_suite"] = {"app": {"id": suite_app_id}}
+    return payload
+
+
+def _status(context: str, state: str = "success") -> dict[str, object]:
+    return {"context": context, "state": state}
 
 
 class MergeApiRunner:
@@ -147,6 +170,8 @@ class MergeApiRunner:
         self.merge_puts = 0
         self.calls: list[list[str]] = []
         self.created_tasks: list[str] = []
+        self.pull_sequence: list[dict[str, object]] | None = None
+        self.pull_gets = 0
 
     def run(self, command: list[str]) -> str:
         self.calls.append(list(command))
@@ -219,8 +244,14 @@ class MergeApiRunner:
         if endpoint.startswith(f"repos/{self.slug}/pulls/"):
             number = endpoint.rsplit("/", 1)[-1]
             if number == "10":
-                return json.dumps(self.pull)
+                self.pull_gets += 1
+                return json.dumps(self._pull_payload())
         raise AssertionError(command)
+
+    def _pull_payload(self) -> dict[str, object]:
+        if self.pull_sequence and self.pull_gets <= len(self.pull_sequence):
+            return self.pull_sequence[self.pull_gets - 1]
+        return self.pull
 
 
 def _ready_checkpoint(**overrides: object) -> hi.Checkpoint:
@@ -703,6 +734,237 @@ class ExactHeadMergeTests(unittest.TestCase):
         self.assertIn("def merge_issue(", source)
         self.assertIn("evaluate_merge_gate(", source)
         self.assertIn("merge_pull_request(", source)
+
+    def test_same_name_sources_app_identity_and_neutral_follow_github(self) -> None:
+        passing = [
+            (
+                "both_sources_pass",
+                [_check("ci")],
+                [_status("ci")],
+                [_ci_rule("ci")],
+                None,
+            ),
+            (
+                "neutral",
+                [_check("ci", conclusion="neutral")],
+                [],
+                [_ci_rule("ci")],
+                None,
+            ),
+            (
+                "skipped",
+                [_check("ci", conclusion="skipped")],
+                [],
+                [_ci_rule("ci")],
+                None,
+            ),
+            (
+                "expected_app",
+                [_check("ci", app_id=123)],
+                [],
+                [_ci_rule("ci", integration_id=123)],
+                None,
+            ),
+            (
+                "expected_app_via_suite",
+                [_check("ci", suite_app_id=123)],
+                [],
+                [_ci_rule("ci", integration_id=123)],
+                None,
+            ),
+            (
+                "any_app_sentinel",
+                [_check("ci", app_id=456)],
+                [],
+                [_ci_rule("ci", integration_id=-1)],
+                None,
+            ),
+            (
+                "other_app_failure_does_not_override_expected_app",
+                [
+                    _check("ci", app_id=123, completed_at="2026-01-01T00:01:00Z"),
+                    _check(
+                        "ci",
+                        app_id=456,
+                        conclusion="failure",
+                        completed_at="2026-01-01T00:02:00Z",
+                    ),
+                ],
+                [],
+                [_ci_rule("ci", integration_id=123)],
+                None,
+            ),
+            (
+                "protection_app_match",
+                [_check("ci", app_id=123)],
+                [],
+                None,
+                {
+                    "contexts": ["ci"],
+                    "checks": [{"context": "ci", "app_id": 123}],
+                },
+            ),
+        ]
+        withholding = [
+            (
+                "status_fails",
+                [_check("ci")],
+                [_status("ci", "failure")],
+                [_ci_rule("ci")],
+                None,
+                "required_check_failed",
+            ),
+            (
+                "check_fails_status_passes",
+                [_check("ci", conclusion="failure")],
+                [_status("ci")],
+                [_ci_rule("ci")],
+                None,
+                "required_check_failed",
+            ),
+            (
+                "status_pending",
+                [_check("ci")],
+                [_status("ci", "pending")],
+                [_ci_rule("ci")],
+                None,
+                "required_check_pending",
+            ),
+            (
+                "wrong_app",
+                [_check("ci", app_id=456)],
+                [],
+                [_ci_rule("ci", integration_id=123)],
+                None,
+                "required_check_missing",
+            ),
+            (
+                "status_does_not_replace_expected_app",
+                [],
+                [_status("ci")],
+                [_ci_rule("ci", integration_id=123)],
+                None,
+                "required_check_missing",
+            ),
+            (
+                "expected_app_and_failing_status",
+                [_check("ci", app_id=123)],
+                [_status("ci", "failure")],
+                [_ci_rule("ci", integration_id=123)],
+                None,
+                "required_check_failed",
+            ),
+            (
+                "protection_wrong_app",
+                [_check("ci", app_id=456)],
+                [],
+                None,
+                {
+                    "contexts": ["ci"],
+                    "checks": [{"context": "ci", "app_id": 123}],
+                },
+                "required_check_missing",
+            ),
+            (
+                "unusable_app_constraint",
+                [_check("ci")],
+                [],
+                [_ci_rule("ci", integration_id="123")],  # type: ignore[arg-type]
+                None,
+                "merge_check_state_unknown",
+            ),
+        ]
+        for name, runs, statuses, rules, protection in passing:
+            with self.subTest(name=name):
+                runner = MergeApiRunner()
+                runner.check_runs = runs
+                runner.statuses = statuses
+                if rules is None:
+                    runner.rules_status = 404
+                    runner.protection_status = 200
+                    runner.protection = protection
+                else:
+                    runner.rules = rules
+                with tempfile.TemporaryDirectory() as tmp:
+                    report = _merge(runner, Path(tmp), checkpoint=_ready_checkpoint())
+                self.assertTrue(report.merged, report.blocker)
+                self.assertEqual(runner.merge_puts, 1)
+        for name, runs, statuses, rules, protection, needle in withholding:
+            with self.subTest(name=name):
+                runner = MergeApiRunner()
+                runner.check_runs = runs
+                runner.statuses = statuses
+                if rules is None:
+                    runner.rules_status = 404
+                    runner.protection_status = 200
+                    runner.protection = protection
+                else:
+                    runner.rules = rules
+                with tempfile.TemporaryDirectory() as tmp:
+                    report = _merge(runner, Path(tmp), checkpoint=_ready_checkpoint())
+                self.assertEqual(runner.merge_puts, 0)
+                self.assertFalse(report.merged)
+                self.assertIn(needle, report.blocker or "")
+
+    def test_cli_accepts_neutral_required_check(self) -> None:
+        runner = MergeApiRunner()
+        runner.check_runs = [_check("ci", conclusion="neutral")]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "policy.json"
+            config.write_text(json.dumps(_policy_dict()), encoding="utf-8")
+            hi.save_checkpoint(
+                hi.checkpoint_path(root / "cp", ISSUE_URL),
+                _ready_checkpoint(),
+            )
+            with mock.patch.object(helmet_cli, "SubprocessRunner", return_value=runner):
+                code = helmet_cli.main(
+                    [
+                        "merge",
+                        ISSUE_URL,
+                        "--expected-head",
+                        HEAD,
+                        "--config",
+                        str(config),
+                        "--checkpoint-dir",
+                        str(root / "cp"),
+                        "--ledger",
+                        str(root / "missing.sqlite3"),
+                        "--json",
+                    ]
+                )
+        self.assertEqual(code, 0)
+        self.assertEqual(runner.merge_puts, 1)
+
+    def test_final_pull_read_withholds_newly_negative_state(self) -> None:
+        cases = [
+            ("dirty", {"mergeable_state": "dirty"}, "pr_not_mergeable"),
+            ("blocked", {"mergeable_state": "blocked"}, "pr_not_mergeable"),
+            ("behind", {"mergeable_state": "behind"}, "pr_not_mergeable"),
+            ("unstable", {"mergeable_state": "unstable"}, "pr_not_mergeable"),
+            ("unknown", {"mergeable_state": "unknown"}, "merge_live_state_unknown"),
+            ("blank", {"mergeable_state": ""}, "merge_live_state_unknown"),
+            ("draft", {"draft": True, "mergeable_state": "draft"}, "pr_is_draft"),
+            ("draft_flag", {"draft": True, "mergeable_state": "clean"}, "pr_is_draft"),
+        ]
+        for name, patch, needle in cases:
+            with self.subTest(name=name):
+                runner = MergeApiRunner()
+                clean = dict(runner.pull)
+                changed = dict(runner.pull)
+                changed.update(patch)
+                runner.pull_sequence = [clean, clean, changed]
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    report = _merge(runner, root, checkpoint=_ready_checkpoint())
+                    saved = hi.load_checkpoint(hi.checkpoint_path(root, ISSUE_URL))
+                self.assertEqual(runner.merge_puts, 0)
+                self.assertEqual(runner.pull_gets, 3)
+                self.assertFalse(report.merged)
+                self.assertFalse(report.merge_submitted)
+                self.assertIn(needle, report.blocker or "")
+                assert saved is not None
+                self.assertIsNone(saved.merge_attempted_head)
 
 
 if __name__ == "__main__":

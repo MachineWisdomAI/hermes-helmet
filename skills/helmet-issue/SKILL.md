@@ -259,9 +259,12 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
    `DONE` truth are unchanged.
 2. Default: merge that exact head once with the installed command
    `helmet merge ISSUE_URL --expected-head SHA`. It reads current required
-   checks from GitHub, applies this gate, and submits at most one SHA-bound
-   request. Do not treat `mergeable_state=clean` as those checks, and do not
-   assemble a private wrapper, queue, or second ledger.
+   checks from GitHub, including a configured App and both a same-name check
+   run and commit status when both exist. Neutral is a passing conclusion.
+   It applies this gate, re-reads the pull request, and submits at most one
+   SHA-bound request only if that read is still mergeable. Do not treat
+   `mergeable_state=clean` as those checks, and do not assemble a private
+   wrapper, queue, or second ledger.
 3. If the issue or parent epic has whole-line `Merge when clean: no` (see
    authority helpers), stop for explicit Captain approval. Policy `local-only`
    worker completion does not treat GitHub `mergeable_state=clean` as independently

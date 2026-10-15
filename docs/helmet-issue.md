@@ -52,9 +52,12 @@ when used). An expired managed parent fails closed; standalone issues and
 actually completed `DONE` truth stay as they are. A whole-line `Merge when
 clean: no` on the issue (or an inheriting parent epic) requires separate
 explicit approval. The supported operation is `helmet merge ISSUE_URL
---expected-head SHA`. It reads current required checks rather than treating
-GitHub `mergeable_state=clean` as those checks, submits at most one SHA-bound
-request, and reconciles a confirmed merge without a second task or queue.
+--expected-head SHA`. It reads current required checks, including a configured
+App and both a same-name check run and commit status when both exist, rather
+than treating GitHub `mergeable_state=clean` as those checks. Neutral is a
+passing conclusion. It re-reads the pull request before submitting, withholds
+if that read is no longer mergeable, submits at most one SHA-bound request,
+and reconciles a confirmed merge without a second task or queue.
 
 Interactive session hosts ask once before dispatch when no valid persisted
 choice exists. `helmet issue --merge-mode …` stores the choice, source, and
