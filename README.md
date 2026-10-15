@@ -200,7 +200,8 @@ state. The merge request includes the head SHA, and Hermes Helmet reads back
 GitHub's merge state afterward.
 
 By default, the first officer merges after it has reviewed the exact current
-head, required checks pass, and GitHub reports the pull request mergeable. An
+head, required checks pass, and GitHub reports the pull request mergeable.
+The installed command is `helmet merge ISSUE_URL --expected-head SHA`. An
 explicit whole-line `Merge when clean: no` directive on an issue or parent epic
 requires a separate Captain approval instead. A child can explicitly re-enable
 autonomous merge with `Merge when clean: yes`. Implementation and repair stay

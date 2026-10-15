@@ -18,6 +18,26 @@ is resolved through the review workflow, not by editing approval records,
 switching to another actor's credentials, or weakening checks. Source policy
 changes remain subject to the existing review workflow until they are installed.
 
+## Authorized exact-head merge
+
+When the issue is ready, merge only through the installed command:
+
+```sh
+helmet merge ISSUE_URL --expected-head SHA --config /path/to/policy.json
+```
+
+It reuses the existing merge gate and SHA-bound merge helper. It reads the
+current required checks, including a configured App and both a same-name
+check run and commit status when both exist. Neutral is a passing conclusion.
+`mergeable_state=clean` is not a substitute. It re-reads the pull request
+before submitting and withholds if that read is no longer mergeable. It
+submits at most one merge request for that head, re-queries afterward, and
+records the outcome on the issue checkpoint. It does not create a task, queue,
+or ledger. Review-only enrollment, explicit-approval ceilings, restrictive
+markers, and exhausted original budgets still withhold the merge. A missing
+approval is not bypassed. Repeating the command after a confirmed merge
+reconciles; it does not merge again.
+
 ## Named-request enrollment boundaries
 
 When a Captain's explicit named-repo request has enrolled a repository outside
