@@ -5,6 +5,11 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add `helmet providers configure/status/use/auto` for ordered native Hermes
+  fallbacks and manual selection through deployment-owned persistent state.
+  Provision role effort for backup models and remove obsolete inherited legacy
+  fallbacks when the canonical chain replaces them.
+
 - Add `helmet merge ISSUE_URL --expected-head SHA`, a Captain exact-head merge
   that reuses the existing gate and SHA-bound merge helper, reads current
   required checks (configured App, both same-name check and status sources,
