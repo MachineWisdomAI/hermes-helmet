@@ -2155,6 +2155,9 @@ def _run_accepted_fava_lifecycle_example(
     if not prompt_path.exists():
         prompt_path.write_text(render_trust_gate_prompt(template), encoding="utf-8")
 
+    # The demo injects TrustResult and must not consume the operator's machine
+    # overrides (which may target a newer FAVA schema than the accepted pin).
+    machine_config_dir = tempfile.TemporaryDirectory(prefix="helmet-fava-config-")
     previous = {
         key: os.environ.get(key)
         for key in (
@@ -2163,6 +2166,7 @@ def _run_accepted_fava_lifecycle_example(
             "FAVA_TRAILS_OPERATOR",
             "FAVA_TRAILS_DIR",
             "FAVA_TRAILS_SCOPE",
+            "XDG_CONFIG_HOME",
         )
     }
     steps: list[dict[str, object]] = []
@@ -2171,6 +2175,7 @@ def _run_accepted_fava_lifecycle_example(
         for key in previous:
             os.environ.pop(key, None)
         os.environ["FAVA_TRAILS_DATA_REPO"] = str(home)
+        os.environ["XDG_CONFIG_HOME"] = machine_config_dir.name
         fava["ConfigStore"].reset()
 
         if not (home / ".jj").exists():
@@ -2445,6 +2450,7 @@ def _run_accepted_fava_lifecycle_example(
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+        machine_config_dir.cleanup()
         if temp_dir is not None and not keep_data_repo:
             temp_dir.cleanup()
 
