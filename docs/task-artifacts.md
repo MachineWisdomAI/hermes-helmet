@@ -90,7 +90,18 @@ two name suffixes are reserved for companions.
 | `artifact_transport_unavailable`, `artifact_transport_timeout`, `artifact_transport_failed`, `artifact_transport_invalid` | The adapter could not run, timed out, failed, or broke this contract |
 
 A download is written to a new file atomically. It never follows a symlink and
-does not overwrite an existing file unless `--overwrite` is given.
+does not overwrite an existing file unless `--overwrite` is given. Without
+`--overwrite` the guarantee holds at publication, not only before the transfer: the
+verified bytes become visible only if nothing exists at the destination at that
+moment, so a file another process creates while the artifact is being fetched is
+kept and the download fails with `artifact_destination_exists`.
+
+The `artifact_transport_timeout` deadline covers the whole local invocation. The
+adapter runs in its own process group; when it finishes, overflows, or times out,
+that group is killed, so a wrapper's child (for example a container exec) cannot
+outlive the call or keep the output pipe open. A process that deliberately leaves
+the group cannot be killed from here, but it still cannot hold the call past the
+deadline plus a short cleanup allowance.
 
 ## Adapter contract for the deployment
 

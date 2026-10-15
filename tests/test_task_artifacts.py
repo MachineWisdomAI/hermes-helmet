@@ -23,6 +23,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 from typing import Callable
 import unittest
 import zipfile
@@ -497,6 +498,83 @@ class InMemoryHandoffTests(unittest.TestCase):
                 sorted(os.listdir(tmp)), ["existing.docx", "link.docx", "victim.docx"]
             )
 
+    def test_destination_created_during_fetch_survives_without_overwrite(self) -> None:
+        ref = self.upload("brief.docx", make_docx())
+        real_fetch = ta.fetch_artifact
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "brief.docx"
+            victim = Path(tmp) / "victim.docx"
+            victim.write_bytes(b"victim")
+
+            for label, create in (
+                ("file", lambda: destination.write_bytes(b"independent")),
+                ("symlink", lambda: destination.symlink_to(victim)),
+            ):
+                destination.unlink(missing_ok=True)
+
+                def racing(*args, **kwargs):  # type: ignore[no-untyped-def]
+                    fetched = real_fetch(*args, **kwargs)
+                    create()  # The path appears after the early check, mid-transfer.
+                    return fetched
+
+                with self.subTest(created=label), mock.patch.object(
+                    ta, "fetch_artifact", racing
+                ), self.assertRaises(ta.TaskArtifactError) as ctx:
+                    ta.save_artifact(self.transport, ref, destination)
+                self.assertEqual(
+                    ctx.exception.code,
+                    "artifact_destination_exists"
+                    if label == "file"
+                    else "artifact_destination_invalid",
+                )
+                if label == "file":
+                    self.assertEqual(destination.read_bytes(), b"independent")
+                else:
+                    self.assertTrue(destination.is_symlink())
+                self.assertEqual(victim.read_bytes(), b"victim")
+                self.assertEqual(
+                    sorted(os.listdir(tmp)), ["brief.docx", "victim.docx"], label
+                )
+
+            # An explicit overwrite is still allowed to replace what appeared.
+            destination.unlink()
+            destination.write_bytes(b"independent")
+            ta.save_artifact(self.transport, ref, destination, overwrite=True)
+            self.assertEqual(destination.read_bytes(), make_docx())
+
+    def test_new_destination_is_published_complete_and_only_once(self) -> None:
+        ref = self.upload("brief.docx", make_docx())
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "fresh.docx"
+            ta.save_artifact(self.transport, ref, destination)
+            self.assertEqual(destination.read_bytes(), make_docx())
+            self.assertEqual(os.listdir(tmp), ["fresh.docx"])
+
+    def test_no_clobber_holds_when_the_filesystem_has_no_hard_links(self) -> None:
+        ref = self.upload("brief.docx", make_docx())
+        real_fetch = ta.fetch_artifact
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            ta.os, "link", side_effect=PermissionError("no hard links here")
+        ):
+            fresh = Path(tmp) / "fresh.docx"
+            ta.save_artifact(self.transport, ref, fresh)
+            self.assertEqual(fresh.read_bytes(), make_docx())
+
+            raced = Path(tmp) / "raced.docx"
+
+            def racing(*args, **kwargs):  # type: ignore[no-untyped-def]
+                fetched = real_fetch(*args, **kwargs)
+                raced.write_bytes(b"independent")
+                return fetched
+
+            with mock.patch.object(ta, "fetch_artifact", racing), self.assertRaises(
+                ta.TaskArtifactError
+            ) as ctx:
+                ta.save_artifact(self.transport, ref, raced)
+            self.assertEqual(ctx.exception.code, "artifact_destination_exists")
+            self.assertEqual(raced.read_bytes(), b"independent")
+            self.assertEqual(sorted(os.listdir(tmp)), ["fresh.docx", "raced.docx"])
+
     def test_media_type_does_not_depend_on_the_host_mimetype_table(self) -> None:
         with mock.patch.object(ta.mimetypes, "guess_type", return_value=(None, None)):
             self.assertEqual(ta.media_type_for("a.DOCX"), DOCX_TYPE)
@@ -512,6 +590,105 @@ class RecordingExecutor:
     def __call__(self, argv, stdin_data, max_stdout, timeout):  # type: ignore[no-untyped-def]
         self.calls.append((list(argv), stdin_data))
         return self.inner(argv, stdin_data, max_stdout, timeout)
+
+
+@unittest.skipUnless(os.name == "posix", "process groups are POSIX-only")
+class BoundedExecutionTests(unittest.TestCase):
+    """``run_bounded`` bounds the whole invocation, including a wrapper's children."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.marker = Path(self._tmp.name) / "child-survived"
+
+    def wrapper(self, *, child_sleep: float, wrapper_tail: str, new_session: bool = False) -> list[str]:
+        # The child inherits the wrapper's stdout, like a container exec or shell
+        # wrapper would, and writes a marker only if it is still alive afterwards.
+        child = (
+            "import time, pathlib; "
+            f"time.sleep({child_sleep}); "
+            f"pathlib.Path({str(self.marker)!r}).write_text('alive')"
+        )
+        source = (
+            "import subprocess, sys, time\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}], "
+            f"start_new_session={new_session!r})\n"
+            "time.sleep(0.3)\n"  # Let the child start before the wrapper acts.
+            f"{wrapper_tail}\n"
+        )
+        return [sys.executable, "-c", source]
+
+    def assertChildKilled(self, child_sleep: float) -> None:
+        time.sleep(child_sleep + 0.5)
+        self.assertFalse(self.marker.exists(), "the wrapper's child outlived the call")
+
+    def test_timeout_bounds_a_wrapper_whose_child_holds_stdout(self) -> None:
+        argv = self.wrapper(child_sleep=2.0, wrapper_tail="time.sleep(30)")
+        started = time.monotonic()
+        result = ta.run_bounded(argv, None, 1024, 0.6)
+        elapsed = time.monotonic() - started
+        self.assertTrue(result.timed_out)
+        self.assertFalse(result.overflow)
+        self.assertLess(elapsed, 1.5, "the child's inherited pipe held the call open")
+        self.assertChildKilled(2.0)
+
+    def test_timeout_is_reported_as_a_fixed_error_for_a_stuck_child(self) -> None:
+        argv = self.wrapper(child_sleep=2.0, wrapper_tail="time.sleep(30)")
+
+        def stuck(_argv, stdin_data, max_stdout, timeout):  # type: ignore[no-untyped-def]
+            # Run the prepared wrapper instead of the runtime plus verb.
+            return ta.run_bounded(argv, stdin_data, max_stdout, timeout)
+
+        bounded = ta.WorkerRuntimeTransport(argv[:1], timeout=0.6, executor=stuck)
+        started = time.monotonic()
+        with self.assertRaises(ta.TaskArtifactError) as ctx:
+            bounded.list_attachments(BOARD, "t_input")
+        self.assertEqual(ctx.exception.code, "artifact_transport_timeout")
+        self.assertLess(time.monotonic() - started, 1.5)
+
+    def test_wrapper_that_exits_does_not_leave_a_child_holding_the_pipe(self) -> None:
+        argv = self.wrapper(
+            child_sleep=2.0, wrapper_tail="sys.stdout.write('done'); sys.stdout.flush()"
+        )
+        started = time.monotonic()
+        result = ta.run_bounded(argv, None, 1024, 10.0)
+        self.assertLess(time.monotonic() - started, 1.5)
+        self.assertEqual((result.returncode, result.stdout), (0, b"done"))
+        self.assertFalse(result.timed_out)
+        self.assertChildKilled(2.0)
+
+    def test_overflow_stops_a_wrapper_and_its_child(self) -> None:
+        argv = self.wrapper(
+            child_sleep=2.0,
+            wrapper_tail="sys.stdout.write('x' * 5000); sys.stdout.flush(); time.sleep(30)",
+        )
+        started = time.monotonic()
+        result = ta.run_bounded(argv, None, 1024, 10.0)
+        self.assertTrue(result.overflow)
+        self.assertFalse(result.timed_out)
+        self.assertLess(time.monotonic() - started, 1.5)
+        self.assertChildKilled(2.0)
+
+    def test_pipe_holder_outside_the_process_group_cannot_hold_the_call(self) -> None:
+        # A descendant in its own session escapes the group kill. The call still
+        # returns promptly at the deadline plus a short grace, marked timed out.
+        argv = self.wrapper(
+            child_sleep=2.0, wrapper_tail="time.sleep(30)", new_session=True
+        )
+        started = time.monotonic()
+        with mock.patch.object(ta, "_CLEANUP_GRACE", 0.2):
+            result = ta.run_bounded(argv, None, 1024, 0.6)
+        self.assertTrue(result.timed_out)
+        self.assertLess(time.monotonic() - started, 1.5)
+
+    def test_large_stdin_and_stdout_still_round_trip(self) -> None:
+        payload = os.urandom(3 * 1024 * 1024)
+        source = "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())"
+        result = ta.run_bounded(
+            [sys.executable, "-c", source], payload, len(payload) + 1, 30.0
+        )
+        self.assertEqual((result.returncode, result.stdout), (0, payload))
+        self.assertFalse(result.timed_out or result.overflow)
 
 
 class AdapterContractTests(unittest.TestCase):

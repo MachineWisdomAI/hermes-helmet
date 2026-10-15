@@ -39,10 +39,12 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
 import tempfile
 import threading
+import time
 from typing import Callable, Mapping, Protocol, Sequence
 
 from hermes_helmet.helmet_issue import DEFAULT_WORKER_RUNTIME, parse_worker_runtime
@@ -276,6 +278,25 @@ class ExecResult:
 
 Executor = Callable[[Sequence[str], "bytes | None", int, float], ExecResult]
 
+# How long to keep waiting for the stdout/stdin pipes after the adapter's whole
+# process group has been killed, before giving up on a holder outside the group.
+_CLEANUP_GRACE = 2.0
+
+
+def _kill_tree(process: "subprocess.Popen[bytes]") -> None:
+    """Kill the adapter and everything it left in its own process group."""
+
+    if os.name == "posix":
+        try:
+            # ``start_new_session`` made the adapter its group leader.
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass  # The group is already gone.
+    try:
+        process.kill()
+    except OSError:
+        pass
+
 
 def run_bounded(
     argv: Sequence[str],
@@ -287,6 +308,14 @@ def run_bounded(
 
     stderr is discarded so an adapter diagnostic can never reach our errors or
     logs. Output beyond *max_stdout* kills the process instead of buffering it.
+
+    The timeout bounds the whole local invocation, not just the first process.
+    The adapter runs in its own session, and when it exits, overflows, times
+    out, or the caller is interrupted, its entire process group is killed, so a
+    wrapper's child cannot outlive the call or keep our stdout pipe open. We
+    never wait on the pipe past the deadline: a holder that escaped the group
+    (its own session) cannot be killed from here, so the call returns with
+    ``timed_out`` set and the incomplete output is not trusted.
     """
 
     process = subprocess.Popen(
@@ -294,12 +323,11 @@ def run_bounded(
         stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        start_new_session=os.name == "posix",
     )
-    timed_out = threading.Event()
-
-    def _expire() -> None:
-        timed_out.set()
-        process.kill()
+    deadline = time.monotonic() + timeout
+    chunks: list[bytes] = []
+    overflow = threading.Event()
 
     def _feed() -> None:
         try:
@@ -314,39 +342,52 @@ def run_bounded(
             except OSError:
                 pass
 
-    timer = threading.Timer(timeout, _expire)
-    timer.daemon = True
-    timer.start()
+    def _drain() -> None:
+        # This thread owns stdout, including closing it, so a pipe still held by
+        # an escaped descendant never blocks the caller.
+        stream = process.stdout
+        assert stream is not None
+        total = 0
+        try:
+            while True:
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    return
+                total += len(chunk)
+                if total > max_stdout:
+                    overflow.set()
+                    _kill_tree(process)
+                    return
+                chunks.append(chunk)
+        except OSError:
+            return  # Truncated output fails the size/checksum/JSON checks.
+        finally:
+            stream.close()
+
+    reader = threading.Thread(target=_drain, daemon=True)
+    reader.start()
     feeder: threading.Thread | None = None
     if stdin_data is not None:
         feeder = threading.Thread(target=_feed, daemon=True)
         feeder.start()
-    chunks: list[bytes] = []
-    total = 0
-    overflow = False
+    timed_out = False
     try:
-        assert process.stdout is not None
-        while True:
-            chunk = process.stdout.read(65536)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_stdout:
-                overflow = True
-                process.kill()
-                break
-            chunks.append(chunk)
-        returncode = process.wait()
+        try:
+            process.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            timed_out = True
     finally:
-        timer.cancel()
-        if process.poll() is None:
-            process.kill()
-            process.wait()
-        if process.stdout is not None:
-            process.stdout.close()
+        _kill_tree(process)
+        process.wait()
+        # One shared allowance for both pipe threads keeps the worst case at
+        # timeout + _CLEANUP_GRACE even if a holder escaped the process group.
+        cleanup_end = time.monotonic() + _CLEANUP_GRACE
+        reader.join(max(0.0, cleanup_end - time.monotonic()))
         if feeder is not None:
-            feeder.join(timeout=5)
-    return ExecResult(returncode, b"".join(chunks), overflow, timed_out.is_set())
+            feeder.join(max(0.0, cleanup_end - time.monotonic()))
+    if reader.is_alive():
+        timed_out = True
+    return ExecResult(process.returncode, b"".join(chunks), overflow.is_set(), timed_out)
 
 
 class WorkerRuntimeTransport:
@@ -809,7 +850,13 @@ def save_artifact(
     task_id: str | None = None,
     overwrite: bool = False,
 ) -> ArtifactRef:
-    """Verify, then write one artifact atomically to a coordinator-local path."""
+    """Verify, then write one artifact atomically to a coordinator-local path.
+
+    Without *overwrite*, the early existence check only avoids a pointless
+    transfer. The guarantee is the publication step: the verified bytes become
+    visible at the destination only if nothing exists there at that instant, so
+    a file created while the artifact was being fetched survives untouched.
+    """
 
     target = Path(destination)
     parent = target.parent if str(target.parent) else Path(".")
@@ -828,9 +875,47 @@ def save_artifact(
             stream.write(fetched.data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, target)
+        if overwrite:
+            os.replace(temporary, target)
+        else:
+            _publish_new(temporary, target, fetched.data)
+    except FileExistsError as exc:
+        # Something appeared at the destination after the early check; it wins.
+        occupied_by_file = target.is_file() and not target.is_symlink()
+        raise TaskArtifactError(
+            "artifact_destination_exists"
+            if occupied_by_file
+            else "artifact_destination_invalid"
+        ) from exc
     except OSError as exc:
         raise TaskArtifactError("artifact_destination_invalid") from exc
     finally:
         Path(temporary).unlink(missing_ok=True)
     return fetched.ref
+
+
+def _publish_new(temporary: str, target: Path, data: bytes) -> None:
+    """Make *temporary* appear at *target* only if nothing exists there.
+
+    ``link`` fails with ``FileExistsError`` instead of replacing, and the
+    complete, fsynced file becomes visible in one step. Where the filesystem
+    has no hard links, fall back to an exclusive create (``O_EXCL``), which also
+    refuses an existing path or symlink and removes its partial file on failure.
+    """
+
+    try:
+        os.link(temporary, target)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass  # No hard-link support here; use the exclusive-create path below.
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        Path(target).unlink(missing_ok=True)
+        raise
