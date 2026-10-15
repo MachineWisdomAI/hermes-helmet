@@ -73,11 +73,23 @@ Adapters that already own deployment transport can call the narrower module:
 python -m hermes_helmet.worker_role_runtime --config POLICY --state-root ROOT --check-drained
 python -m hermes_helmet.worker_role_runtime --config POLICY --state-root ROOT
 python -m hermes_helmet.worker_role_runtime --config POLICY --state-root ROOT --verify
+python -m hermes_helmet.worker_role_runtime --config POLICY --state-root ROOT --recover-identity PROFILE
 ```
 
 Provisioning copies approved builder provider settings, `.env`, and Git config;
 links company SOUL, skills, and executable tools; and leaves profile histories,
-OAuth stores, memory, and cron separate. Each role must verify as the configured
+OAuth stores, memory, and cron separate. An unchanged builder persona is
+recognized by exact installed stock content and file ownership, not by its
+filename, length, or a marker. That persona is then linked to the accepted root
+`SOUL.md` on the same path, so the company contract is delivered once and Hermes
+operational guidance is left in the runtime prompt. The replaced persona is
+copied under `.helmet-private/identity-backups/`, outside profile, skill, and
+memory discovery, and can be restored while drained with `--recover-identity`.
+Recovery stages and validates the replacement before swapping the active path, so
+an occupied temporary path or a failed write leaves the prior identity untouched.
+A custom persona or unexpected symlink stays byte-identical. Verification then
+reports action required instead of success, and missing or stale company
+delivery fails for every configured role. Each role must verify as the configured
 worker GitHub identity. Failed provisioning restores modified leaves and removes
 newly created profiles/links. Unrelated existing profile state is preserved.
 Consolidating roles does not delete, copy, or combine old profile session stores.
