@@ -129,7 +129,8 @@ secret values.
    The epic root is never dispatch-labeled.
 
 The worker never merges and never force-pushes. The Captain merges by default
-only after current-head review, required checks, and mergeability pass. An
+only after current-head review, required checks, and mergeability pass, using
+`helmet merge ISSUE_URL --expected-head SHA`. An
 unambiguous `Merge when clean: no` directive on an issue or epic root requires a
 separate explicit approval. Private-plan `local-only` worker completion does not
 treat GitHub `mergeable_state=clean` as those required checks.

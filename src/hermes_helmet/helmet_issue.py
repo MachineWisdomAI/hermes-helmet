@@ -26,7 +26,7 @@ import re
 import shutil
 import sqlite3
 from typing import Protocol, Sequence
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from hermes_helmet import repo_enroll
 from hermes_helmet.authority import (
@@ -1962,6 +1962,7 @@ def evaluate_merge_gate(
     gh: str = DEFAULT_GH,
     epic_body: str | None = None,
     checkpoint_dir: Path | None = None,
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
 ) -> tuple[str, str | None]:
     """Return (decision, blocker).
 
@@ -2056,6 +2057,7 @@ def evaluate_merge_gate(
         runner=runner,
         gh=gh,
         child_issue=issue,
+        enrollment_store=enrollment_store,
     )
     if parent_url:
         checkpoint.parent_epic_url = parent_url
@@ -3237,3 +3239,971 @@ def load_policy_for_issue(path: Path) -> Policy:
         if policy.version < 2:
             raise HelmetIssueError(checkpoint_note("err", "policy_version_unsupported"))
         return policy
+
+
+# GitHub required-check success is success, skipped, and neutral.
+_PASSING_CHECK_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
+_FAILING_CHECK_CONCLUSIONS = frozenset(
+    {
+        "failure",
+        "failed",
+        "cancelled",
+        "canceled",
+        "timed_out",
+        "action_required",
+        "startup_failure",
+        "stale",
+        "error",
+    }
+)
+_PENDING_CHECK_STATUSES = frozenset(
+    {"queued", "in_progress", "waiting", "requested", "pending"}
+)
+_PASSING_STATUS_STATES = frozenset({"success"})
+_FAILING_STATUS_STATES = frozenset({"failure", "error"})
+_PENDING_STATUS_STATES = frozenset({"pending"})
+
+
+@dataclass(frozen=True)
+class RequiredCheck:
+    """One configured required status check.
+
+    ``app_id`` is the GitHub App that must report the check run. None means
+    any source, including GitHub's explicit any-app sentinel (-1).
+    """
+
+    context: str
+    app_id: int | None = None
+
+
+@dataclass(frozen=True)
+class RequiredCheckEvidence:
+    """Actual required-check read. Never inferred from mergeable_state."""
+
+    readable: bool
+    configured: tuple[str, ...]
+    satisfied: bool
+    blocker: str | None = None
+
+
+@dataclass(frozen=True)
+class MergeReport:
+    """Secret-free result of one exact-head Captain merge attempt."""
+
+    issue_url: str
+    decision: str
+    merged: bool
+    merge_submitted: bool
+    head_sha: str | None
+    pr_url: str | None
+    blocker: str | None
+    checkpoint_state: str
+
+    def to_public_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def _github_http_status(exc: BaseException) -> int | None:
+    match = re.search(r"(?i)(?:^|:)http(\d{3})(?:$|:)", str(exc))
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+_UNUSABLE_APP = object()
+
+
+def _parse_app_id(raw: object) -> int | None | object:
+    """Return an App id, None for any source, or ``_UNUSABLE_APP``."""
+
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return _UNUSABLE_APP
+    if raw == -1:
+        return None
+    if raw <= 0:
+        return _UNUSABLE_APP
+    return raw
+
+
+def _requirement_app_id(item: dict[str, object]) -> int | None | object:
+    present = [key for key in ("integration_id", "app_id") if key in item]
+    if not present:
+        return None
+    parsed = [_parse_app_id(item.get(key)) for key in present]
+    if any(value is _UNUSABLE_APP for value in parsed) or len(set(parsed)) > 1:
+        return _UNUSABLE_APP
+    return parsed[0]
+
+
+def _context_requirements(raw: object) -> list[tuple[RequiredCheck, bool]] | None:
+    """Extract configured checks. None means the payload is unusable.
+
+    The bool is true for a legacy name string. An explicit object for the same
+    context replaces that string so a mirrored ``contexts`` list does not add
+    a second, unconstrained requirement.
+    """
+
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        return None
+    items: list[tuple[RequiredCheck, bool]] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            items.append((RequiredCheck(item.strip(), None), True))
+            continue
+        if not isinstance(item, dict):
+            return None
+        context = item.get("context")
+        if not isinstance(context, str) or not context.strip():
+            return None
+        parsed_app = _requirement_app_id(item)
+        if parsed_app is _UNUSABLE_APP or not isinstance(parsed_app, int | None):
+            return None
+        items.append((RequiredCheck(context.strip(), parsed_app), False))
+    return items
+
+
+def _contexts_from_check_parameters(
+    params: object,
+) -> list[tuple[RequiredCheck, bool]] | None:
+    if not isinstance(params, dict):
+        return None
+    if not any(key in params for key in ("required_status_checks", "checks", "contexts")):
+        return None
+    items: list[tuple[RequiredCheck, bool]] = []
+    for key in ("required_status_checks", "checks", "contexts"):
+        if key not in params:
+            continue
+        parsed = _context_requirements(params.get(key))
+        if parsed is None:
+            return None
+        items.extend(parsed)
+    return items
+
+
+def _collapse_requirements(
+    items: list[tuple[RequiredCheck, bool]],
+) -> tuple[RequiredCheck, ...]:
+    explicit = {item.context for item, legacy in items if not legacy}
+    seen: set[tuple[str, int | None]] = set()
+    ordered: list[RequiredCheck] = []
+    for item, legacy in items:
+        if legacy and item.context in explicit:
+            continue
+        key = (item.context, item.app_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(item)
+    return tuple(ordered)
+
+
+def _requirement_names(requirements: tuple[RequiredCheck, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    names: list[str] = []
+    for item in requirements:
+        if item.context in seen:
+            continue
+        seen.add(item.context)
+        names.append(item.context)
+    return tuple(names)
+
+
+def _configured_contexts_from_rules(payload: object) -> tuple[RequiredCheck, ...] | None:
+    if not isinstance(payload, list):
+        return None
+    items: list[tuple[RequiredCheck, bool]] = []
+    for rule in payload:
+        if not isinstance(rule, dict):
+            return None
+        if rule.get("type") != "required_status_checks":
+            continue
+        parsed = _contexts_from_check_parameters(rule.get("parameters"))
+        if parsed is None:
+            return None
+        items.extend(parsed)
+    return _collapse_requirements(items)
+
+
+def _configured_contexts_from_protection(
+    payload: object,
+) -> tuple[RequiredCheck, ...] | None:
+    parsed = _contexts_from_check_parameters(payload)
+    if parsed is None:
+        return None
+    return _collapse_requirements(parsed)
+
+
+def _read_github_payload(
+    runner: Runner,
+    gh: str,
+    endpoint: str,
+) -> tuple[object | None, str | None]:
+    """Return (payload, blocker). A 404 payload is None without a blocker."""
+
+    try:
+        return _github_json(runner, gh, endpoint), None
+    except HelmetIssueError as exc:
+        if _github_http_status(exc) == 404:
+            return None, None
+        return None, checkpoint_note("err", "merge_check_evidence_missing")
+
+
+def _configured_required_checks(
+    repository_slug: str,
+    base_ref: str,
+    runner: Runner,
+    gh: str,
+) -> tuple[tuple[RequiredCheck, ...] | None, str | None]:
+    """Return configured checks, or (None, blocker) when the read is incomplete."""
+
+    branch = quote((base_ref or "").strip(), safe="")
+    if not branch:
+        return None, checkpoint_note("err", "merge_check_evidence_missing")
+    rules, blocker = _read_github_payload(
+        runner,
+        gh,
+        f"repos/{repository_slug}/rules/branches/{branch}",
+    )
+    if blocker:
+        return None, blocker
+    if rules is not None:
+        parsed = _configured_contexts_from_rules(rules)
+        if parsed is None:
+            return None, checkpoint_note("err", "merge_check_state_unknown")
+        return parsed, None
+    protection, blocker = _read_github_payload(
+        runner,
+        gh,
+        f"repos/{repository_slug}/branches/{branch}/protection/required_status_checks",
+    )
+    if blocker:
+        return None, blocker
+    if protection is None:
+        return (), None
+    parsed = _configured_contexts_from_protection(protection)
+    if parsed is None:
+        return None, checkpoint_note("err", "merge_check_state_unknown")
+    return parsed, None
+
+
+def _check_runs_for_sha(
+    repository_slug: str,
+    head_sha: str,
+    runner: Runner,
+    gh: str,
+) -> list[dict[str, object]]:
+    sha = quote(head_sha.strip(), safe="")
+    collected: list[dict[str, object]] = []
+    total: int | None = None
+    for page in range(1, 11):
+        payload, blocker = _read_github_payload(
+            runner,
+            gh,
+            (
+                f"repos/{repository_slug}/commits/{sha}/check-runs"
+                f"?per_page=100&page={page}"
+            ),
+        )
+        if blocker or payload is None or not isinstance(payload, dict):
+            raise HelmetIssueError(checkpoint_note("err", "merge_check_evidence_missing"))
+        batch = payload.get("check_runs")
+        if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
+            raise HelmetIssueError(checkpoint_note("err", "merge_check_state_unknown"))
+        collected.extend(batch)
+        raw_total = payload.get("total_count")
+        if isinstance(raw_total, int) and not isinstance(raw_total, bool):
+            total = raw_total
+        if total is not None and len(collected) >= total:
+            return collected
+        if len(batch) < 100:
+            if total is not None and len(collected) < total:
+                raise HelmetIssueError(
+                    checkpoint_note("err", "merge_check_evidence_missing")
+                )
+            return collected
+    raise HelmetIssueError(checkpoint_note("err", "merge_check_evidence_missing"))
+
+
+def _commit_statuses_for_sha(
+    repository_slug: str,
+    head_sha: str,
+    runner: Runner,
+    gh: str,
+) -> list[dict[str, object]]:
+    sha = quote(head_sha.strip(), safe="")
+    payload, blocker = _read_github_payload(
+        runner,
+        gh,
+        f"repos/{repository_slug}/commits/{sha}/status",
+    )
+    if blocker or payload is None or not isinstance(payload, dict):
+        raise HelmetIssueError(checkpoint_note("err", "merge_check_evidence_missing"))
+    statuses = payload.get("statuses")
+    if statuses is None:
+        statuses = []
+    if not isinstance(statuses, list) or not all(isinstance(item, dict) for item in statuses):
+        raise HelmetIssueError(checkpoint_note("err", "merge_check_state_unknown"))
+    return statuses
+
+
+def _check_run_app_id(run: dict[str, object]) -> int | None:
+    app = run.get("app")
+    if isinstance(app, dict):
+        parsed = _parse_app_id(app.get("id"))
+        if isinstance(parsed, int):
+            return parsed
+    suite = run.get("check_suite")
+    if isinstance(suite, dict):
+        suite_app = suite.get("app")
+        if isinstance(suite_app, dict):
+            parsed = _parse_app_id(suite_app.get("id"))
+            if isinstance(parsed, int):
+                return parsed
+    return None
+
+
+def _latest_check_run(
+    name: str,
+    runs: list[dict[str, object]],
+    *,
+    app_id: int | None = None,
+) -> dict[str, object] | None:
+    matches = [
+        (index, run)
+        for index, run in enumerate(runs)
+        if run.get("name") == name
+        and (app_id is None or _check_run_app_id(run) == app_id)
+    ]
+    if not matches:
+        return None
+
+    def _key(item: tuple[int, dict[str, object]]) -> tuple[str, int]:
+        index, run = item
+        stamp = run.get("completed_at") or run.get("started_at") or ""
+        return (stamp if isinstance(stamp, str) else "", index)
+
+    return max(matches, key=_key)[1]
+
+
+def _latest_commit_status(
+    name: str,
+    statuses: list[dict[str, object]],
+) -> dict[str, object] | None:
+    matches = [
+        (index, item)
+        for index, item in enumerate(statuses)
+        if item.get("context") == name
+    ]
+    if not matches:
+        return None
+
+    def _key(item: tuple[int, dict[str, object]]) -> tuple[str, int]:
+        index, status = item
+        stamp = status.get("updated_at") or status.get("created_at") or ""
+        return (stamp if isinstance(stamp, str) else "", index)
+
+    return max(matches, key=_key)[1]
+
+
+def _classify_check_run(run: dict[str, object]) -> str:
+    status = run.get("status")
+    conclusion = run.get("conclusion")
+    status_text = status.casefold() if isinstance(status, str) else ""
+    conclusion_text = conclusion.casefold() if isinstance(conclusion, str) else ""
+    if status_text in _PENDING_CHECK_STATUSES:
+        return "pending"
+    if status_text != "completed":
+        return "unknown"
+    if conclusion_text in _PASSING_CHECK_CONCLUSIONS:
+        return "success"
+    if conclusion_text in _FAILING_CHECK_CONCLUSIONS:
+        return "failed"
+    return "unknown"
+
+
+def _classify_commit_status(item: dict[str, object]) -> str:
+    state = item.get("state")
+    state_text = state.casefold() if isinstance(state, str) else ""
+    if state_text in _PASSING_STATUS_STATES:
+        return "success"
+    if state_text in _PENDING_STATUS_STATES:
+        return "pending"
+    if state_text in _FAILING_STATUS_STATES:
+        return "failed"
+    return "unknown"
+
+
+def _combine_check_sources(kinds: list[str]) -> str:
+    if not kinds:
+        return "missing"
+    if "unknown" in kinds:
+        return "unknown"
+    if "failed" in kinds:
+        return "failed"
+    if "pending" in kinds:
+        return "pending"
+    if all(kind == "success" for kind in kinds):
+        return "success"
+    return "unknown"
+
+
+def _classify_required_check(
+    requirement: RequiredCheck,
+    runs: list[dict[str, object]],
+    statuses: list[dict[str, object]],
+) -> str:
+    """Classify one requirement using GitHub's check and status sources.
+
+    A same-name check run and commit status must both pass. An expected App
+    must report the check run; another App or a commit status does not
+    substitute for it. Neutral, skipped, and success are passing conclusions.
+    """
+
+    run = _latest_check_run(requirement.context, runs, app_id=requirement.app_id)
+    if requirement.app_id is not None and run is None:
+        return "missing"
+    kinds: list[str] = []
+    if run is not None:
+        kinds.append(_classify_check_run(run))
+    status = _latest_commit_status(requirement.context, statuses)
+    if status is not None:
+        kinds.append(_classify_commit_status(status))
+    return _combine_check_sources(kinds)
+
+
+def read_required_check_evidence(
+    repository_slug: str,
+    *,
+    head_sha: str,
+    base_ref: str,
+    runner: Runner,
+    gh: str = DEFAULT_GH,
+) -> RequiredCheckEvidence:
+    """Read configured required checks and their results for one SHA.
+
+    Branch rules are authoritative when readable. A rules 404 falls back to
+    classic branch protection. Neither source's absence invents a check.
+    ``mergeable_state`` is not consulted. A configured App id is part of the
+    requirement. When a check run and a commit status share the required name,
+    both must pass. GitHub accepts success, skipped, and neutral conclusions.
+    """
+
+    configured, blocker = _configured_required_checks(
+        repository_slug, base_ref, runner, gh
+    )
+    names = _requirement_names(configured or ())
+    if blocker or configured is None:
+        return RequiredCheckEvidence(
+            readable=False,
+            configured=names,
+            satisfied=False,
+            blocker=blocker or checkpoint_note("err", "merge_check_evidence_missing"),
+        )
+    if not configured:
+        return RequiredCheckEvidence(readable=True, configured=(), satisfied=True, blocker=None)
+    try:
+        runs = _check_runs_for_sha(repository_slug, head_sha, runner, gh)
+        statuses = _commit_statuses_for_sha(repository_slug, head_sha, runner, gh)
+    except HelmetIssueError as exc:
+        code = str(exc)
+        if not code.startswith("err:"):
+            code = checkpoint_note("err", "merge_check_evidence_missing")
+        return RequiredCheckEvidence(
+            readable=False,
+            configured=names,
+            satisfied=False,
+            blocker=code,
+        )
+    for requirement in configured:
+        kind = _classify_required_check(requirement, runs, statuses)
+        if kind == "success":
+            continue
+        if kind == "unknown":
+            return RequiredCheckEvidence(
+                readable=False,
+                configured=names,
+                satisfied=False,
+                blocker=checkpoint_note(
+                    "err", "merge_check_state_unknown", requirement.context
+                ),
+            )
+        reason = {
+            "pending": "required_check_pending",
+            "failed": "required_check_failed",
+            "missing": "required_check_missing",
+        }.get(kind, "required_check_missing")
+        return RequiredCheckEvidence(
+            readable=True,
+            configured=names,
+            satisfied=False,
+            blocker=checkpoint_note("err", reason, requirement.context),
+        )
+    return RequiredCheckEvidence(
+        readable=True,
+        configured=names,
+        satisfied=True,
+        blocker=None,
+    )
+
+
+def _bind_live_parent(
+    checkpoint: Checkpoint,
+    issue: IssueRef,
+    runner: Runner,
+    *,
+    gh: str,
+) -> str | None:
+    """Point the checkpoint at the live parent, or leave a stale URL for the gate.
+
+    A readable native parent wins. With no native parent, a sole body Parent is
+    the documented fallback. Ambiguous body parents fail closed. A removed
+    association is left for ``evaluate_merge_gate`` to drop rather than kept as
+    authority.
+    """
+
+    from hermes_helmet.helmet_epic import HelmetEpicError, native_parent_of
+
+    try:
+        native = native_parent_of(issue.url, runner, gh=gh)
+    except HelmetEpicError as exc:
+        raise HelmetIssueError(
+            checkpoint_note("err", "native_parent_membership_unreadable")
+        ) from exc
+    if native:
+        checkpoint.parent_epic_url = native
+        return None
+    try:
+        parents = _child_parent_urls(
+            child_body=issue.body,
+            child_repository_slug=issue.repository.slug,
+        )
+    except Exception as exc:  # noqa: BLE001 — epic parse errors fail closed
+        raise HelmetIssueError(
+            checkpoint_note("err", "parent_membership_unreadable")
+        ) from exc
+    unique = tuple(dict.fromkeys(parents))
+    if len(unique) > 1:
+        raise HelmetIssueError(
+            checkpoint_note("err", "child_ambiguous_parents", issue.url)
+        )
+    if len(unique) == 1:
+        checkpoint.parent_epic_url = unique[0]
+    return None
+
+
+def _save_merge_checkpoint(
+    path: Path,
+    checkpoint: Checkpoint,
+    *,
+    state: str | None,
+    blocker: str | None,
+    note: str | None,
+    pull: PullRequestRef | None = None,
+    clear_blocker: bool = False,
+) -> None:
+    if state == "DONE":
+        checkpoint.state = "DONE"
+        checkpoint.pending_repair = False
+    elif state and checkpoint.state not in {"BLOCKED", "FAILED", "DONE"}:
+        checkpoint.state = state
+    if clear_blocker:
+        checkpoint.last_blocker = None
+    elif blocker:
+        checkpoint.last_blocker = blocker
+    if note and note not in checkpoint.notes:
+        checkpoint.notes.append(note)
+    if pull is not None:
+        checkpoint.pr_url = pull.url
+        checkpoint.pr_number = pull.number
+    save_checkpoint(path, checkpoint)
+
+
+def _merge_report(
+    issue_url: str,
+    checkpoint: Checkpoint,
+    *,
+    decision: str,
+    merged: bool,
+    merge_submitted: bool,
+    pull: PullRequestRef | None,
+    blocker: str | None,
+) -> MergeReport:
+    return MergeReport(
+        issue_url=issue_url,
+        decision=decision,
+        merged=merged,
+        merge_submitted=merge_submitted,
+        head_sha=pull.head_sha if pull is not None else checkpoint.clean_head,
+        pr_url=pull.url if pull is not None else checkpoint.pr_url,
+        blocker=blocker,
+        checkpoint_state=checkpoint.state,
+    )
+
+
+def merge_issue(
+    issue_url: str,
+    *,
+    expected_head: str,
+    policy: Policy,
+    ledger: Path = DEFAULT_LEDGER,
+    checkpoint_dir: Path | None = None,
+    runner: Runner | None = None,
+    gh: str = DEFAULT_GH,
+    hermes: str = DEFAULT_HERMES,
+    worker_runtime: Sequence[str] = (),
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
+) -> MergeReport:
+    """Merge one canonical PR at an exact head, or withhold without retrying.
+
+    Uses ``evaluate_merge_gate`` and ``merge_pull_request``. Required checks are
+    read from branch rules or classic protection and from the SHA's check runs
+    and commit statuses, including a configured App. A same-name check run and
+    commit status must both pass. ``mergeable_state=clean`` is never treated as
+    those checks. The pull request is read again immediately before the merge
+    request; a newly observed draft, unknown, or non-clean state withholds
+    without submitting. Explicit-approval ceilings are not bypassed. At most
+    one SHA-bound merge request is submitted; a later call reconciles a
+    confirmed merge and does not create a task or queue.
+    """
+
+    expected = (expected_head or "").strip()
+    if not expected:
+        raise HelmetIssueError(checkpoint_note("err", "expected_head_required"))
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
+    runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
+    runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
+    observed = observed_github_login(runner, gh=gh)
+    try:
+        verify_captain_identity(policy, observed)
+    except AuthorityError as exc:
+        raise HelmetIssueError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetIssueError(
+            checkpoint_note("err", "worker_profile_on_captain_host")
+        )
+
+    issue = load_issue(
+        policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
+    path = checkpoint_path(checkpoint_dir, issue_url)
+    checkpoint = load_checkpoint(
+        path,
+        expected_issue_url=issue_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
+    try:
+        _root, pull, _repair = discover_progress(
+            policy,
+            issue,
+            ledger,
+            runner,
+            gh=gh,
+            hermes=hermes,
+            worker_runtime=runtime,
+        )
+    except HelmetIssueError as exc:
+        if checkpoint is None:
+            raise
+        code = str(exc)
+        if not code.startswith("err:"):
+            code = checkpoint_note("err", "merge_live_state_unknown")
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="MERGE_GATE",
+            blocker=code,
+            note=checkpoint_note("op", "merge_withheld", "live_state"),
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="withheld",
+            merged=False,
+            merge_submitted=False,
+            pull=None,
+            blocker=code,
+        )
+    if pull is None:
+        raise HelmetIssueError(checkpoint_note("err", "no_canonical_pull_request"))
+
+    def _withhold(
+        blocker: str,
+        *,
+        state: str = "MERGE_GATE",
+        current: PullRequestRef | None = pull,
+    ) -> MergeReport:
+        if checkpoint is None:
+            raise HelmetIssueError(blocker)
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state=state,
+            blocker=blocker,
+            note=checkpoint_note("op", "merge_withheld", blocker.split(":")[1] if ":" in blocker else "withheld"),
+            pull=current,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="withheld",
+            merged=False,
+            merge_submitted=False,
+            pull=current,
+            blocker=blocker,
+        )
+
+    if pull.head_sha.casefold() != expected.casefold():
+        return _withhold(checkpoint_note("err", "merge_head_mismatch"))
+    if issue.enrollment_purpose == repo_enroll.PURPOSE_REVIEW:
+        if checkpoint is None:
+            raise HelmetIssueError(checkpoint_note("err", "review_enrollment_no_merge"))
+        return _withhold(checkpoint_note("err", "review_enrollment_no_merge"))
+
+    if checkpoint is None:
+        if not pull.merged:
+            raise HelmetIssueError(checkpoint_note("err", "no_checkpoint"))
+        checkpoint = Checkpoint(
+            version=CHECKPOINT_VERSION,
+            issue_url=issue_url,
+            state="DONE",
+            pr_url=pull.url,
+            pr_number=pull.number,
+            started_at=_utc_now(),
+            merge_mode=policy.merge_default_mode,
+        )
+        note = checkpoint_note("op", "merge_reconciled", pull.head_sha[:12])
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="DONE",
+            blocker=None,
+            note=note,
+            pull=pull,
+            clear_blocker=True,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="reconciled",
+            merged=True,
+            merge_submitted=False,
+            pull=pull,
+            blocker=None,
+        )
+
+    if pull.merged:
+        note = checkpoint_note("op", "merge_reconciled", pull.head_sha[:12])
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="DONE",
+            blocker=None,
+            note=note,
+            pull=pull,
+            clear_blocker=True,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="reconciled",
+            merged=True,
+            merge_submitted=False,
+            pull=pull,
+            blocker=None,
+        )
+
+    if issue.state != "open":
+        return _withhold(checkpoint_note("err", "issue_not_open"))
+    exhausted = budget_exhausted(checkpoint, policy)
+    if exhausted:
+        return _withhold(exhausted, state="FAILED")
+    if checkpoint.pending_repair:
+        return _withhold(checkpoint_note("err", "blocking_findings_unresolved"))
+    if (
+        checkpoint.merge_attempted_head
+        and checkpoint.merge_attempted_head.casefold() == pull.head_sha.casefold()
+    ):
+        return _withhold(checkpoint_note("err", "merge_already_attempted"))
+
+    try:
+        _bind_live_parent(checkpoint, issue, runner, gh=gh)
+    except HelmetIssueError as exc:
+        return _withhold(str(exc))
+
+    evidence = read_required_check_evidence(
+        issue.repository.slug,
+        head_sha=pull.head_sha,
+        base_ref=pull.base_ref,
+        runner=runner,
+        gh=gh,
+    )
+    state = (pull.mergeable_state or "").casefold()
+    if not evidence.readable:
+        checks_flag: bool | None = False
+    elif not evidence.configured and policy.worker_completion_contract == LOCAL_ONLY_COMPLETION_CONTRACT:
+        checks_flag = None
+    elif evidence.satisfied:
+        checks_flag = True
+    else:
+        checks_flag = False
+    mergeable_flag = True if state == "clean" else False
+    decision, blocker = evaluate_merge_gate(
+        policy,
+        issue,
+        pull,
+        checkpoint,
+        required_checks_green=checks_flag,
+        mergeable=mergeable_flag,
+        runner=runner,
+        gh=gh,
+        checkpoint_dir=checkpoint_dir,
+        enrollment_store=enrollment_store,
+    )
+    if decision == "already_merged":
+        fresh = load_pull_request(pull.repository_slug, pull.number, runner, gh=gh)
+        if fresh.head_sha.casefold() != expected.casefold():
+            return _withhold(checkpoint_note("err", "merge_head_mismatch"), current=fresh)
+        note = checkpoint_note("op", "merge_reconciled", fresh.head_sha[:12])
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="DONE",
+            blocker=None,
+            note=note,
+            pull=fresh,
+            clear_blocker=True,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="reconciled",
+            merged=True,
+            merge_submitted=False,
+            pull=fresh,
+            blocker=None,
+        )
+    if decision != "merge_allowed":
+        precise = blocker or checkpoint_note("err", "merge_not_ready")
+        if not evidence.readable and precise.endswith("required_checks_not_green"):
+            precise = evidence.blocker or checkpoint_note("err", "merge_check_evidence_missing")
+        elif evidence.blocker and precise.endswith("required_checks_not_green"):
+            precise = evidence.blocker
+        elif state in {"", "unknown"} and (
+            decision == "merge_allowed" or "pr_not_mergeable" in precise or "required_checks" in precise
+        ):
+            precise = checkpoint_note("err", "merge_live_state_unknown")
+        terminal = "FAILED" if precise.startswith("err:budget:") else "MERGE_GATE"
+        return _withhold(precise, state=terminal)
+
+    if not evidence.readable or not evidence.satisfied:
+        return _withhold(
+            evidence.blocker or checkpoint_note("err", "merge_check_evidence_missing")
+        )
+    if state in {"", "unknown"}:
+        return _withhold(checkpoint_note("err", "merge_live_state_unknown"))
+    if state != "clean":
+        return _withhold(checkpoint_note("err", "pr_not_mergeable"))
+    if policy.worker_completion_contract == LOCAL_ONLY_COMPLETION_CONTRACT and not evidence.configured:
+        return _withhold(checkpoint_note("err", "explicit_captain_approval_required"))
+
+    live = load_pull_request(pull.repository_slug, pull.number, runner, gh=gh)
+    if live.head_sha.casefold() != expected.casefold() or not live.head_sha:
+        return _withhold(checkpoint_note("err", "merge_head_mismatch"), current=live)
+    if live.merged:
+        note = checkpoint_note("op", "merge_reconciled", live.head_sha[:12])
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="DONE",
+            blocker=None,
+            note=note,
+            pull=live,
+            clear_blocker=True,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="reconciled",
+            merged=True,
+            merge_submitted=False,
+            pull=live,
+            blocker=None,
+        )
+    live_state = (live.mergeable_state or "").casefold()
+    if live.draft or live_state == "draft":
+        return _withhold(checkpoint_note("err", "pr_is_draft"), current=live)
+    if live_state in {"", "unknown"}:
+        return _withhold(
+            checkpoint_note("err", "merge_live_state_unknown"), current=live
+        )
+    if live_state != "clean":
+        return _withhold(checkpoint_note("err", "pr_not_mergeable"), current=live)
+    checkpoint.merge_attempted_head = live.head_sha
+    save_checkpoint(path, checkpoint)
+    try:
+        verified = merge_pull_request(live, runner, gh=gh)
+    except HelmetIssueError as exc:
+        code = str(exc)
+        if not code.startswith("err:"):
+            code = checkpoint_note("err", "merge_failed_not_merged")
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="BLOCKED",
+            blocker=code,
+            note=checkpoint_note("op", "merge_withheld", "merge_failed"),
+            pull=live,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="withheld",
+            merged=False,
+            merge_submitted=True,
+            pull=live,
+            blocker=code,
+        )
+    if not verified.merged or verified.head_sha.casefold() != expected.casefold():
+        code = checkpoint_note("err", "merge_api_success_but_not_merged")
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="BLOCKED",
+            blocker=code,
+            note=checkpoint_note("op", "merge_withheld", "merge_unconfirmed"),
+            pull=verified,
+        )
+        return _merge_report(
+            issue_url,
+            checkpoint,
+            decision="withheld",
+            merged=False,
+            merge_submitted=True,
+            pull=verified,
+            blocker=code,
+        )
+    note = checkpoint_note("op", "merged", verified.head_sha[:12])
+    _save_merge_checkpoint(
+        path,
+        checkpoint,
+        state="DONE",
+        blocker=None,
+        note=note,
+        pull=verified,
+        clear_blocker=True,
+    )
+    return _merge_report(
+        issue_url,
+        checkpoint,
+        decision="merged",
+        merged=True,
+        merge_submitted=True,
+        pull=verified,
+        blocker=None,
+    )
