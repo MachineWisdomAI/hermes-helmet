@@ -159,6 +159,8 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                 for key in ("model", "agent", "fallback_providers", "provider_routing", "providers"):
                     if key in template:
                         config[key] = copy.deepcopy(template[key])
+                if "fallback_providers" in template and "fallback_model" not in template:
+                    config.pop("fallback_model", None)
                 if existing_overrides:
                     config.setdefault("agent", {}).setdefault("reasoning_overrides", {}).update(existing_overrides)
                 for filename in (".env", "home/.gitconfig"):
@@ -189,6 +191,9 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
             effort = dict(roles.reasoning_effort).get(role)
             if effort is not None:
                 config["agent"].setdefault("reasoning_overrides", {})[model] = effort
+                for backup in config.get("fallback_providers", []):
+                    if isinstance(backup, dict) and isinstance(backup.get("model"), str):
+                        config["agent"]["reasoning_overrides"][backup["model"]] = effort
             config.setdefault("kanban", {}).update(
                 max_in_progress=roles.max_in_progress,
                 max_in_progress_per_profile=roles.max_in_progress_per_profile,
