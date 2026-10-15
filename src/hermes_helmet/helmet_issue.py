@@ -104,6 +104,9 @@ def _resolve_worker_runtime() -> tuple[str, ...]:
       ``{"slug":…,"worktree":…,"purpose":…,"created":bool}`` (see repo_enroll)
     - ``wait ISSUE_URL --timeout-seconds N --json [--cursor TOKEN]`` → blocks
       outside the agent loop and prints one bounded wake result
+    - ``artifact-upload|artifact-list|artifact-download BOARD TASK …`` → binary
+      task-attachment handoff over stdin/stdout (see ``task_artifacts`` and
+      ``docs/task-artifacts.md``)
 
     Deployment-specific adapters stay outside this repository; this is only the
     portable configuration seam. Empty means local ledger/Path only.

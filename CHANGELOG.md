@@ -5,6 +5,16 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add `helmet artifact upload|list|download`, a coordinator handoff for DOCX,
+  PPTX, and other files through native Kanban task attachments. References carry
+  board, task, attachment id, media type, size, and SHA-256, so review and
+  acceptance bind to an exact revision. Transfer is binary-safe over the existing
+  worker-runtime seam (new `artifact-upload`, `artifact-list`, `artifact-download`
+  verbs), honors the 25 MiB attachment cap, keeps the original editable file
+  separate from any preview or extracted text, and fails with fixed,
+  content-free errors. See [task-artifacts.md](docs/task-artifacts.md) for the
+  adapter contract a deployment implements.
+
 - Deliver the accepted company contract to an unchanged stock builder persona,
   and fail verification when that delivery is missing or stale. Custom personas
   and unexpected symlinks stay unchanged and report action required. Replaced
