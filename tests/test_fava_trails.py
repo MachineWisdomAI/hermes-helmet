@@ -487,6 +487,21 @@ class FavaLifecycleTests(unittest.TestCase):
             self.assertTrue(result["ok"], result)
             self.assertEqual(Path(str(result["data_repo"])), root.resolve())
 
+    def test_lifecycle_ignores_and_preserves_host_machine_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config_home = Path(directory)
+            config = config_home / "fava-trails" / "config.yaml"
+            config.parent.mkdir()
+            # A newer host schema must not leak into the pinned demo engine.
+            content = "trust_gate_decisions_config: {}\nunsupported_demo_key: true\n"
+            config.write_text(content, encoding="utf-8")
+            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config_home)}):
+                result = ft.run_governed_lifecycle_example()
+                self.assertTrue(result["ok"], result)
+                self.assertEqual(result["engine"], "accepted-fava-trail-manager")
+                self.assertEqual(os.environ["XDG_CONFIG_HOME"], str(config_home))
+            self.assertEqual(config.read_text(encoding="utf-8"), content)
+
     def test_fake_engine_isolation_path_still_available(self) -> None:
         result = ft.run_governed_lifecycle_example(engine=ft.FakeFavaEngine())
         self.assertTrue(result["ok"], result)
