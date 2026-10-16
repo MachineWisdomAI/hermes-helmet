@@ -34,8 +34,10 @@ never Captain authority.
 
 1. **Shape the plan.** Fix audience, purpose, format (`document` or `deck`),
    guidance, sources per part, writer profiles, one editor profile, and
-   yourself as coordinator. Writers, editor and coordinator are different
-   profiles. For assignment rules by format, read
+   yourself as coordinator. Only the coordinator must differ from every writer
+   and the editor. Writers and the editor may share one writing profile (for
+   example `writing`); each works its own card in its own session. For
+   assignment rules by format, read
    `references/assignments.md`.
 2. **Create the cards.** Write the plan JSON ([schema](references/plan.md)) and
    run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its

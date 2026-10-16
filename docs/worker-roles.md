@@ -57,7 +57,7 @@ must support the chosen levels.
 
 ## Installation and verification
 
-The provisioner supports Hermes' bundled `ruamel.yaml` and PyYAML. Install the package's `worker` extra for PyYAML in environments without either parser.
+The provisioner supports Hermes' bundled `ruamel.yaml` and PyYAML. PyYAML is a normal dependency of the package, so a standard installation already provides a parser (the `worker` extra remains only for compatibility).
 Start with an approved builder profile, subprocess home, and company tools and
 skills. Run as the worker UID. Pause Hermes dispatch and drain running tasks
 on every board; the installer checks both before configuration writes.

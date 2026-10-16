@@ -1,5 +1,5 @@
 ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909
-FROM ${HERMES_BASE_IMAGE}
+FROM ${HERMES_BASE_IMAGE} AS helmet
 
 ARG HERMES_BASE_IMAGE
 ARG HERMES_HELMET_SOURCE_COMMIT=unknown
@@ -117,3 +117,73 @@ WORKDIR /opt/data
 USER ${HERMES_UID}:${HERMES_GID}
 ENTRYPOINT ["/opt/hermes-helmet/runtime-entrypoint.sh"]
 CMD ["gateway", "run"]
+
+# ---------------------------------------------------------------------------
+# Writing target: `docker build --target writing` (used by deploy/writing.compose.yaml).
+#
+# Adds document and diagram capability to the same image, at build time only:
+# hash-locked python-docx and python-pptx for every interpreter the bundled
+# Hermes `docx`/`powerpoint` skills can run under, plus the offline Mermaid
+# render bundle fetched at a full pinned gstack commit. Node and Chromium are the
+# base image's own. Nothing is installed at runtime or into a profile user site.
+# The final `runtime` stage below keeps a plain build identical to the image
+# before this target existed.
+# ---------------------------------------------------------------------------
+FROM helmet AS writing
+
+ARG GSTACK_COMMIT=47d639abffa882b8cbb641d7d1dedf08ecada9ec
+ARG GSTACK_DIAGRAM_BUNDLE_SHA256=ec759ca41239ff888acdd0654c3f6ef505e3314b87c6e5de11903f804fc8a859
+
+USER root
+
+LABEL com.machinewisdom.hermes-helmet.target="writing"
+LABEL com.machinewisdom.hermes-helmet.gstack-commit="${GSTACK_COMMIT}"
+LABEL com.machinewisdom.hermes-helmet.diagram-bundle-sha256="${GSTACK_DIAGRAM_BUNDLE_SHA256}"
+
+COPY deploy/writing /tmp/writing-build
+COPY examples/writing/guidance /opt/hermes-helmet/examples/writing/guidance
+
+RUN set -eux; \
+    writing=/opt/hermes-helmet/writing; \
+    install -d -m 0755 "$writing"; \
+    # Hash-locked libraries into the venv, its base interpreter and Debian's.
+    /usr/local/bin/python3 /tmp/writing-build/install-libs.py \
+      --lock /tmp/writing-build/requirements.lock; \
+    # Offline Mermaid bundle at a full pinned commit, checksum-verified.
+    gstack_src=/tmp/gstack; \
+    git init -q "$gstack_src"; \
+    git -C "$gstack_src" fetch -q --depth 1 https://github.com/garrytan/gstack.git "${GSTACK_COMMIT}"; \
+    git -C "$gstack_src" checkout -q FETCH_HEAD; \
+    test "$(git -C "$gstack_src" rev-parse HEAD)" = "${GSTACK_COMMIT}"; \
+    install -d -m 0755 "$writing/skills"; \
+    /usr/local/bin/python3 /tmp/writing-build/stage-diagram.py \
+      --gstack "$gstack_src" \
+      --commit "${GSTACK_COMMIT}" \
+      --bundle-sha256 "${GSTACK_DIAGRAM_BUNDLE_SHA256}" \
+      --owned-root /tmp/writing-build \
+      --out "$writing/skills/diagram"; \
+    install -m 0644 /tmp/writing-build/requirements.in /tmp/writing-build/requirements.lock \
+      /tmp/writing-build/bundle-deps.json "$writing/"; \
+    install -m 0644 /tmp/writing-build/smoke.py "$writing/smoke.py"; \
+    rm -rf "$gstack_src" /tmp/writing-build; \
+    chown -R root:root "$writing" /opt/hermes-helmet/examples; \
+    chmod -R a+rX,go-w "$writing" /opt/hermes-helmet/examples
+
+# Build-time proof of the real invocation paths. The bundled document skills are
+# run with each image interpreter (not an import check), then the diagram
+# command renders a fixture offline with the base image's Chromium.
+RUN set -eux; \
+    smoke_home=/tmp/writing-smoke-home; \
+    export HOME="$smoke_home" PYTHONDONTWRITEBYTECODE=1; \
+    mkdir -p "$smoke_home"; \
+    for py in /opt/hermes/.venv/bin/python /usr/local/bin/python3 /usr/bin/python3; do \
+      "$py" /opt/hermes-helmet/writing/smoke.py documents; \
+    done; \
+    /usr/local/bin/python3 /opt/hermes-helmet/writing/smoke.py diagram; \
+    rm -rf "$smoke_home"
+
+WORKDIR /opt/data
+USER ${HERMES_UID}:${HERMES_GID}
+
+# Default target: a plain `docker build` keeps producing the unchanged image.
+FROM helmet AS runtime

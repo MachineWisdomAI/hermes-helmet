@@ -76,6 +76,21 @@ for required in \
     src/hermes_helmet/compose_runtime.py \
     src/hermes_helmet/native_artifacts.py \
     tests/test_compose_runtime.py \
+    src/hermes_helmet/writing_setup.py \
+    tests/test_writing_setup.py \
+    deploy/writing.compose.yaml \
+    deploy/writing/requirements.in \
+    deploy/writing/requirements.lock \
+    deploy/writing/bundle-deps.json \
+    deploy/writing/install-libs.py \
+    deploy/writing/stage-diagram.py \
+    deploy/writing/smoke.py \
+    deploy/writing/notices/diagram-bundle.md \
+    deploy/writing/skills/diagram/SKILL.md \
+    deploy/writing/skills/diagram/scripts/render.mjs \
+    examples/writing/guidance/example-writing-guidance/SKILL.md \
+    examples/writing/guidance/example-writing-guidance/references/house-style.md \
+    docs/writing-setup.md \
     tests/fixtures/docker_shim.py \
     tests/fixtures/compose/artifact-transport.compose.yaml \
     src/hermes_helmet/fava_trails.py \

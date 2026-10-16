@@ -5,6 +5,29 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Make the YAML parser part of the normal installation. `pyproject.toml` now declares
+  PyYAML as a runtime dependency (the `worker` extra remains for compatibility), so a
+  coordinator that installs only the wheel can run `helmet write profile-check`. The
+  clean-wheel test in `tests/test_packaged_release.py` now installs the wheel with its
+  declared dependencies and runs the installed command against valid and invalid
+  synthetic profiles outside the checkout.
+
+- Add a fresh, isolated writing worker for Docker Compose. `deploy/Dockerfile` gains a
+  `writing` target (a plain build is unchanged) that installs hash-locked `python-docx`
+  and `python-pptx` into all three image Pythons at build time and stages the offline
+  gstack Mermaid render bundle, fetched at a full pinned commit with its SHA-256 verified,
+  beside a small reusable adapter that renders Mermaid to SVG and PNG. Build-time smoke
+  checks drive the bundled `docx` and `powerpoint` skills with each interpreter. Provenance,
+  lockfiles and notices ship in the image and in `NOTICE`. The standalone
+  `deploy/writing.compose.yaml` needs no GitHub token, policy, poller, bind mount or
+  published port and sets no global names. `python -m hermes_helmet.writing_setup
+  configure|verify` configures the native `default` coordinator and one `writing` profile
+  (memory off, `session_search` disabled, the writing-context plugin, the fixed
+  `kanban.dispatch_profiles: ["writing"]`, and a neutral guidance pack imported through the
+  company-skill importer), refuses unknown or used state before any change, and reports
+  Office visual rendering as unavailable without failing. `helmet-write` now says only the
+  coordinator must differ from the writers and editor. See `docs/writing-setup.md`.
+
 - Add a narrow, documented `Version-Override: X.Y.Z` PR-body line to the
   repository-local version updater so a Captain can select a lower standard
   increment for one PR (for example patch for a `feat` PR). It can never raise the

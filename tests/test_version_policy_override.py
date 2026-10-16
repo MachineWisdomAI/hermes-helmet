@@ -4,10 +4,12 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "mw-version.py"
@@ -28,6 +30,13 @@ def run_policy(repo: Path, *args: str) -> tuple[int, str, str]:
 
 class VersionOverrideTests(unittest.TestCase):
     def setUp(self):
+        # `--event-file` defaults to $GITHUB_EVENT_PATH. In CI that is the real pull
+        # request event, whose body can carry its own Version-Override and would
+        # silently replace the body each test supplies.
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("GITHUB_EVENT_PATH", None)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name)
