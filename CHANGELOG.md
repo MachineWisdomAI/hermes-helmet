@@ -5,6 +5,19 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add `helmet-compose`, the public reference worker-runtime adapter for a native
+  Hermes worker in a dedicated Docker Compose project. It supports native
+  `kanban ...` and the existing `artifact-upload`, `artifact-list` and
+  `artifact-download` verbs through `docker compose exec -T` into service
+  `hermes`, requires explicit `COMPOSE_FILE` and `COMPOSE_PROJECT_NAME`, pins the
+  in-container actor to `default`, keeps binary stdin/stdout, the 25 MiB cap,
+  size/SHA-256 checks and exit statuses 3/4/5 unchanged, and refuses the ledger,
+  dispatch and wait verbs. The reusable helper `hermes_helmet.native_artifacts`
+  stores attachments through the runtime's own attachment functions, so
+  deployment adapters can delegate to it. The ownership rule in
+  `helmet_issue.py` and the adapter documentation now name this one public
+  exception; follow-up to epic #106's deployment boundary.
+
 - Add `helmet write` and the `helmet-write` first-officer skill, a portable
   workflow for multi-part writing. A coordinator plans one native Kanban card per
   contribution plus a held editor card, reviews each submission as an exact
