@@ -5,6 +5,12 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add a narrow, documented `Version-Override: X.Y.Z` PR-body line to the
+  repository-local version updater so a Captain can select a lower standard
+  increment for one PR (for example patch for a `feat` PR). It can never raise the
+  increment, lower a breaking change, or apply to release promotion; without it the
+  default rules are unchanged. This PR (#121) takes 0.23.1 this way.
+
 - Add `helmet-compose`, the public reference worker-runtime adapter for a native
   Hermes worker in a dedicated Docker Compose project. It supports native
   `kanban ...` and the existing `artifact-upload`, `artifact-list` and
