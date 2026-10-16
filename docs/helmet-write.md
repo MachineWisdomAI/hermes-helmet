@@ -224,8 +224,10 @@ settings.
    cannot ship a skill by that name to workers.
 2. Provide the coordinator profile name, the editor profile, and writer profiles
    as Hermes profiles on the board. Use a writing profile (reasoning effort per
-   the deployment's role policy) for writers and editor; the coordinator is the
-   first officer's own profile, not a writer.
+   the deployment's role policy) for writers and editor; they may all be the
+   same profile, each on its own card and session. The coordinator is the
+   first officer's own profile and must be none of them. For a fresh Docker
+   Compose worker, see [Fresh writing worker](writing-setup.md).
 3. Configure the writing profiles: memory and provider off, `session_search`
    disabled through `agent.disabled_toolsets`, plugin installed and enabled,
    `profile-check` clean. Run the coordinator commands as the planned coordinator

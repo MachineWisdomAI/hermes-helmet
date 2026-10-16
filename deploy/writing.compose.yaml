@@ -1,0 +1,60 @@
+# Standalone Docker Compose recipe for a fresh, isolated Helmet writing worker.
+#
+# Not an override of deploy/compose.yaml: it declares no GitHub token, policy,
+# poller, host bind mount or published port, and it sets no global container,
+# volume or network name. Compose derives every resource name from the project
+# name, so two projects never collide. Run it from a dedicated shell with
+# COMPOSE_FILE (absolute path to this file) and a unique COMPOSE_PROJECT_NAME
+# exported for the whole walkthrough. See docs/writing-setup.md.
+#
+#   docker compose build
+#   docker compose run --rm --no-deps --entrypoint python hermes \
+#       -m hermes_helmet.writing_setup configure
+#   docker compose run --rm --no-deps --entrypoint python hermes \
+#       -m hermes_helmet.writing_setup verify
+#   docker compose up -d
+
+services:
+  hermes:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: writing
+      args:
+        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909}
+        HERMES_HELMET_SOURCE_COMMIT: ${HERMES_HELMET_SOURCE_COMMIT:-unknown}
+        HERMES_HELMET_VERSION: ${HERMES_HELMET_VERSION:-0.0.0-dev}
+    # No explicit image name: Compose names it from the project, so a project
+    # never reuses another project's image.
+    command: ["gateway", "run"]
+    restart: unless-stopped
+    # Worker UID/GID and home are the supported v1 defaults, not a schema.
+    user: "10000:10000"
+    volumes:
+      - hermes_state:/opt/data
+    tmpfs:
+      - /run/hermes-helmet:uid=10000,gid=10000,mode=0700
+    environment:
+      HERMES_UID: "10000"
+      HERMES_GID: "10000"
+      HERMES_HOME: /opt/data
+      HOME: /opt/data
+      HERMES_GATEWAY_NO_SUPERVISE: "0"
+      # The writing worker needs no company-skill policy; guidance is imported
+      # by `writing_setup configure`, not by the startup policy importer.
+      HERMES_HELMET_SKIP_COMPANY_SKILLS: "1"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          /opt/hermes/.venv/bin/python -c
+          'import os,pathlib,sys; sys.exit(0 if pathlib.Path("/opt/hermes-helmet/SOURCE_COMMIT").is_file() and os.getuid()!=0 else 1)'
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    stop_grace_period: 30s
+
+volumes:
+  # Project-scoped: Compose names this <project>_hermes_state.
+  hermes_state: {}

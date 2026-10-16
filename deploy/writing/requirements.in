@@ -1,0 +1,9 @@
+# Direct OSS document libraries for the writing image. The bundled Hermes
+# `docx` and `powerpoint` skills import python-docx and python-pptx; Pillow is
+# python-pptx's image dependency. Regenerate the lock with:
+#   uv pip compile deploy/writing/requirements.in --generate-hashes --universal \
+#     --python-version 3.13 --no-header -o deploy/writing/requirements.lock
+python-docx==1.2.0
+python-pptx==1.0.2
+pillow==12.3.0
+typing_extensions==4.16.0

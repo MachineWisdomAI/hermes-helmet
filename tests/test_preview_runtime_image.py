@@ -3,7 +3,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import importlib.util
+import json
+import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -240,6 +248,332 @@ class RestoredComparatorPresenceTests(unittest.TestCase):
         self.assertIn("test_platform_layer_base_label_and_scanner_mismatches_fail", text)
         self.assertIn("test_incomplete_evidence_fails_closed", text)
         self.assertIn("test_severity_worsening_fails_as_an_added_identity", text)
+
+
+GSTACK_COMMIT = "47d639abffa882b8cbb641d7d1dedf08ecada9ec"
+GSTACK_BUNDLE_SHA256 = "ec759ca41239ff888acdd0654c3f6ef505e3314b87c6e5de11903f804fc8a859"
+WRITING = ROOT / "deploy" / "writing"
+IMAGE_INTERPRETERS = (
+    "/opt/hermes/.venv/bin/python",
+    "/usr/local/bin/python3",
+    "/usr/bin/python3",
+)
+
+
+def _load_script(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _writing_stage(dockerfile: str) -> str:
+    start = dockerfile.index("FROM helmet AS writing")
+    return dockerfile[start : dockerfile.index("FROM helmet AS runtime")]
+
+
+class WritingImageDockerfileTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.dockerfile = _read("deploy/Dockerfile")
+        self.stage = _writing_stage(self.dockerfile)
+
+    def test_writing_is_a_target_and_a_plain_build_stays_the_unchanged_image(self) -> None:
+        stages = re.findall(r"(?m)^FROM \S+ AS (\S+)$", self.dockerfile)
+        self.assertEqual(stages, ["helmet", "writing", "runtime"])
+        self.assertTrue(self.dockerfile.rstrip().endswith("FROM helmet AS runtime"))
+        # The Helmet stage keeps the existing entrypoint; the writing stage reuses it.
+        self.assertEqual(self.dockerfile.count("ENTRYPOINT"), 1)
+        self.assertNotIn("ENTRYPOINT", self.stage)
+        self.assertNotIn("COPY deploy/hermes", self.stage)
+
+    def test_gstack_is_fetched_at_a_full_commit_and_the_bundle_checksum_is_verified(self) -> None:
+        self.assertIn(f"ARG GSTACK_COMMIT={GSTACK_COMMIT}", self.stage)
+        self.assertIn(f"ARG GSTACK_DIAGRAM_BUNDLE_SHA256={GSTACK_BUNDLE_SHA256}", self.stage)
+        self.assertRegex(self.stage, r"(?m)^ARG GSTACK_COMMIT=[0-9a-f]{40}$")
+        self.assertRegex(self.stage, r"(?m)^ARG GSTACK_DIAGRAM_BUNDLE_SHA256=[0-9a-f]{64}$")
+        self.assertIn('fetch -q --depth 1 https://github.com/garrytan/gstack.git "${GSTACK_COMMIT}"', self.stage)
+        self.assertIn('test "$(git -C "$gstack_src" rev-parse HEAD)" = "${GSTACK_COMMIT}"', self.stage)
+        self.assertIn('--bundle-sha256 "${GSTACK_DIAGRAM_BUNDLE_SHA256}"', self.stage)
+
+    def test_libraries_install_only_from_the_hash_lock_at_build_time(self) -> None:
+        self.assertIn("install-libs.py", self.stage)
+        self.assertIn("--lock /tmp/writing-build/requirements.lock", self.stage)
+        installer = (WRITING / "install-libs.py").read_text(encoding="utf-8")
+        for flag in ("--require-hashes", "--only-binary=:all:", "--no-deps"):
+            self.assertIn(flag, installer)
+        for interpreter in IMAGE_INTERPRETERS:
+            self.assertIn(interpreter, installer)
+        self.assertNotIn('"--user"', installer)
+        # Nothing at runtime: the setup module and entrypoint never install packages.
+        for runtime in ("src/hermes_helmet/writing_setup.py", "deploy/hermes/runtime-entrypoint.sh"):
+            self.assertNotRegex(_read(runtime), r"pip3? install|npm (install|ci)|apt(-get)? install")
+
+    def test_build_runs_the_bundled_skills_with_every_image_interpreter(self) -> None:
+        for interpreter in IMAGE_INTERPRETERS:
+            self.assertIn(interpreter, self.stage)
+        self.assertIn('"$py" /opt/hermes-helmet/writing/smoke.py documents', self.stage)
+        self.assertIn("smoke.py diagram", self.stage)
+        smoke = (WRITING / "smoke.py").read_text(encoding="utf-8")
+        for script in ("docx_create.py", "docx_read.py", "docx_edit.py", "pptx_create.py", "pptx_read.py", "pptx_edit.py"):
+            self.assertIn(script, smoke)
+        self.assertIn("--append-notes", smoke)
+        self.assertIn("sys.executable", smoke)
+
+    def test_assets_land_root_owned_and_the_user_returns_to_the_worker(self) -> None:
+        self.assertIn("chown -R root:root", self.stage)
+        self.assertIn("chmod -R a+rX,go-w", self.stage)
+        self.assertLess(self.stage.index("USER root"), self.stage.rindex("USER ${HERMES_UID}:${HERMES_GID}"))
+        self.assertIn("COPY examples/writing/guidance /opt/hermes-helmet/examples/writing/guidance", self.stage)
+        self.assertIn("com.machinewisdom.hermes-helmet.gstack-commit", self.stage)
+
+    def test_no_minified_javascript_or_bundle_is_committed(self) -> None:
+        for path in WRITING.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(path.suffix, {".html", ".map"}, path)
+                self.assertNotIn(".min.", path.name, path)
+                self.assertLess(path.stat().st_size, 120_000, f"{path} is too large to be hand-written source")
+        for path in (WRITING / "skills" / "diagram" / "scripts").glob("*.mjs"):
+            self.assertGreater(len(path.read_text(encoding="utf-8").splitlines()), 40, "adapter must stay readable source")
+
+
+class WritingImageProvenanceTests(unittest.TestCase):
+    def test_lockfile_is_fully_pinned_and_hashed_for_the_declared_inputs(self) -> None:
+        lock = _read("deploy/writing/requirements.lock")
+        inputs = [
+            line.split("==")[0].lower().replace("_", "-")
+            for line in _read("deploy/writing/requirements.in").splitlines()
+            if line and not line.startswith("#")
+        ]
+        pinned = re.findall(r"(?m)^([A-Za-z0-9_.-]+)==([^\s\\]+) \\$", lock)
+        names = {name.lower().replace("_", "-") for name, _ in pinned}
+        for required in inputs:
+            self.assertIn(required, names)
+        self.assertTrue({"lxml", "pillow", "python-docx", "python-pptx", "typing-extensions", "xlsxwriter"} <= names)
+        for block in re.split(r"(?m)^(?=[A-Za-z0-9_.-]+==)", lock)[1:]:
+            self.assertIn("--hash=sha256:", block, block.splitlines()[0])
+        self.assertNotIn("git+", lock)
+        self.assertNotIn("http://", lock)
+
+    def test_notice_records_the_pinned_commit_checksum_and_actual_bundle_dependencies(self) -> None:
+        notice = _read("deploy/writing/notices/diagram-bundle.md")
+        self.assertIn(GSTACK_COMMIT, notice)
+        self.assertIn(GSTACK_BUNDLE_SHA256, notice)
+        self.assertIn("MIT", notice)
+        self.assertIn("SIL Open Font License", notice)
+        deps = json.loads(_read("deploy/writing/bundle-deps.json"))
+        self.assertEqual(
+            deps,
+            {
+                "@excalidraw/excalidraw": "0.18.1",
+                "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+                "mermaid": "11.16.1",
+                "react": "18.3.1",
+                "react-dom": "18.3.1",
+            },
+        )
+        for package, version in deps.items():
+            self.assertRegex(notice, rf"\| {re.escape(package)} \| {re.escape(version)} \| MIT \|")
+        # The stale upstream table must be called out, not copied.
+        self.assertIn("11.12.2", notice)
+
+    def test_root_notice_names_the_writing_image_components(self) -> None:
+        notice = _read("NOTICE")
+        for expected in ("python-docx", "python-pptx", "gstack", "Pillow", "lxml", "XlsxWriter", "typing_extensions"):
+            self.assertIn(expected, notice)
+        self.assertIn("deploy/writing/notices/diagram-bundle.md", notice)
+
+    def test_diagram_skill_supports_only_mermaid_svg_and_png(self) -> None:
+        skill = _read("deploy/writing/skills/diagram/SKILL.md")
+        adapter = _read("deploy/writing/skills/diagram/scripts/render.mjs")
+        self.assertNotIn("__mermaidToExcalidraw", adapter)
+        self.assertNotIn("writeFileSync(join(out, slug + \".excalidraw\"", adapter)
+        self.assertIn("Only Mermaid\nsource, SVG and PNG are supported", skill)
+        self.assertIn("SOURCE_EXTENSIONS", adapter)
+
+
+class WritingStageDiagramTests(unittest.TestCase):
+    """The stager fails closed; a synthetic checkout stands in for gstack."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.stager = _load_script("stage_diagram_for_tests", WRITING / "stage-diagram.py")
+
+    def make_gstack(self, root: Path, *, bundle: bytes = b"<html>synthetic</html>", deps=None) -> tuple[Path, str]:
+        wanted = deps if deps is not None else json.loads(_read("deploy/writing/bundle-deps.json"))
+        dist = root / "lib/diagram-render/dist"
+        dist.mkdir(parents=True)
+        digest = hashlib.sha256(bundle).hexdigest()
+        (dist / "diagram-render.html").write_bytes(bundle)
+        (dist / "BUILD_INFO.json").write_text(
+            json.dumps({"name": "gstack-diagram-render", "sha256": digest, "srcSha256": "s", "bytes": len(bundle), "bunVersion": "1", "deps": wanted}),
+            encoding="utf-8",
+        )
+        (root / "lib/diagram-render/THIRD-PARTY-LICENSES.md").write_text("licenses\n", encoding="utf-8")
+        (root / "LICENSE").write_text("MIT\n", encoding="utf-8")
+        (root / "VERSION").write_text("1.0.0.0\n", encoding="utf-8")
+        for args in (("init", "-q"), ("add", "."), ("commit", "-qm", "fixture")):
+            subprocess.run(
+                ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.invalid", *args],
+                check=True, capture_output=True,
+            )
+        commit = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+        return root, commit
+
+    def stage(self, root: Path, commit: str, sha: str, out: Path):
+        return self.stager.stage(root, out, commit=commit, bundle_sha256=sha, owned_root=WRITING)
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_stages_the_bundle_notices_adapter_and_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, commit = self.make_gstack(Path(tmp) / "g")
+            out = Path(tmp) / "out" / "diagram"
+            result = self.stage(root, commit, hashlib.sha256(b"<html>synthetic</html>").hexdigest(), out)
+            for relative in (
+                "assets/diagram-render.html", "assets/BUILD_INFO.json", "scripts/render.mjs", "SKILL.md",
+                "PROVENANCE.json", "notices/gstack-LICENSE", "notices/gstack-THIRD-PARTY-LICENSES.md",
+                "notices/diagram-bundle.md",
+            ):
+                self.assertTrue((out / relative).is_file(), relative)
+            provenance = json.loads((out / "PROVENANCE.json").read_text(encoding="utf-8"))
+            self.assertEqual(provenance["gstack"]["commit"], commit)
+            self.assertEqual(provenance["bundle"]["sha256"], result["bundle"]["sha256"])
+            self.assertEqual(
+                provenance["files"]["assets/diagram-render.html"],
+                hashlib.sha256((out / "assets/diagram-render.html").read_bytes()).hexdigest(),
+            )
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_fails_closed_on_every_pin_mismatch(self) -> None:
+        digest = hashlib.sha256(b"<html>synthetic</html>").hexdigest()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, commit = self.make_gstack(Path(tmp) / "g")
+            cases = {
+                "short commit": (commit[:12], digest),
+                "other commit": ("1" * 40, digest),
+                "other checksum": (commit, "0" * 64),
+                "short checksum": (commit, digest[:16]),
+            }
+            for label, (pin, sha) in cases.items():
+                with self.subTest(label), self.assertRaises(self.stager.StageError):
+                    self.stage(root, pin, sha, Path(tmp) / f"out-{label.replace(' ', '-')}")
+            self.assertFalse(any(Path(tmp).glob("out-*")), "a refused stage must leave nothing behind")
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_fails_when_build_info_disagrees_or_dependencies_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root, commit = self.make_gstack(Path(tmp) / "g1", deps={"mermaid": "99.0.0"})
+            with self.assertRaises(self.stager.StageError) as caught:
+                self.stage(root, commit, hashlib.sha256(b"<html>synthetic</html>").hexdigest(), Path(tmp) / "o1")
+            self.assertIn("bundle-deps.json", str(caught.exception))
+            root, commit = self.make_gstack(Path(tmp) / "g2")
+            info = root / "lib/diagram-render/dist/BUILD_INFO.json"
+            data = json.loads(info.read_text(encoding="utf-8"))
+            data["sha256"] = "f" * 64
+            info.write_text(json.dumps(data), encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(root), "-c", "user.name=T", "-c", "user.email=t@example.invalid", "commit", "-qam", "drift"],
+                check=True, capture_output=True,
+            )
+            new_commit = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            with self.assertRaises(self.stager.StageError):
+                self.stage(root, new_commit, hashlib.sha256(b"<html>synthetic</html>").hexdigest(), Path(tmp) / "o2")
+
+
+class WritingComposeRecipeTests(unittest.TestCase):
+    COMPOSE = ROOT / "deploy" / "writing.compose.yaml"
+
+    def setUp(self) -> None:
+        self.text = self.COMPOSE.read_text(encoding="utf-8")
+        self.code = re.sub(r"(?m)^\s*#.*$", "", self.text)
+
+    def test_recipe_is_standalone_with_no_global_names_secrets_binds_or_ports(self) -> None:
+        for forbidden in ("container_name", "GH_TOKEN", "GITHUB_TOKEN", "HERMES_GITHUB_TOKEN", "policy", "ports:", "poller", "extends:", "include:", "entrypoint", "image:"):
+            self.assertNotIn(forbidden, self.code, forbidden)
+        services = self.code.split("\nvolumes:")[0].split("services:")[1]
+        self.assertEqual(re.findall(r"(?m)^  ([a-z][a-z0-9_-]*):$", services), ["hermes"])
+        self.assertIn("target: writing", self.code)
+        self.assertIn("dockerfile: deploy/Dockerfile", self.code)
+        self.assertIn('user: "10000:10000"', self.code)
+        self.assertIn("HERMES_HOME: /opt/data", self.code)
+        self.assertIn("HOME: /opt/data", self.code)
+        # Only the named volume is mounted: no host path binds.
+        mounts = re.findall(r"(?m)^      - ([^\s:]+):/[^\s]+", self.code.split("tmpfs:")[0])
+        self.assertEqual(mounts, ["hermes_state"])
+        # Neither the volume nor the network carries a global name.
+        self.assertNotRegex(self.code.split("\nvolumes:")[1], r"(?m)^\s+name:")
+        self.assertNotIn("networks:", self.code)
+
+    def test_base_compose_file_is_unchanged_in_its_global_contract(self) -> None:
+        base = _read("deploy/compose.yaml")
+        self.assertIn("container_name: hermes-helmet", base)
+        self.assertIn("name: hermes_helmet_state", base)
+        self.assertIn("HERMES_GITHUB_TOKEN:?", base)
+
+    @unittest.skipUnless(shutil.which("docker"), "docker with the compose plugin is required")
+    def test_two_projects_resolve_to_distinct_resources_with_no_github_token(self) -> None:
+        probe = subprocess.run(["docker", "compose", "version"], capture_output=True, text=True)
+        if probe.returncode != 0:
+            self.skipTest("docker compose plugin is not available")
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("HERMES_", "COMPOSE_", "GH_", "GITHUB_"))}
+        resolved = {}
+        for project in ("writing-one", "writing-two"):
+            done = subprocess.run(
+                ["docker", "compose", "-f", str(self.COMPOSE), "-p", project, "config", "--format", "json"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(done.returncode, 0, done.stderr)
+            resolved[project] = json.loads(done.stdout)
+        names = {}
+        for project, config in resolved.items():
+            self.assertEqual(list(config["services"]), ["hermes"])
+            service = config["services"]["hermes"]
+            self.assertNotIn("container_name", service)
+            self.assertNotIn("ports", service)
+            self.assertEqual(service["user"], "10000:10000")
+            self.assertEqual(service["build"]["target"], "writing")
+            self.assertEqual(service["environment"]["HERMES_HOME"], "/opt/data")
+            self.assertTrue(all(m["type"] == "volume" for m in service["volumes"]))
+            self.assertFalse(any("TOKEN" in key for key in service["environment"]))
+            names[project] = {
+                "volume": config["volumes"]["hermes_state"]["name"],
+                "network": config["networks"]["default"]["name"],
+            }
+            self.assertTrue(names[project]["volume"].startswith(project))
+            self.assertTrue(names[project]["network"].startswith(project))
+        self.assertNotEqual(names["writing-one"]["volume"], names["writing-two"]["volume"])
+        self.assertNotEqual(names["writing-one"]["network"], names["writing-two"]["network"])
+        for resources in names.values():
+            self.assertNotIn("hermes_helmet_state", resources["volume"])
+            self.assertNotIn("hermes_helmet_private", resources["network"])
+
+
+@unittest.skipUnless(shutil.which("node"), "Node 22+ is required")
+class WritingDiagramCommandTests(unittest.TestCase):
+    """The real diagram command, offline, against a staged real bundle.
+
+    Needs a staged diagram skill: the writing image carries it at
+    ``/opt/hermes-helmet/writing``; elsewhere set ``HELMET_DIAGRAM_ASSETS`` to a
+    directory containing ``skills/diagram``. Skipped otherwise.
+    """
+
+    def setUp(self) -> None:
+        assets = os.environ.get("HELMET_DIAGRAM_ASSETS") or "/opt/hermes-helmet/writing"
+        if not (Path(assets) / "skills" / "diagram" / "assets" / "diagram-render.html").is_file():
+            self.skipTest("no staged diagram skill; build the writing image or set HELMET_DIAGRAM_ASSETS")
+        self.assets = Path(assets)
+
+    def test_smoke_diagram_passes_offline_with_labels_png_and_retained_source(self) -> None:
+        done = subprocess.run(
+            [sys.executable, str(WRITING / "smoke.py"), "diagram", "--assets", str(self.assets)],
+            capture_output=True, text=True, timeout=240,
+        )
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        summary = json.loads(done.stdout.strip().splitlines()[-1])
+        self.assertTrue(summary["ok"])
+        self.assertGreater(summary["png"][0], 0)
+        self.assertGreater(summary["png"][1], 0)
+        self.assertEqual(set(summary["labels"]), {"Intake", "Draft", "Edit", "Publish", "reviewed"})
 
 
 if __name__ == "__main__":

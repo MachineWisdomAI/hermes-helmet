@@ -28,5 +28,7 @@ Read this when drafting the plan.
   them, so writers do not infer them.
 - List sources explicitly. A claim without a source is a question for you, not
   a gap for the writer to fill.
-- Use a different profile for the editor than for any writer, and keep yourself
-  as coordinator.
+- Keep yourself as coordinator on a profile that no writer and not the editor
+  uses. Writers and the editor may share one writing profile: each has its own
+  card and session, and the editor receives only the accepted inputs its card
+  lists.
