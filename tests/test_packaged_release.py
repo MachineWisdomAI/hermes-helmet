@@ -181,8 +181,10 @@ def _wheel_from_unpacked(build_python: Path, unpacked: Path, dist: Path) -> Path
 
 
 def _install_wheel(python: Path, wheel: Path, cwd: Path) -> None:
+    # Install with the wheel's declared runtime dependencies (no --no-deps), so a
+    # missing declaration fails here instead of being masked.
     completed = _run(
-        [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+        [str(python), "-m", "pip", "install", str(wheel)],
         cwd=cwd,
     )
     _require_ok(completed, f"pip install {wheel.name}")
@@ -535,6 +537,75 @@ class PackagedReleaseProofTests(unittest.TestCase):
         self.assertIn("terminal", report)
         self.assertFalse(ledger.exists())
         self.assertFalse(checkpoints.exists())
+
+    def test_installed_coordinator_runs_profile_check_with_declared_dependencies(self) -> None:
+        # The coordinator install is the wheel plus its declared dependencies:
+        # no worker extra, no worker runtime, no checkout on the path.
+        with zipfile.ZipFile(self.wheel) as archive:
+            metadata = next(
+                archive.read(name).decode("utf-8")
+                for name in archive.namelist()
+                if name.endswith(".dist-info/METADATA")
+            )
+        requires = [line for line in metadata.splitlines() if line.startswith("Requires-Dist:")]
+        self.assertTrue(
+            any("PyYAML" in line and "extra ==" not in line for line in requires), requires
+        )
+
+        run_cwd = self.work / "profile-check-cwd"
+        run_cwd.mkdir(exist_ok=True)
+        env = _clean_env()
+        parser = _run(
+            [str(self.install_python), "-c", "import yaml, hermes_helmet; print(hermes_helmet.__file__)"],
+            cwd=run_cwd,
+            env=env,
+        )
+        _require_ok(parser, "installed coordinator imports its YAML parser")
+        self.assertNotIn(str(ROOT), parser.stdout)
+        self.assertIn("site-packages", parser.stdout)
+
+        valid = run_cwd / "valid-config.yaml"
+        valid.write_text(
+            "memory:\n"
+            "  memory_enabled: false\n"
+            "  user_profile_enabled: false\n"
+            "  provider: ''\n"
+            "agent:\n"
+            "  disabled_toolsets:\n"
+            "    - session_search\n"
+            "plugins:\n"
+            "  enabled:\n"
+            "    - helmet-writing-context\n",
+            encoding="utf-8",
+        )
+        ready = _run(
+            [str(self.helmet), "write", "profile-check", str(valid)], cwd=run_cwd, env=env
+        )
+        _require_ok(ready, "helmet write profile-check (valid profile)")
+        self.assertEqual(
+            json.loads(ready.stdout), {"fresh_context_ready": True, "findings": []}
+        )
+
+        invalid = run_cwd / "invalid-config.yaml"
+        invalid.write_text(
+            "memory:\n  memory_enabled: true\n  provider: openviking\n", encoding="utf-8"
+        )
+        gaps = _run(
+            [str(self.helmet), "write", "profile-check", str(invalid)], cwd=run_cwd, env=env
+        )
+        _require_ok(gaps, "helmet write profile-check (invalid profile)")
+        payload = json.loads(gaps.stdout)
+        self.assertFalse(payload["fresh_context_ready"])
+        self.assertEqual(
+            {finding["code"] for finding in payload["findings"]},
+            {
+                "builtin_memory_enabled",
+                "user_profile_enabled",
+                "external_memory_provider",
+                "session_search_enabled",
+                "context_plugin_not_enabled",
+            },
+        )
 
     def test_missing_bundled_reference_is_rejected(self) -> None:
         isolated = self.work / "negative"

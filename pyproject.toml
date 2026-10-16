@@ -11,7 +11,10 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Machine Wisdom AI" }]
 
+dependencies = ["PyYAML>=6.0.2,<7"]
+
 [project.optional-dependencies]
+# Retained so `pip install .[worker]` keeps working; PyYAML is now a normal dependency.
 worker = ["PyYAML>=6.0.2,<7"]
 
 [project.urls]

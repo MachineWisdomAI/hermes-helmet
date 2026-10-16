@@ -5,6 +5,13 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Make the YAML parser part of the normal installation. `pyproject.toml` now declares
+  PyYAML as a runtime dependency (the `worker` extra remains for compatibility), so a
+  coordinator that installs only the wheel can run `helmet write profile-check`. The
+  clean-wheel test in `tests/test_packaged_release.py` now installs the wheel with its
+  declared dependencies and runs the installed command against valid and invalid
+  synthetic profiles outside the checkout.
+
 - Add a fresh, isolated writing worker for Docker Compose. `deploy/Dockerfile` gains a
   `writing` target (a plain build is unchanged) that installs hash-locked `python-docx`
   and `python-pptx` into all three image Pythons at build time and stages the offline
