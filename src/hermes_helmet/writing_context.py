@@ -11,9 +11,10 @@ that carry the writing-card marker, so every other card is untouched.
 
 What this module cannot do, and says so (see ``docs/helmet-write.md``):
 
-- Built-in memory (``MEMORY.md``/``USER.md``) and an external memory provider are
-  profile-level in Hermes, not per task. :func:`profile_findings` reports when a
-  writing profile still loads them. The adopter owns that configuration.
+- Built-in memory (``MEMORY.md``/``USER.md``), an external memory provider and
+  the native ``session_search`` tool are profile-level in Hermes, not per task.
+  :func:`profile_findings` reports when a writing profile still loads or offers
+  them. The adopter owns that configuration.
 - Hermes hooks fail open. A missing or disabled plugin leaks role history, which
   :func:`profile_findings` also reports.
 
@@ -22,6 +23,7 @@ Nothing here edits a vendor tree, deletes memory, or adds a service.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -29,6 +31,7 @@ from typing import Any, Mapping
 
 CARD_MARKER = "<!-- helmet-write:card:v1 -->"
 PLUGIN_NAME = "helmet-writing-context"
+RETRIEVAL_TOOLSET = "session_search"
 
 _ROLE_HISTORY = re.compile(r"^## Recent work by @[^\n]*\n.*?(?=^## |\Z)", re.M | re.S)
 
@@ -111,12 +114,33 @@ def _truthy(value: object, default: bool = True) -> bool:
     return bool(value)
 
 
+def _name_list(value: object) -> set[str]:
+    """Names in a config list, also when saved as a list-literal string."""
+
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            try:
+                parsed = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                return set()
+            value = parsed
+        else:
+            return {text} if text else set()
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return {str(item).strip() for item in value if str(item).strip()}
+    return set()
+
+
 def profile_findings(config: Mapping[str, Any]) -> list[dict[str, str]]:
     """Gaps that keep a profile from giving a writing card a fresh context.
 
     An empty list means the profile configuration supplies no persistent
-    retrieval and enables the role-history plugin. It is a configuration check,
-    not a per-task guarantee; ``helmet write context`` shows the effective input.
+    retrieval (prompt memory, an external provider, or the native
+    ``session_search`` tool) and enables the role-history plugin. It is a
+    configuration check, not a per-task guarantee; ``helmet write context``
+    shows the effective input. Retrieval tools that an adopter adds elsewhere
+    (for example through an MCP server) are outside this check.
     """
 
     findings: list[dict[str, str]] = []
@@ -131,6 +155,19 @@ def profile_findings(config: Mapping[str, Any]) -> list[dict[str, str]]:
     provider = memory.get("provider")
     if isinstance(provider, str) and provider.strip():
         findings.append({"code": "external_memory_provider", "fix": "memory.provider: ''"})
+    # Native session_search is a core tool whose only prerequisite is that the
+    # state directory exists, so the memory flags above do not remove it. The
+    # supported removal is the global agent.disabled_toolsets list, which Hermes
+    # applies last, over every platform selection.
+    agent = config.get("agent") if isinstance(config, Mapping) else None
+    agent = agent if isinstance(agent, Mapping) else {}
+    if RETRIEVAL_TOOLSET not in _name_list(agent.get("disabled_toolsets")):
+        findings.append(
+            {
+                "code": "session_search_enabled",
+                "fix": f"agent.disabled_toolsets: [{RETRIEVAL_TOOLSET}]",
+            }
+        )
     plugins = config.get("plugins") if isinstance(config, Mapping) else None
     plugins = plugins if isinstance(plugins, Mapping) else {}
     enabled = plugins.get("enabled")

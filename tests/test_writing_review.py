@@ -73,8 +73,12 @@ class FakeBoard:
         self.keys: dict[str, str] = {}
         self.calls: list[str] = []
         self.before_complete = None
+        self.before_reopen = None
 
     # -- helpers ------------------------------------------------------------
+    def _event(self, task: dict, kind: str, **payload: object) -> None:
+        task["events"].append({"kind": kind, "payload": payload or None})
+
     def _parents_done(self, task: dict) -> bool:
         return all(self.tasks[p]["status"] == "done" for p in task["parents"])
 
@@ -101,10 +105,20 @@ class FakeBoard:
                 "parents": list(task["parents"]),
                 "children": self._children(task_id),
                 "comments": task["comments"],
-                "events": [],
+                "events": task["events"],
                 "runs": task["runs"],
             }
         )
+
+    def list_cards(self) -> list:
+        return [
+            {k: t[k] for k in ("id", "title", "body", "assignee", "status")}
+            for t in self.tasks.values()
+        ]
+
+    def acting_profile_owns(self, task_id: str) -> bool:
+        task = self.tasks[task_id]
+        return task["status"] == "review" and task["assignee"] == self.profile
 
     def context(self, task_id: str) -> str:
         task = self.tasks[task_id]
@@ -140,9 +154,11 @@ class FakeBoard:
         task = {
             "id": task_id, "title": title, "body": body, "assignee": assignee,
             "status": status, "parents": list(parents), "comments": [], "runs": [],
-            "implementer": None,
+            "implementer": None, "events": [],
         }
-        if not blocked and not self._parents_done(task):
+        if blocked:
+            self._event(task, "blocked", reason="initial_status", status="blocked")
+        elif not self._parents_done(task):
             task["status"] = "todo"
         self.tasks[task_id] = task
         self.transport.task(BOARD, task_id)
@@ -189,6 +205,9 @@ class FakeBoard:
 
     def reopen_review(self, task_id: str, reason: str) -> None:
         self.calls.append("reopen")
+        if self.before_reopen:
+            hook, self.before_reopen = self.before_reopen, None
+            hook()
         task = self.tasks[task_id]
         if task["status"] != "review":
             self._fail()
@@ -217,6 +236,7 @@ class FakeBoard:
         if task["status"] not in ("ready", "todo", "running"):
             self._fail()
         task["status"] = "blocked"
+        self._event(task, "blocked", reason=reason, status="blocked")
         task["comments"].append({"author": self.profile, "body": f"BLOCKED: {reason}"})
 
     def unblock(self, task_id: str, reason: str) -> None:
@@ -224,6 +244,7 @@ class FakeBoard:
         if task["status"] != "blocked":
             self._fail()
         task["status"] = "ready" if self._parents_done(task) else "todo"
+        self._event(task, "unblocked", status=task["status"])
 
     def edit_body(self, task_id: str, body: str) -> None:
         self.tasks[task_id]["body"] = body
@@ -648,6 +669,199 @@ class PlanAndCardTests(Harness):
         self.assertTrue(str(caught.exception).startswith("err:"))
 
 
+class PlanReadinessTests(unittest.TestCase):
+    """A section card is runnable only after its sources are attached and verified."""
+
+    def setUp(self) -> None:
+        self.transport = FakeTransport()
+        self.board = FakeBoard(self.transport)
+        self.review = wr.WritingReview(BOARD, self.board, self.transport)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.plan = copy.deepcopy(PLAN)
+        self.plan["project"] = "ready-check"
+        self.plan["sections"][0]["input_files"] = ["brief.md"]
+
+    def sections(self) -> list[dict]:
+        return [t for t in self.board.tasks.values() if wr.ROLE_SECTION in t["body"].split("\n")[1]]
+
+    def test_normal_path_releases_sections_only_after_sources_are_attached(self) -> None:
+        Path(self.tmp.name, "brief.md").write_text("source brief")
+        seen: list[str] = []
+        real_upload = self.transport.upload
+
+        def watching_upload(*args, **kwargs):  # type: ignore[no-untyped-def]
+            # Whenever a source is being attached, no section is runnable yet.
+            seen.extend(t["status"] for t in self.board.tasks.values())
+            return real_upload(*args, **kwargs)
+
+        with mock.patch.object(self.transport, "upload", side_effect=watching_upload):
+            planned = self.review.plan(self.plan, base_dir=self.tmp.name)
+        self.assertTrue(seen)
+        self.assertNotIn("ready", seen)
+        self.assertEqual(planned["released"], ["shipped", "next"])
+        first = planned["sections"]["shipped"]
+        self.assertEqual(self.board.tasks[first]["status"], "ready")
+        self.assertEqual([r["filename"] for r in self.transport.rows[(BOARD, first)]], ["brief.md"])
+        self.assertEqual(self.board.tasks[planned["editor"]]["status"], "blocked")
+
+    def test_missing_source_fails_before_any_card_exists(self) -> None:
+        with self.assertRaises(ta.TaskArtifactError) as caught:
+            self.review.plan(self.plan, base_dir=self.tmp.name)
+        self.assertEqual(caught.exception.code, "artifact_source_invalid")
+        self.assertEqual(self.board.tasks, {})
+
+    def test_transport_failure_leaves_only_held_cards_and_a_retry_finishes_the_plan(self) -> None:
+        Path(self.tmp.name, "brief.md").write_text("source brief")
+        failure = ta.TaskArtifactError("artifact_transport_unavailable")
+        with mock.patch.object(self.transport, "upload", side_effect=failure):
+            with self.assertRaises(ta.TaskArtifactError):
+                self.review.plan(self.plan, base_dir=self.tmp.name)
+        self.assertTrue(self.board.tasks)
+        for task in self.board.tasks.values():
+            self.assertEqual(task["status"], "blocked", task["title"])
+        with self.assertRaises(AssertionError):
+            self.board.claim(next(iter(self.board.tasks)))  # nothing is dispatchable
+        planned = self.review.plan(self.plan, base_dir=self.tmp.name)
+        self.assertEqual(len(self.board.tasks), 3)
+        self.assertEqual(self.board.tasks[planned["sections"]["shipped"]]["status"], "ready")
+        self.assertEqual(self.board.tasks[planned["sections"]["next"]]["status"], "ready")
+        rows = self.transport.rows[(BOARD, planned["sections"]["shipped"])]
+        self.assertEqual([r["filename"] for r in rows], ["brief.md"])
+
+    def test_a_section_blocked_later_is_not_released_by_a_replan(self) -> None:
+        Path(self.tmp.name, "brief.md").write_text("source brief")
+        planned = self.review.plan(self.plan, base_dir=self.tmp.name)
+        section = planned["sections"]["next"]
+        self.board.block(section, "writer needs a decision")
+        again = self.review.plan(self.plan, base_dir=self.tmp.name)
+        self.assertEqual(again["released"], [])
+        self.assertEqual(self.board.tasks[section]["status"], "blocked")
+
+
+class ChangedPlanTests(Harness):
+    def count(self) -> int:
+        return len(self.board.tasks)
+
+    def test_a_changed_plan_is_refused_before_any_card_is_created(self) -> None:
+        third = {"key": "risks", "title": "Risks", "assignee": "writer3",
+                 "brief": "Describe the risks.", "sources": ["ExampleCo has one risk."]}
+        changed = {**PLAN, "sections": [*PLAN["sections"], third]}
+        before = copy.deepcopy(self.board.tasks)
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.plan(changed)
+        self.assertEqual(caught.exception.code, "plan_changed")
+        self.assertEqual(self.board.tasks, before)
+        self.assertEqual(self.count(), 3)
+
+    def test_any_difference_in_content_or_input_bytes_is_a_change(self) -> None:
+        for override in ({"guidance": "A different voice."}, {"audience": "Someone else"},
+                         {"editor": {"assignee": "editor2"}}):
+            with self.assertRaises(wr.WritingReviewError) as caught:
+                self.review.plan({**PLAN, **override})
+            self.assertEqual(caught.exception.code, "plan_changed", override)
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "brief.md").write_text("v1")
+            plan = copy.deepcopy(PLAN)
+            plan["project"] = "bytes"
+            plan["sections"][0]["input_files"] = ["brief.md"]
+            self.review.plan(plan, base_dir=tmp)
+            Path(tmp, "brief.md").write_text("v2")
+            with self.assertRaises(wr.WritingReviewError) as caught:
+                self.review.plan(plan, base_dir=tmp)
+            self.assertEqual(caught.exception.code, "plan_changed")
+
+    def test_the_identical_plan_is_idempotent_and_a_new_project_key_is_the_amendment_path(self) -> None:
+        again = self.review.plan(PLAN)
+        self.assertEqual((again["sections"], again["editor"]), (self.sections, self.editor))
+        self.assertEqual(self.count(), 3)
+        third = {"key": "risks", "title": "Risks", "assignee": "writer3",
+                 "brief": "Describe the risks.", "sources": ["ExampleCo has one risk."]}
+        amended = self.review.plan({**PLAN, "project": "q3-update-2", "sections": [*PLAN["sections"], third]})
+        self.assertEqual(self.count(), 3 + 4)
+        self.assertNotIn(amended["editor"], (self.editor,))
+
+    def test_the_unreleased_third_section_cannot_be_silently_dropped_from_the_editor(self) -> None:
+        # The reviewed reproduction: rerun with a third section, accept the
+        # original two, release. The rerun is now refused, so release can only
+        # ever see the sections the editor was planned with.
+        third = {"key": "risks", "title": "Risks", "assignee": "writer3",
+                 "brief": "Describe the risks.", "sources": ["x"]}
+        with self.assertRaises(wr.WritingReviewError):
+            self.review.plan({**PLAN, "sections": [*PLAN["sections"], third]})
+        self.accept(self.s1)
+        self.accept(self.s2)
+        released = self.review.release_editor(self.editor)
+        self.assertEqual(sorted(i["contribution"] for i in released["inputs"]), ["next", "shipped"])
+        self.assertEqual(len([t for t in self.board.tasks.values() if "risks" in t["body"]]), 0)
+
+
+class CoordinatorIdentityTests(Harness):
+    def test_a_distinct_non_coordinator_cannot_accept_or_request_changes(self) -> None:
+        sub = self.submit(self.s1, "draft one")
+        before = copy.deepcopy(self.board.tasks[self.s1])
+        for profile in ("other-writer", "other-reviewer"):
+            self.board.profile = profile
+            for action in (
+                lambda: self.review.accept(self.s1, sub.revision.token),
+                lambda: self.review.request_changes(self.s1, sub.revision.token, "fix"),
+            ):
+                with self.assertRaises(wr.WritingReviewError) as caught:
+                    action()
+                self.assertEqual(caught.exception.code, "reviewer_identity_mismatch", profile)
+        self.assertEqual(self.board.tasks[self.s1], before)
+        self.board.profile = FO
+        self.assertEqual(self.review.accept(self.s1, sub.revision.token)["task_id"], self.s1)
+        self.assertEqual(self.review.accepted_revision(self.s1).reviewer, FO)
+
+    def test_a_record_naming_a_non_coordinator_never_releases_the_editor(self) -> None:
+        self.accept(self.s1)
+        self.accept(self.s2)
+        # Another identity's acceptance (a transport/profile mismatch that got through).
+        run = self.board.tasks[self.s2]["runs"][-1]
+        self.assertEqual(run["outcome"], "completed")
+        run["profile"] = "other-writer"
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.accepted_revision(self.s2)
+        self.assertEqual(caught.exception.code, "acceptance_reviewer_mismatch")
+        with self.assertRaises(wr.WritingReviewError):
+            self.review.release_editor(self.editor)
+        self.assertEqual(self.board.tasks[self.editor]["status"], "blocked")
+
+
+class RequestChangesRaceTests(Harness):
+    def test_a_newer_submission_in_the_reopen_window_is_reported_not_reviewed(self) -> None:
+        first = self.submit(self.s1, "draft one")
+
+        def other_session() -> None:
+            # Another session reopens the card and the writer submits draft two
+            # before our reopen-review call lands.
+            task = self.board.tasks[self.s1]
+            task["status"] = "ready"
+            task["assignee"] = "writer1"
+            self.board.claim(self.s1)
+            self.board.request_review(self.s1, "section.md", b"draft two", FO, "revised")
+
+        self.board.before_reopen = other_session
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten paragraph two.")
+        self.assertEqual(caught.exception.code, "request_changes_conflict")
+        self.assertNotIn(first.revision.token, str(caught.exception).replace(caught.exception.args[0], ""))
+        comments = [c["body"] for c in self.board.tasks[self.s1]["comments"]]
+        self.assertTrue(any("CHANGES REQUESTED" in c and first.revision.token in c for c in comments))
+        self.assertIn("SUPERSEDED FEEDBACK", comments[-1])
+        self.assertIn(first.revision.token, comments[-1])
+        # The newer submission is a different revision and stays reviewable by token.
+        newest = self.review.history(self.s1)["revisions"][-1]["revision"]
+        self.assertNotEqual(newest, first.revision.token)
+
+    def test_the_normal_request_changes_still_succeeds_with_the_run_check(self) -> None:
+        sub = self.submit(self.s1, "draft one")
+        result = self.review.request_changes(self.s1, sub.revision.token, "Tighten.")
+        self.assertEqual((result["status"], result["assignee"]), ("ready", "writer1"))
+        self.assertEqual(result["reviewed_revision"], sub.revision.token)
+
+
 class ContextIsolationTests(unittest.TestCase):
     def native_like_context(self, extra: str = "") -> str:
         return (
@@ -704,17 +918,40 @@ class ContextIsolationTests(unittest.TestCase):
         codes = {f["code"] for f in wc.profile_findings(loose)}
         self.assertEqual(
             codes,
-            {"builtin_memory_enabled", "user_profile_enabled", "external_memory_provider", "context_plugin_not_enabled"},
+            {
+                "builtin_memory_enabled", "user_profile_enabled", "external_memory_provider",
+                "session_search_enabled", "context_plugin_not_enabled",
+            },
         )
         defaults_loaded = {f["code"] for f in wc.profile_findings({})}
         self.assertIn("builtin_memory_enabled", defaults_loaded)
+        self.assertIn("session_search_enabled", defaults_loaded)
         ready = {
             "memory": {"memory_enabled": False, "user_profile_enabled": False, "provider": ""},
+            "agent": {"disabled_toolsets": ["session_search"]},
             "plugins": {"enabled": [wc.PLUGIN_NAME]},
         }
         self.assertEqual(wc.profile_findings(ready), [])
         denied = {**ready, "plugins": {"enabled": [wc.PLUGIN_NAME], "disabled": [wc.PLUGIN_NAME]}}
         self.assertEqual([f["code"] for f in wc.profile_findings(denied)], ["context_plugin_not_enabled"])
+
+    def test_memory_flags_alone_do_not_make_a_profile_ready_while_session_search_is_offered(self) -> None:
+        # The reviewed configuration: memory off, no provider, plugin on, and
+        # session_search still in the toolset. It must not report ready.
+        config = {
+            "memory": {"memory_enabled": False, "user_profile_enabled": False, "provider": ""},
+            "plugins": {"enabled": [wc.PLUGIN_NAME]},
+        }
+        self.assertEqual([f["code"] for f in wc.profile_findings(config)], ["session_search_enabled"])
+        for bad in ({}, {"disabled_toolsets": []}, {"disabled_toolsets": ["web"]}, {"disabled_toolsets": None}):
+            self.assertEqual(
+                [f["code"] for f in wc.profile_findings({**config, "agent": bad})],
+                ["session_search_enabled"],
+                bad,
+            )
+        # Hermes also accepts a list saved as a string (`hermes config set`).
+        for good in ("['session_search']", "session_search", ["web", " session_search "]):
+            self.assertEqual(wc.profile_findings({**config, "agent": {"disabled_toolsets": good}}), [], good)
 
 
 class CliTests(unittest.TestCase):
@@ -933,6 +1170,50 @@ class NativeBoardTests(unittest.TestCase):
             self.transport.download(BOARD, editor, r["id"]).decode() for r in self.transport._rows(editor)
         ))
 
+    def test_a_non_coordinator_runtime_cannot_review_on_the_real_board(self) -> None:
+        planned = self.plan()
+        s1 = planned["sections"]["shipped"]
+        sub = self.submit(s1, "section.md", "draft")
+        # Same code, same card, but the Hermes runtime executing the commands is
+        # a different profile than the planned coordinator.
+        stranger = wr.WritingReview(
+            BOARD, wr.HermesKanban(BOARD, CleanEnvRunner(self.home, "stranger")), self.transport
+        )
+        for action in (
+            lambda: stranger.accept(s1, sub.revision.token),
+            lambda: stranger.request_changes(s1, sub.revision.token, "fix"),
+        ):
+            with self.assertRaises(wr.WritingReviewError) as caught:
+                action()
+            self.assertEqual(caught.exception.code, "reviewer_identity_mismatch")
+        self.assertEqual(json.loads(self.kanban("show", s1, "--json"))["task"]["status"], "review")
+        accepted = self.review.accept(s1, sub.revision.token)
+        self.assertEqual(self.review.accepted_revision(s1).reviewer, FO)
+        self.assertEqual(accepted["accepted_revision"], sub.revision.token)
+
+    def test_held_section_cards_are_not_dispatchable_until_released(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "brief.md").write_text("source")
+            plan = copy.deepcopy(PLAN)
+            plan["sections"][0]["input_files"] = ["brief.md"]
+            plan["sections"][0]["assignee"] = "writer1"
+            plan["sections"][1]["assignee"] = "writer1"
+            with mock.patch.object(self.transport, "upload", side_effect=ta.TaskArtifactError("artifact_transport_unavailable")):
+                with self.assertRaises(ta.TaskArtifactError):
+                    self.review.plan(plan, base_dir=tmp)
+            cards = json.loads(self.kanban("list", "--json"))
+            self.assertTrue(cards)
+            self.assertEqual({c["status"] for c in cards}, {"blocked"})
+            planned = self.review.plan(plan, base_dir=tmp)
+            with self.assertRaises(wr.WritingReviewError) as caught:
+                self.review.plan({**plan, "guidance": "changed"}, base_dir=tmp)
+            self.assertEqual(caught.exception.code, "plan_changed")
+        self.assertEqual(
+            {json.loads(self.kanban("show", planned["sections"][k], "--json"))["task"]["status"] for k in planned["sections"]},
+            {"ready"},
+        )
+        self.assertEqual(json.loads(self.kanban("show", planned["editor"], "--json"))["task"]["status"], "blocked")
+
     def test_native_self_completion_hole_is_closed_by_the_release_check(self) -> None:
         planned = self.plan()
         s1, s2, editor = planned["sections"]["shipped"], planned["sections"]["next"], planned["editor"]
@@ -1004,8 +1285,26 @@ class NativeBoardTests(unittest.TestCase):
         _require_yaml(self)
         from hermes_helmet.worker_role_runtime import _yaml_load
 
+        # Prompt memory is gone, but the effective tool catalog still offers
+        # session_search, and the readiness check says so.
+        config = _yaml_load((self.home / "config.yaml").read_text())
+        self.assertTrue(self.tool_enabled("session_search"))
+        self.assertEqual([f["code"] for f in wc.profile_findings(config)], ["session_search_enabled"])
+        # The documented fix removes it from the effective catalog and clears the finding.
+        with (self.home / "config.yaml").open("a") as stream:
+            stream.write("agent:\n  disabled_toolsets:\n  - session_search\n")
+        self.assertFalse(self.tool_enabled("session_search"))
         config = _yaml_load((self.home / "config.yaml").read_text())
         self.assertEqual(wc.profile_findings(config), [])
+
+    def tool_enabled(self, name: str) -> bool:
+        """Effective native toolset state for the isolated profile (not config text)."""
+
+        for line in self.run_cmd("hermes", "tools", "list").splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[2] == name:
+                return parts[1] == "enabled"
+        self.fail(f"{name} not listed by hermes tools list")
 
 
 class PackagingTests(unittest.TestCase):

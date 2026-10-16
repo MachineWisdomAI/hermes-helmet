@@ -14,8 +14,9 @@ told otherwise:
 2. **Persistent memory and retrieval.** Memory files and an external memory
    provider are profile settings in Hermes, not per-task. Give writing work a
    dedicated profile with built-in memory, user profile and any provider
-   turned off. `helmet write profile-check CONFIG` reports each setting that is
-   still on.
+   turned off. Native `session_search` stays available when those are off, so
+   also set `agent.disabled_toolsets: [session_search]`. `helmet write
+   profile-check CONFIG` reports each setting that is still on.
 
 A new session id does not isolate either. Do not edit Hermes files or delete
 global memory to get isolation.

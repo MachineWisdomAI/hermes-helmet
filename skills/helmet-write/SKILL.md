@@ -38,7 +38,8 @@ never Captain authority.
    profiles. For assignment rules by format, read
    `references/assignments.md`.
 2. **Create the cards.** Write the plan JSON ([schema](references/plan.md)) and
-   run `helmet write plan BOARD plan.json`. Re-running it reuses the same cards.
+   run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its
+   cards; a changed plan is refused.
    Input files named in the plan are attached as native artifacts.
 3. **Wait for submissions.** A writer submits with native request-review and
    the card moves to you. Run `helmet write submission BOARD TASK`. It prints

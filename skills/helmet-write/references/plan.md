@@ -32,5 +32,9 @@
   every writer and from the editor.
 - `input_files` are paths relative to the plan file, attached once as native
   artifacts to that section's card.
-- Add a section later by changing the plan only before the editor is released;
-  afterwards use `helmet write supersede`.
+- Sections are created held and released only after their input files are
+  attached, so a writer never starts with an incomplete source packet. If
+  `plan` fails partway, rerun the same plan.
+- A plan is not amended in place. Rerunning a changed plan for the same
+  `project` fails with `plan_changed` and creates nothing. Replace one part with
+  `helmet write supersede`, or plan a new `project` key.

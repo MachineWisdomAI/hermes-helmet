@@ -78,6 +78,9 @@ _HINTS: Mapping[str, str] = {
     "kanban_command_failed": "the Hermes Kanban command failed; nothing was recorded",
     "kanban_response_invalid": "the Hermes Kanban command returned an unexpected shape",
     "request_changes_unverified": "the card did not return to its writer after reopen; inspect it before continuing",
+    "request_changes_conflict": "the card moved to a newer submission while changes were being requested; the feedback was recorded against a different revision and the card was annotated; review the newer revision",
+    "reviewer_identity_mismatch": "the Hermes runtime used for this command is not the planned coordinator profile that holds the card; run it as the coordinator",
+    "acceptance_reviewer_mismatch": "the accepted run does not belong to the planned coordinator; the acceptance is not valid review",
     "acceptance_unverified": "the card did not record the accepted revision; inspect it before releasing the editor",
     "acceptance_profile_conflict": "the accepting profile equals the submitting profile; the acceptance is not valid review",
     "not_accepted": "the card has no accepted revision",
@@ -91,6 +94,7 @@ _HINTS: Mapping[str, str] = {
     "editor_inputs_mismatch": "the editor parents do not match the planned contributions",
     "editor_inputs_stale": "the editor was built from a revision that is no longer the accepted one",
     "plan_invalid": "the plan is not a valid writing plan",
+    "plan_changed": "this project already has cards with different content; a plan is not amended in place. Rerun the identical plan, use `helmet write supersede` for a part, or plan a new project key",
     "plan_field_invalid": "a plan field is missing or malformed",
 }
 
@@ -177,6 +181,10 @@ class KanbanBoard(Protocol):
 
     def context(self, task_id: str) -> str: ...
 
+    def list_cards(self) -> list[dict[str, Any]]: ...
+
+    def acting_profile_owns(self, task_id: str) -> bool: ...
+
     def create(
         self,
         title: str,
@@ -230,6 +238,32 @@ class HermesKanban:
 
     def context(self, task_id: str) -> str:
         return self._run("context", task_id)
+
+    def _rows(self, *args: str) -> list[dict[str, Any]]:
+        try:
+            rows = json.loads(self._run("list", *args, "--json"))
+        except ValueError as exc:
+            raise WritingReviewError("kanban_response_invalid") from exc
+        if not isinstance(rows, list):
+            raise WritingReviewError("kanban_response_invalid")
+        return [row for row in rows if isinstance(row, dict)]
+
+    def list_cards(self) -> list[dict[str, Any]]:
+        """Every non-archived card on the board (id, title, body, assignee, status)."""
+
+        return self._rows()
+
+    def acting_profile_owns(self, task_id: str) -> bool:
+        """Is the runtime that executes these commands the profile holding the review?
+
+        Native ``list --mine`` filters by the profile the Hermes runtime itself
+        runs as, so it is true here only when that profile is the card's
+        assignee. Asking the runtime that will run the next command is the only
+        identity that counts; the local environment can differ from it.
+        """
+
+        rows = self._rows("--mine", "--status", "review")
+        return any(row.get("id") == task_id for row in rows)
 
     def create(
         self,
@@ -392,6 +426,7 @@ def render_section_body(plan: Mapping[str, Any], section: Mapping[str, Any]) -> 
         "coordinator": plan["coordinator"],
         "implementer": section["assignee"],
         "format": plan["format"],
+        "plan": plan.get("fingerprint"),
     }
     return "\n".join(
         [
@@ -426,6 +461,7 @@ def render_editor_body(plan: Mapping[str, Any], contributions: Sequence[str]) ->
         "coordinator": plan["coordinator"],
         "implementer": editor["assignee"],
         "format": plan["format"],
+        "plan": plan.get("fingerprint"),
     }
     return "\n".join(
         [
@@ -618,7 +654,19 @@ class WritingReview:
             raise WritingReviewError("self_review_refused")
         if current.reviewer != meta.get("coordinator"):
             raise WritingReviewError("review_owner_mismatch")
+        # The card is held by the planned coordinator. The Hermes runtime that
+        # will execute the next native call must be that same profile: ask that
+        # runtime (it filters by its own profile), not the local environment.
+        if not self.kanban.acting_profile_owns(task_id):
+            raise WritingReviewError("reviewer_identity_mismatch")
         return current, show, meta
+
+    def _settled(self, task_id: str, revision: str) -> tuple[Submission, dict[str, Any], dict[str, Any]]:
+        """Re-check the revision after the slow artifact transfer, just before the native call."""
+
+        current, show, meta = self._current(task_id, revision)
+        ta.fetch_artifact(self.transport, current.artifact, board=self.board, task_id=task_id)
+        return self._current(task_id, revision)
 
     def request_changes(self, task_id: str, revision: str, feedback: str) -> dict[str, object]:
         """Send the exact reviewed revision back to its writing profile."""
@@ -628,12 +676,28 @@ class WritingReview:
             raise WritingReviewError("feedback_required")
         if len(text) > MAX_FEEDBACK:
             raise WritingReviewError("feedback_too_long")
-        current, _show, _meta = self._current(task_id, revision)
-        ta.fetch_artifact(self.transport, current.artifact, board=self.board, task_id=task_id)
+        current, _show, _meta = self._settled(task_id, revision)
         self.kanban.reopen_review(
             task_id, f"on {current.revision.token}: {text}"
         )
-        after = self.kanban.show(task_id)["task"]
+        after_show = self.kanban.show(task_id)
+        # The native call names no revision. Verify the transition acted on the
+        # reviewed run, not on a newer submission that landed in the window.
+        latest_runs = _review_runs(after_show)
+        latest_run = int(latest_runs[-1]["id"]) if latest_runs else 0
+        if latest_run != current.revision.run_id:
+            try:
+                self.kanban.comment(
+                    task_id,
+                    f"SUPERSEDED FEEDBACK: the preceding review comment was written for "
+                    f"{current.revision.token}, not for the newer submission (run {latest_run}) "
+                    "that was returned with it. It does not apply to that submission; "
+                    "resubmit it unchanged unless other feedback applies.",
+                )
+            except WritingReviewError:
+                pass
+            raise WritingReviewError("request_changes_conflict", f"newer run {latest_run}")
+        after = after_show["task"]
         if after.get("status") not in ("ready", "todo") or after.get("assignee") != current.implementer:
             raise WritingReviewError("request_changes_unverified")
         record = self.history(task_id)
@@ -657,8 +721,7 @@ class WritingReview:
         """Accept the exact revision. Editorial decisions travel with it."""
 
         cleaned = _clean_decisions(decisions)
-        current, _show, meta = self._current(task_id, revision)
-        ta.fetch_artifact(self.transport, current.artifact, board=self.board, task_id=task_id)
+        current, _show, meta = self._settled(task_id, revision)
         if meta["role"] == ROLE_EDITOR:
             self._require_editor_inputs_current(task_id, _show["task"].get("body"))
         record = {
@@ -714,6 +777,11 @@ class WritingReview:
             raise WritingReviewError("acceptance_superseded")
         if accepting.get("profile") == submitted[0].get("profile"):
             raise WritingReviewError("self_approval")
+        # Native completion from review records the card's assignee (the planned
+        # coordinator when review was routed correctly) as the run's profile.
+        # Acting identity itself is checked before the call (`_current`).
+        if accepting.get("profile") != meta.get("coordinator"):
+            raise WritingReviewError("acceptance_reviewer_mismatch")
         artifact = next(
             (a for a in self._listing(task_id)
              if a.attachment_id == revision.attachment_id and a.sha256 == revision.sha256),
@@ -879,19 +947,45 @@ class WritingReview:
     # -- planning ---------------------------------------------------------
 
     def plan(self, plan: Mapping[str, Any], *, base_dir: str = ".") -> dict[str, object]:
-        """Create (or find, by idempotency key) the section cards and the editor."""
+        """Create (or find, by idempotency key) the section cards and the editor.
+
+        Nothing becomes runnable until the whole plan is in place. Sources are
+        read and checked first. Section cards are created held (blocked), their
+        input files are attached and verified, the editor is created and linked,
+        and only then are the held sections released. A failure at any point
+        leaves cards that no dispatcher will claim; rerunning the identical plan
+        finishes the job. A plan that differs from the one already recorded for
+        the project is refused (``plan_changed``) before anything is created.
+        """
 
         checked = validate_plan(plan)
+        # 1. Read every source first: a missing or oversized input fails here,
+        #    before any card exists.
+        sources: dict[str, list[tuple[str, bytes]]] = {}
+        for section in checked["sections"]:
+            loaded = []
+            for path in section.get("input_files") or []:
+                loaded.append(ta._read_source(os.path.join(base_dir, path)))
+            sources[section["key"]] = loaded
+        fingerprint = _plan_fingerprint(checked, sources)
+        checked = {**checked, "fingerprint": fingerprint}
+        self._require_same_plan(checked["project"], fingerprint)
+
+        # 2. Held section cards, then their verified inputs.
         section_ids: dict[str, str] = {}
         for section in checked["sections"]:
-            section_ids[section["key"]] = self.kanban.create(
+            task_id = self.kanban.create(
                 f"{checked['title']}: {section['title']}",
                 body=render_section_body(checked, section),
                 assignee=section["assignee"],
                 idempotency_key=f"helmet-write:{checked['project']}:{section['key']}",
+                blocked=True,
             )
-            for path in section.get("input_files") or []:
-                self._attach_input(section_ids[section["key"]], os.path.join(base_dir, path))
+            section_ids[section["key"]] = task_id
+            for base, data in sources[section["key"]]:
+                self._attach_input(task_id, base, data)
+
+        # 3. The held editor, parented on exactly these sections.
         keys = [s["key"] for s in checked["sections"]]
         editor_id = self.kanban.create(
             f"{checked['title']}: editor",
@@ -901,10 +995,37 @@ class WritingReview:
             idempotency_key=f"helmet-write:{checked['project']}:editor",
             blocked=True,
         )
-        return {"project": checked["project"], "sections": section_ids, "editor": editor_id}
+        editor_show = self.kanban.show(editor_id)
+        if sorted(str(p) for p in editor_show.get("parents") or []) != sorted(section_ids.values()):
+            raise WritingReviewError("plan_changed", "editor parents differ from the plan")
 
-    def _attach_input(self, task_id: str, path: str) -> None:
-        base, data = ta._read_source(path)
+        # 4. Release only the sections this plan still holds. A section blocked
+        #    later by its writer or the coordinator is not ours to release.
+        released = []
+        for key in keys:
+            task_id = section_ids[key]
+            if _held_by_plan(self.kanban.show(task_id)):
+                self.kanban.unblock(task_id, "plan complete; sources attached")
+                released.append(key)
+        return {
+            "project": checked["project"],
+            "sections": section_ids,
+            "editor": editor_id,
+            "released": released,
+        }
+
+    def _require_same_plan(self, project: str, fingerprint: str) -> None:
+        """Refuse a plan that differs from the cards already made for the project."""
+
+        for card in self.kanban.list_cards():
+            try:
+                meta = parse_card_meta(card.get("body"))
+            except WritingReviewError:
+                continue
+            if meta.get("project") == project and meta.get("plan") != fingerprint:
+                raise WritingReviewError("plan_changed")
+
+    def _attach_input(self, task_id: str, base: str, data: bytes) -> None:
         sha = ta.sha256_hex(data)
         if any(a.filename == base and a.sha256 == sha for a in self._listing(task_id)):
             return
@@ -919,6 +1040,45 @@ class AcceptedRevision:
     implementer: str
     reviewer: str
     editorial_decisions: list[str]
+
+
+def _plan_fingerprint(
+    checked: Mapping[str, Any], sources: Mapping[str, Sequence[tuple[str, bytes]]]
+) -> str:
+    """Identity of a plan: its validated content plus the exact bytes of its inputs."""
+
+    material = {
+        "plan": checked,
+        "inputs": {
+            key: [[name, ta.sha256_hex(data)] for name, data in items]
+            for key, items in sorted(sources.items())
+        },
+    }
+    text = json.dumps(material, sort_keys=True, separators=(",", ":"))
+    return ta.sha256_hex(text.encode("utf-8"))
+
+
+def _held_by_plan(show: Mapping[str, Any]) -> bool:
+    """True while a card is still in the hold it was created with.
+
+    The newest block/unblock event decides. Native creation records
+    ``reason: initial_status``; a block made later by a worker or the
+    coordinator carries another reason and is never released here.
+    """
+
+    task = show.get("task")
+    if not isinstance(task, dict) or task.get("status") != "blocked":
+        return False
+    events = show.get("events")
+    for event in reversed(events if isinstance(events, list) else []):
+        if isinstance(event, dict) and event.get("kind") in ("blocked", "unblocked"):
+            payload = event.get("payload")
+            return (
+                event.get("kind") == "blocked"
+                and isinstance(payload, dict)
+                and payload.get("reason") == "initial_status"
+            )
+    return False
 
 
 def _clean_decisions(decisions: Sequence[str]) -> list[str]:

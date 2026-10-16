@@ -16,7 +16,10 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   an accepted part re-gates the editor. A native plugin
   (`helmet write context-plugin`) drops unrelated role history from writing-card
   context, and `helmet write profile-check` reports the profile memory settings
-  Hermes cannot scope per task. See [helmet-write.md](docs/helmet-write.md) for
+  Hermes cannot scope per task, including native `session_search`. `plan`
+  creates held cards, attaches and verifies sources, then releases them, and
+  refuses a changed plan; review commands verify the coordinator identity and
+  the reviewed run around the native call. See [helmet-write.md](docs/helmet-write.md) for
   the guarantees, the remaining native gaps, and integration instructions.
 
 - Add `helmet artifact upload|list|download`, a coordinator handoff for DOCX,

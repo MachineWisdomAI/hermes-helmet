@@ -85,10 +85,55 @@ native review-request run, the staged attachment and its checksum.
 
 **Residual native window.** Native `reopen-review` and `complete` take no
 revision argument, so a competing session could change the card between the
-re-read and the call. `accept` detects a different outcome afterwards
-(`acceptance_superseded`/`acceptance_unverified`), and `release-editor` refuses
-any section whose accepted revision is not its latest submission. The gap is
-not closable above the native API. Run one coordinator per project.
+re-read and the call. Both commands re-read the card after the slow artifact
+check and immediately before the native call, then verify the result against
+the native runs:
+
+- `accept` detects a different outcome afterwards
+  (`acceptance_superseded`/`acceptance_unverified`), and `release-editor` refuses
+  any section whose accepted revision is not its latest submission.
+- `request-changes` checks that the newest review run is still the reviewed one.
+  If a newer submission landed in the window, the native call has already
+  returned that card to its writer with the old feedback. The command then fails
+  with `request_changes_conflict` and adds a comment saying the feedback belongs
+  to the older revision, so the writer is not told to act on text written for a
+  different draft. It never reports success for the older token.
+
+The gap is not closable above the native API. Run one coordinator per project.
+
+## Coordinator identity
+
+The caller's profile is established by the Hermes runtime that executes the
+command, not by the local `HERMES_PROFILE`, which can differ from a remote
+runtime. Before `request-changes` or `accept`, the card must appear in that
+runtime's own `kanban list --mine --status review`, so the runtime is the
+planned coordinator that holds the card. Any other profile, including a distinct
+writer, fails with `reviewer_identity_mismatch` and changes nothing. After
+acceptance, the accepted run must still name the planned coordinator
+(`acceptance_reviewer_mismatch` otherwise), so a record made under another
+identity can never release the editor.
+
+## Planning and changing a plan
+
+`plan` is built so that no assignment is runnable while it is incomplete:
+
+1. Every `input_files` source is read first. A missing or oversized source fails
+   before any card exists.
+2. Section cards are created held (`blocked`), their inputs are attached and
+   verified, and the editor is created held and linked to exactly those
+   sections.
+3. Only then are the held sections released. A transport failure leaves held
+   cards that no dispatcher claims; rerunning the same plan finishes it. A
+   section that a writer or the coordinator blocked later is not released again.
+
+Each card records a fingerprint of the plan (its validated content and the
+SHA-256 of each input file). Rerunning the identical plan reuses its cards.
+Any other plan for the same `project` key fails with `plan_changed` before it
+creates anything, because the idempotent cards cannot be amended in place. To
+change a plan after the fact: replace one part with `supersede`, or plan a new
+`project` key. Native Kanban offers no supported way to add a parent to a card
+that may already be claimed, so adding a section to a live project is not
+supported.
 
 ## Self-approval and release
 
@@ -131,12 +176,28 @@ not receive unrelated work history or persistent retrieval.
 | "Recent work by @profile" in task context | Always appended by `build_worker_context`. No flag disables it; a new session id does not. | The `helmet-writing-context` plugin (`helmet write context-plugin`) removes that section from the `kanban_show` result for cards created by `plan` only. |
 | `MEMORY.md` / `USER.md` | Profile-level (`memory.memory_enabled`, `memory.user_profile_enabled`). Not per task. | Cannot be set per task. `profile-check` reports it. Use a dedicated writing profile with both off. |
 | External memory provider | Profile-level (`memory.provider`). | Same: `profile-check` reports it; the adopter configures the profile. |
+| `session_search` (past conversations) | A core tool. Its only native prerequisite is that the state directory exists, so the memory flags above do not remove it. | `profile-check` reports it until `agent.disabled_toolsets` lists `session_search`. Hermes applies that list last, over every platform selection. |
 | SOUL/AGENTS and authority instructions | Required runtime context. | Kept. `--ignore-rules` is not used. |
 
 Install for the writing profile: run `helmet write context-plugin
 PROFILE_HOME/plugins`, then `hermes plugins enable helmet-writing-context` and
-set the profile's memory settings. `helmet write profile-check
-PROFILE_HOME/config.yaml` must report no findings.
+set the profile's memory settings and disable retrieval:
+
+```yaml
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+  provider: ""
+agent:
+  disabled_toolsets:
+    - session_search
+```
+
+`helmet write profile-check PROFILE_HOME/config.yaml` must report no findings.
+`fresh_context_ready` is a configuration check. It covers prompt memory, an
+external memory provider, native `session_search` and the plugin. It does not
+cover a retrieval tool an adopter adds some other way (for example an MCP
+server); the adopter owns that.
 
 What is inspectable: `helmet write context BOARD TASK` prints native task context
 (for a writing card this still shows the role history the plugin removes at the
@@ -165,8 +226,10 @@ settings.
    as Hermes profiles on the board. Use a writing profile (reasoning effort per
    the deployment's role policy) for writers and editor; the coordinator is the
    first officer's own profile, not a writer.
-3. Configure the writing profiles: memory and provider off, plugin installed and
-   enabled, `profile-check` clean.
+3. Configure the writing profiles: memory and provider off, `session_search`
+   disabled through `agent.disabled_toolsets`, plugin installed and enabled,
+   `profile-check` clean. Run the coordinator commands as the planned coordinator
+   profile's Hermes runtime.
 4. Run `plan`, then drive `submission` → `request-changes`/`accept`, then
    `release-editor`, then review the editor's submission and use `canonical`.
 5. Real-host acceptance (a DOCX or PPTX through the real Docker boundary) stays
@@ -185,6 +248,9 @@ output returned as an ordinary artifact that is reviewed like any other.
 | `stale_revision`, `not_in_review` | The card moved on since that revision |
 | `submission_missing`, `submission_artifact_missing`, `submission_artifact_ambiguous` | The review request carries no single native attachment |
 | `self_review_refused`, `review_owner_mismatch` | Reviewer is the writer, or the submission was routed to someone other than the planned coordinator |
+| `reviewer_identity_mismatch`, `acceptance_reviewer_mismatch` | The Hermes runtime executing the command (or the profile recorded on the accepted run) is not the planned coordinator |
+| `request_changes_conflict` | A newer submission landed while changes were being requested; the feedback was annotated as belonging to the older revision |
+| `plan_changed` | The project already has cards from a different plan; nothing was created |
 | `feedback_required`, `feedback_too_long`, `decision_invalid` | Review text rules |
 | `request_changes_unverified`, `acceptance_unverified` | Native call did not leave the card as expected |
 | `not_accepted`, `acceptance_unbound`, `acceptance_superseded`, `self_approval`, `accepted_artifact_missing` | Section is not validly accepted |
