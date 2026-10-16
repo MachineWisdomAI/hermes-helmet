@@ -298,7 +298,8 @@ For pending work, follow [host continuation](references/host-continuation.md).
 It selects automatic completion delivery or one native schedule for this issue,
 with a configurable five-minute default. A process handle alone does not provide
 automatic continuation. The host owns waiting; the First Officer yields until
-the next completion event or scheduled wake.
+the next completion event or scheduled wake. The same reference says how to
+treat drift in a running worker.
 
 ## Common pitfalls
 

@@ -63,6 +63,19 @@ gh pr edit PR_URL --remove-reviewer WORKER_LOGIN
 gh pr edit PR_URL --add-reviewer WORKER_LOGIN
 ```
 
+## Pending, drift and corrective direction
+
+The request above is the whole initial intake: the packaged contract is the
+review instruction, so write no per-PR prompt. While the review is pending, yield
+on the host's completion delivery or one native schedule, and do not pass the PR
+to `helmet wait` (issue URLs only). If evidence shows the worker looping,
+repeatedly using a tool it lacks, or investigating something unrelated, give
+concrete corrective direction on the same task and use authorized recovery as
+described in [Supervise pending work](../helmet-issue/references/host-continuation.md#supervise-pending-work).
+Do not create a second task or a new review request for that. Direction never
+states the verdict. If the task ends blocked, the PR head moved, or no formal
+review exists, the review is incomplete, not approval.
+
 ## Read the result
 
 Read the worker's formal review from GitHub itself:
