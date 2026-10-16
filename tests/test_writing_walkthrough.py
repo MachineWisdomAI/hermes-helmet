@@ -456,6 +456,45 @@ class PptxWalkthroughTests(Walkthrough):
         deck.save(str(path))
 
 
+class FreshBoardTests(Walkthrough):
+    """A fresh worker has only ``default``; the documented walkthrough must run there."""
+
+    def test_plan_needs_an_existing_board_and_the_documented_create_step_provides_it(self) -> None:
+        board = "fresh-demo"
+        plan = json.loads((EXAMPLES / "docx-plan.json").read_text(encoding="utf-8"))
+
+        def planner() -> wr.WritingReview:
+            return wr.WritingReview(board, wr.HermesKanban(board, self.runner), self.transport)
+
+        listed = self.run_as(COORDINATOR, "hermes", "kanban", "boards", "list")
+        self.assertNotIn(board, listed)
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            planner().plan(plan, base_dir=str(EXAMPLES))
+        self.assertEqual(caught.exception.code, "kanban_command_failed")
+
+        # The step docs/writing-setup.md and the helmet-write skill give: create the
+        # board, and repeating it is harmless.
+        for _ in range(2):
+            self.run_as(COORDINATOR, "hermes", "kanban", "boards", "create", board)
+        planned = planner().plan(plan, base_dir=str(EXAMPLES))
+        self.assertTrue(planned["sections"])
+
+    def test_default_board_needs_no_creation(self) -> None:
+        plan = json.loads((EXAMPLES / "docx-plan.json").read_text(encoding="utf-8"))
+        review = wr.WritingReview("default", wr.HermesKanban("default", self.runner), self.transport)
+        self.assertTrue(review.plan(plan, base_dir=str(EXAMPLES))["sections"])
+
+    def test_setup_guide_and_skill_say_to_create_the_board_first(self) -> None:
+        guide = (ROOT / "docs" / "writing-setup.md").read_text(encoding="utf-8")
+        self.assertLess(
+            guide.index("kanban boards create writing-demo"),
+            guide.index("helmet write plan writing-demo"),
+        )
+        for relative in ("skills/helmet-write/SKILL.md", "skills/helmet-write/references/plan.md"):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("kanban boards create BOARD", text, relative)
+
+
 class CodexHostDiscoveryTests(unittest.TestCase):
     """Optional: a real Codex host discovers the skill after install and update."""
 

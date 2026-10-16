@@ -57,8 +57,12 @@ The worker and its provider are configured once beforehand
    sources, the neighboring passages it needs and the authoritative decisions
    that apply; never the whole source collection. Put audience, voice and the
    guidance pack in the plan's `guidance` so the editor receives them too.
-2. **Create the cards.** Write the plan JSON ([schema](references/plan.md)) and
-   run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its
+2. **Create the cards.** Choose the board and make sure it exists: a fresh
+   worker has only `default`, and `plan` does not create a board. Run
+   `$HERMES_HELMET_HERMES kanban boards list`; if your board is missing, create
+   it with `$HERMES_HELMET_HERMES kanban boards create BOARD` (repeating it is
+   harmless), or plan on `default`. Then write the plan JSON
+   ([schema](references/plan.md)) and run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its
    cards; a changed plan is refused.
    Input files named in the plan are attached as native artifacts.
 3. **Wait for submissions.** A writer submits with native request-review and

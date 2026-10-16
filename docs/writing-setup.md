@@ -257,11 +257,17 @@ The reference plans are `examples/writing/docx-plan.json` (two contributions on
 the same `writing` profile, plus the editor) and `examples/writing/pptx-plan.json`
 (one contribution plus the editor), with synthetic notes in
 `examples/writing/sources/`. They are examples of what the skill produces, not
-something you type in. To run one directly:
+something you type in. A fresh worker has only the `default` board, and
+`helmet write plan` does not create one, so create the board first. The command
+is safe to repeat; it reports `already exists` when the board is there. To run
+one plan directly:
 
 ```bash
+helmet-compose kanban boards create writing-demo
 helmet write plan writing-demo examples/writing/docx-plan.json
 ```
+
+To use the `default` board instead, name `default` in place of `writing-demo`.
 
 ### Capacity and the shared profile
 
