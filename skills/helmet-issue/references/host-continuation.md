@@ -83,6 +83,80 @@ On resumption, reconcile live tasks, checkpoints, and native schedules before
 registering anything. Cadence changes and host restarts preserve original starts,
 budget deadlines, merge choices, and task identity.
 
+## Supervise pending work
+
+This is the one supervision rule for issues, epics, PR reviews and writing.
+Skills link here; they do not copy it.
+
+Pending work is normal. Yield on the registered completion delivery or the one
+native schedule. Do not read worker logs, message the worker, or ask for status
+to learn whether it is still busy. On a meaningful wake or a requested status
+check, reconcile current state once (task status, checkpoint, PR and checks) and
+inspect detailed logs only to answer a specific actionable question. A heartbeat,
+tool-call count or file touch alone is neither progress nor a fault.
+
+`helmet wait` takes an issue URL. Never pass it a pull request URL or invent an
+issue checkpoint for a PR. For a PR review, use host delivery on its Kanban task
+if the host exposes it, otherwise the one native schedule, and read the verdict
+from GitHub.
+
+Drift is evidence, not a hunch: a loop, repeated calls to a tool the worker does
+not have, or investigation unrelated to the task. Intervene once, with the
+smallest supported control that applies:
+
+1. **Corrective direction on the same task.** Name the observed problem and the
+   concrete next step. It needs no bespoke initial prompt and no second task.
+
+   ```sh
+   hermes kanban comment TASK_ID "Observed: <evidence>. Next: <concrete step>."
+   ```
+
+   Hermes stores the comment and shows it in the task context of any later run.
+   Current Hermes source also folds new comments into a running dispatcher-spawned
+   worker between tool calls, but that depends on the deployed version. Do not
+   claim a comment interrupted the worker or reached it until the task shows it.
+2. **Authorized same-card retry.** If direction is not enough, or the worker is no
+   longer running, an operator who already has task-management authority may
+   reclaim the task:
+
+   ```sh
+   hermes kanban reclaim TASK_ID --reason "<evidence>"
+   ```
+
+   Reclaim is a retry, not a stop or a hold. Hermes tries to terminate the
+   attempt's worker (best-effort, and only for a process on the same host), then
+   releases the claim and makes the same task runnable again with its comments and
+   attachments. The profile, model and provider are unchanged, and the task is not
+   cancelled, blocked or completed, so a new attempt can start on it. Do not
+   promise that the old process has stopped. Read the deployed outcome instead: the
+   task's latest `reclaimed` event and run record say whether termination was
+   attempted and whether it succeeded, was refused, or did not apply. Reclaiming
+   discards the attempt's unsaved in-process work, so prefer direction first
+   unless the worker is stuck. Do not edit the board database, metadata or claim
+   locks by hand.
+
+   Reclaim does not retire work so that something else can replace it. Replacement
+   needs the old execution quiesced and out of the way, which reclaim alone does
+   not give you. If the supported controls available to you cannot hold or retire
+   the old execution, report that as the concrete blocker, keep the existing
+   comments, attachments and artifacts, and do not present reclaim as the missing
+   stop-and-replace operation.
+3. **Concrete blocker.** If the control is refused or you lack the authority,
+   report the exact limitation (the refusal or missing access) and the decision
+   needed. Do not substitute a cancel, merge, identity switch or provider change.
+
+Direction addresses scope, tool use and loops only. It never states a review
+verdict or edits a reviewer's findings. A review that is incomplete, blocked or
+for another head is not approval and authorizes no merge. Supervision adds no
+cancellation, merge, identity-switching or provider authority. After an
+intervention, return to the continuation above and judge the next meaningful
+wake on new evidence.
+
+If continuation is unavailable, say which part is missing (completion delivery,
+scheduler, or registration) and stop with `--host-continuation none`, as in
+selection step 5. A process handle that needs repeated output reads is poll-only,
+not resumption.
+
 ## Host references
 
 - [Codex chat schedules](https://learn.chatgpt.com/docs/automations)

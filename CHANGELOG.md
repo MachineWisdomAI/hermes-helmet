@@ -5,6 +5,22 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Clarify review supervision and truthful continuation in the bundled skills. The shared
+  host continuation reference gains one "Supervise pending work" section: pending work
+  yields on host delivery or one native schedule; drift (a loop, repeated use of an
+  unavailable tool, unrelated investigation) gets one same-task `hermes kanban comment`
+  and, if needed, authorized `hermes kanban reclaim`, or a stated blocker. Both were
+  checked against Hermes source: a comment is stored and appears in later task context
+  (current source also steers a running worker, version dependent), and `reclaim` is an
+  authorized same-card retry: termination is best-effort and host-local, the outcome is
+  read from the `reclaimed` event, and the task becomes runnable again, so it is not a
+  stop or a hold. `helmet-review` and `helmet-write` link to that section instead of
+  copying it; `helmet-write` adds its own progress guidance and says plainly that
+  `supersede` does not retire the old card and reclaim does not substitute for that,
+  so a missing hold is reported as a blocker with artifacts preserved. Instructions
+  only: no new command, observer, deadline or authority, and installed copies are
+  unchanged.
+
 - Expose **Hermes Helmet: Helmet Write** through the installed plugin and prove the
   writing walkthrough. The Codex and Claude manifests and the marketplace entry now name
   `hermes-helmet:helmet-write` beside `hermes-helmet:helmet-epic`; the canonical

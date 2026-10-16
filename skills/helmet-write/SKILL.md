@@ -65,7 +65,8 @@ The worker and its provider are configured once beforehand
    ([schema](references/plan.md)) and run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its
    cards; a changed plan is refused.
    Input files named in the plan are attached as native artifacts.
-3. **Wait for submissions.** A writer submits with native request-review and
+3. **Wait for submissions.** Yield on the host's continuation and judge a slow
+   card by substance (`references/review.md`, "Pending cards"). A writer submits with native request-review and
    the card moves to you. Run `helmet write submission BOARD TASK`. It prints
    the revision token and artifact reference; retrieve the file with
    `helmet artifact download`.
