@@ -40,6 +40,7 @@ CAPTAIN_RESERVED_SKILL_NAMES = frozenset(
         "helmet-issue",
         "helmet-epic",
         "helmet-review",
+        "helmet-write",
         "setup-helmet",
     }
 )

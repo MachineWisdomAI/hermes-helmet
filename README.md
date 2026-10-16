@@ -82,6 +82,7 @@ Hermes does the implementation.
 | [`helmet-issue`](skills/helmet-issue/SKILL.md) | Carry one issue through implementation, review, repairs, and acceptance. |
 | [`helmet-epic`](skills/helmet-epic/SKILL.md) | Coordinate dependent issues and run independent work in parallel. |
 | [`helmet-review`](skills/helmet-review/SKILL.md) | Request a worker review of a pull request and read its formal verdict. |
+| [`helmet-write`](skills/helmet-write/SKILL.md) | Coordinate multi-part writing: section writers, exact-revision review, and a separate editor. |
 
 Install those skills with `helmet install-skills`, or as a Claude Code / Codex
 plugin; see [First-officer plugin](docs/first-officer-plugins.md). Choosing

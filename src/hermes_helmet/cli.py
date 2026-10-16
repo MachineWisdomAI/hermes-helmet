@@ -516,6 +516,69 @@ def cmd_artifact(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_write(args: argparse.Namespace) -> int:
+    """Revision-bound coordinator review for the iterative writing workflow."""
+    from hermes_helmet import task_artifacts as ta
+    from hermes_helmet import writing_context, writing_review as wr
+
+    action = args.write_action
+    try:
+        if action == "context-plugin":
+            path = writing_context.write_plugin(args.plugins_dir)
+            payload: object = {
+                "plugin": writing_context.PLUGIN_NAME,
+                "path": str(path),
+                "next": f"hermes plugins enable {writing_context.PLUGIN_NAME}",
+            }
+        elif action == "profile-check":
+            from hermes_helmet.worker_role_runtime import _yaml_load
+
+            config = _yaml_load(Path(args.config_file).read_text(encoding="utf-8")) or {}
+            findings = writing_context.profile_findings(config)
+            payload = {"fresh_context_ready": not findings, "findings": findings}
+        else:
+            runner = SubprocessRunner(gh=args.gh, hermes=args.hermes)
+            review = wr.WritingReview(
+                args.board,
+                wr.HermesKanban(args.board, runner, hermes=args.hermes),
+                _artifact_transport(args),
+            )
+            if action == "plan":
+                plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+                payload = review.plan(plan, base_dir=str(Path(args.plan).resolve().parent))
+            elif action == "submission":
+                payload = review.submission(args.task_id).to_public_dict()
+            elif action == "history":
+                payload = review.history(args.task_id)
+            elif action == "request-changes":
+                payload = review.request_changes(args.task_id, args.revision, args.feedback)
+            elif action == "accept":
+                payload = review.accept(
+                    args.task_id, args.revision, decisions=args.decision, note=args.note
+                )
+            elif action == "release-editor":
+                payload = review.release_editor(args.task_id)
+            elif action == "supersede":
+                payload = review.supersede_section(
+                    args.editor, args.task_id, reason=args.reason, assignee=args.assignee
+                )
+            elif action == "canonical":
+                payload = review.canonical(args.task_id, str(args.output) if args.output else None)
+            else:  # context
+                payload = {
+                    "task_id": args.task_id,
+                    "effective_worker_context": review.kanban.context(args.task_id),
+                }
+    except (wr.WritingReviewError, ta.TaskArtifactError, HelmetIssueError) as exc:
+        print(f"helmet write {action} failed: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"helmet write {action} failed: {type(exc).__name__}", file=sys.stderr)
+        return 1
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_bridge_read(args: argparse.Namespace) -> int:
     """Read one Claude Code session's records (read-only); JSON on stdout."""
     from hermes_helmet import claude_bridge
@@ -1570,6 +1633,90 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_dl.add_argument("--task-id", default=None, help="Require this task")
     artifact_dl.add_argument("--overwrite", action="store_true")
     _artifact_common(artifact_dl)
+
+    write_p = sub.add_parser(
+        "write",
+        help=(
+            "Coordinate iterative writing: plan section cards and an editor, "
+            "review exact revisions, release the editor from accepted ones"
+        ),
+    )
+    write_sub = write_p.add_subparsers(dest="write_action", required=True)
+
+    def _write_board(command: argparse.ArgumentParser, *, task: bool = True) -> None:
+        command.add_argument("board")
+        if task:
+            command.add_argument("task_id")
+        command.add_argument("--hermes", default=DEFAULT_HERMES, help="hermes binary")
+        command.add_argument("--gh", default=DEFAULT_GH, help=argparse.SUPPRESS)
+        command.add_argument(
+            "--worker-runtime",
+            default="",
+            help="Captain→worker transport prefix (env HERMES_HELMET_WORKER_RUNTIME)",
+        )
+        command.set_defaults(func=cmd_write)
+
+    w_plan = write_sub.add_parser("plan", help="Create section cards and a blocked editor card")
+    _write_board(w_plan, task=False)
+    w_plan.add_argument("plan", type=Path, help="Plan JSON (see docs/helmet-write.md)")
+
+    w_sub = write_sub.add_parser("submission", help="Show the submission awaiting review")
+    _write_board(w_sub)
+    w_hist = write_sub.add_parser("history", help="List every submitted revision of a card")
+    _write_board(w_hist)
+
+    w_rc = write_sub.add_parser(
+        "request-changes", help="Return the exact reviewed revision to its writer"
+    )
+    _write_board(w_rc)
+    w_rc.add_argument("--revision", required=True, help="helmet-write-revision:v1:… token")
+    w_rc.add_argument("--feedback", required=True, help="Concrete revision feedback")
+
+    w_acc = write_sub.add_parser("accept", help="Accept the exact reviewed revision")
+    _write_board(w_acc)
+    w_acc.add_argument("--revision", required=True, help="helmet-write-revision:v1:… token")
+    w_acc.add_argument(
+        "--decision", action="append", default=[], help="Editorial decision (repeatable)"
+    )
+    w_acc.add_argument("--note", default="", help="Short acceptance note")
+
+    w_rel = write_sub.add_parser(
+        "release-editor", help="Attach accepted revisions to the editor card and start it"
+    )
+    _write_board(w_rel)
+
+    w_sup = write_sub.add_parser(
+        "supersede", help="Replace a contribution and gate the editor again"
+    )
+    _write_board(w_sup)
+    w_sup.add_argument("--editor", required=True, help="Editor task id")
+    w_sup.add_argument("--reason", required=True)
+    w_sup.add_argument("--assignee", default=None, help="Profile for the replacement card")
+
+    w_can = write_sub.add_parser(
+        "canonical", help="Verify and retrieve the editor's accepted document"
+    )
+    _write_board(w_can)
+    w_can.add_argument("--output", type=Path, default=None, help="New destination file")
+
+    w_ctx = write_sub.add_parser(
+        "context", help="Print the task context a worker would receive from native Kanban"
+    )
+    _write_board(w_ctx)
+
+    w_plug = write_sub.add_parser(
+        "context-plugin",
+        help="Write the native plugin that drops unrelated role history from writing cards",
+    )
+    w_plug.add_argument("plugins_dir", type=Path, help="Hermes plugins directory of the profile")
+    w_plug.set_defaults(func=cmd_write)
+
+    w_chk = write_sub.add_parser(
+        "profile-check",
+        help="Report profile settings that keep persistent retrieval in a writing card's context",
+    )
+    w_chk.add_argument("config_file", type=Path, help="The writing profile's config.yaml")
+    w_chk.set_defaults(func=cmd_write)
 
     bridge_p = sub.add_parser(
         "bridge",
