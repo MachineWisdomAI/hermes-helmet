@@ -14,7 +14,9 @@ from hermes_helmet import public_surface
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILLS = ("setup-helmet", "helmet-issue", "helmet-epic", "observe-chat", "helmet-review")
+SKILLS = (
+    "setup-helmet", "helmet-issue", "helmet-epic", "observe-chat", "helmet-review", "helmet-write",
+)
 PLUGIN_NAME = "hermes-helmet"
 MARKETPLACE_NAME = "hermes-helmet"
 INSTALL_GUIDE = "docs/first-officer-plugins.md"

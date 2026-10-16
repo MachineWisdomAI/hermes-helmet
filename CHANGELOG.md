@@ -5,6 +5,23 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Add `helmet write` and the `helmet-write` first-officer skill, a portable
+  workflow for multi-part writing. A coordinator plans one native Kanban card per
+  contribution plus a held editor card, reviews each submission as an exact
+  revision (task, review run, attachment id, SHA-256), and sends concrete
+  feedback back to the same writing profile with the native reopen-review
+  operation. Stale feedback or acceptance is refused, historical revisions stay
+  readable, and the editor is released only from revisions a different profile
+  accepted, receiving those exact files and the editorial decisions. Superseding
+  an accepted part re-gates the editor. A native plugin
+  (`helmet write context-plugin`) drops unrelated role history from writing-card
+  context, and `helmet write profile-check` reports the profile memory settings
+  Hermes cannot scope per task, including native `session_search`. `plan`
+  creates held cards, attaches and verifies sources, then releases them, and
+  refuses a changed plan; review commands verify the coordinator identity and
+  the reviewed run around the native call. See [helmet-write.md](docs/helmet-write.md) for
+  the guarantees, the remaining native gaps, and integration instructions.
+
 - Add `helmet artifact upload|list|download`, a coordinator handoff for DOCX,
   PPTX, and other files through native Kanban task attachments. References carry
   board, task, attachment id, media type, size, and SHA-256, so review and
