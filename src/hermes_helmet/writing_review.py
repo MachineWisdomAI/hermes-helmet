@@ -540,6 +540,86 @@ def _review_runs(show: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [r for r in _runs(show) if r.get("outcome") == "review_requested"]
 
 
+def _events(show: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    events = show.get("events")
+    return [e for e in (events if isinstance(events, list) else []) if isinstance(e, dict)]
+
+
+def _event_run_id(event: Mapping[str, Any]) -> int | None:
+    value = event.get("run_id")
+    if value is None and isinstance(event.get("payload"), dict):
+        value = event["payload"].get("run_id")
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _feedback_delivered(show: Mapping[str, Any], reviewed: Submission) -> bool:
+    """Did the native reopen return the reviewed card to its writer, exactly once?
+
+    The native call names no revision and the dispatcher may claim the card
+    before it is read back, so a settled ``ready``/``todo`` card and a card the
+    same writer has already started are both a successful delivery. A started
+    card counts only when the record ties it to this feedback:
+
+    - the card is ``running`` under the profile that submitted the reviewed run;
+    - a ``review_reopened`` event follows the review request of the reviewed run;
+    - every later run on this card belongs to that profile and was claimed after
+      that reopen event (a run claimed earlier, or by anyone else, is not it),
+      and the newest of them is the one now running; and
+    - the feedback comment naming the reviewed token exists exactly once.
+
+    An intervening submission is rejected earlier (newest review run differs).
+    """
+
+    task = show["task"]
+    implementer = reviewed.implementer
+    if task.get("assignee") != implementer:
+        return False
+    token = reviewed.revision.token
+    raw_comments = show.get("comments")
+    comments = raw_comments if isinstance(raw_comments, list) else []
+    feedback = [
+        c for c in comments
+        if isinstance(c, dict) and "CHANGES REQUESTED" in str(c.get("body", ""))
+        and token in str(c.get("body", ""))
+    ]
+    if len(feedback) != 1:
+        return False
+    status = task.get("status")
+    if status in ("ready", "todo"):
+        return True
+    if status != "running":
+        return False
+    reviewed_run = reviewed.revision.run_id
+    events = _events(show)
+    requested = [
+        i for i, e in enumerate(events)
+        if e.get("kind") == "review_requested" and _event_run_id(e) == reviewed_run
+    ]
+    if not requested:
+        return False
+    reopened = [
+        i for i, e in enumerate(events)
+        if e.get("kind") == "review_reopened" and i > requested[-1]
+    ]
+    if not reopened:
+        return False
+    reopen_at = reopened[-1]
+    later = [r for r in _runs(show) if int(r.get("id", 0)) > reviewed_run]
+    if not later or any(r.get("profile") != implementer for r in later):
+        return False
+    for run in later:
+        claims = [
+            i for i, e in enumerate(events)
+            if e.get("kind") == "claimed" and _event_run_id(e) == int(run["id"])
+        ]
+        if not claims or min(claims) < reopen_at:
+            return False
+    return later[-1].get("status") == "running"
+
+
 def _run_artifact_names(run: Mapping[str, Any]) -> set[str]:
     metadata = run.get("metadata")
     paths = metadata.get("artifacts") if isinstance(metadata, dict) else None
@@ -698,7 +778,7 @@ class WritingReview:
                 pass
             raise WritingReviewError("request_changes_conflict", f"newer run {latest_run}")
         after = after_show["task"]
-        if after.get("status") not in ("ready", "todo") or after.get("assignee") != current.implementer:
+        if not _feedback_delivered(after_show, current):
             raise WritingReviewError("request_changes_unverified")
         record = self.history(task_id)
         return {
