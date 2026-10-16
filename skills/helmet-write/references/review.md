@@ -26,6 +26,32 @@ If two rounds did not fix the same issue, stop. Reassign the part to another
 writer with `helmet write supersede`, or clarify the sources and restate the
 brief. Do not continue the loop.
 
+## Pending cards
+
+Follow the general rule in
+[Supervise pending work](../../helmet-issue/references/host-continuation.md#supervise-pending-work):
+yield on the host's completion delivery or one native schedule and reconcile the
+board once per meaningful wake. Writing-specific points:
+
+- **Progress is substance.** Judge a card by what exists relative to the
+  assignment's difficulty: a substantive draft or attachment, a resolved source
+  question, or identifiable necessary preparation such as reading long sources.
+  A heartbeat, tool-call count or superficial file change is not progress.
+- **Pick an observation point** that fits the card (a short section differs from
+  a source-heavy editor pass) and the continuation you already have. Waiting
+  past it needs new evidence, a concrete next step and a new observation point.
+  There is no universal timeout, reviewer deadline or polling loop.
+- **Absent or unrelated progress.** Comment on the same card with the problem and
+  next step; a comment is stored and read by a later run, so do not say it
+  interrupted the worker. If that is not enough, replace the contribution with
+  `helmet write supersede`, or reclaim the card as the shared rule describes.
+  `supersede` refuses while the editor is running (`editor_running`) and does
+  not stop a still-running old card, so reclaim that card first when you are
+  authorized. For a stalled editor, reclaim the editor card; it restarts from its
+  accepted inputs. Keep accepted inputs and available unfinished work. Never edit
+  task metadata or the board database. If a control is refused, name the refusal
+  and the decision needed.
+
 ## Reopening or superseding an accepted part
 
 Accepted work can be replaced if a source changes. `helmet write supersede`
