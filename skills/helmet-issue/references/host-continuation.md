@@ -115,19 +115,32 @@ smallest supported control that applies:
    Current Hermes source also folds new comments into a running dispatcher-spawned
    worker between tool calls, but that depends on the deployed version. Do not
    claim a comment interrupted the worker or reached it until the task shows it.
-2. **Authorized recovery.** If direction is not enough, or the worker is no longer
-   running, an operator who already has task-management authority may reclaim
-   the task. Hermes stops that attempt's worker process, releases the claim and
-   returns the same task to the queue with its comments and attachments:
+2. **Authorized same-card retry.** If direction is not enough, or the worker is no
+   longer running, an operator who already has task-management authority may
+   reclaim the task:
 
    ```sh
    hermes kanban reclaim TASK_ID --reason "<evidence>"
    ```
 
-   The profile, model and provider are unchanged, and the task is not cancelled
-   or completed. Reclaiming discards the attempt's unsaved in-process work, so
-   prefer direction first unless the worker is stuck. Do not edit the board
-   database, metadata or claim locks by hand.
+   Reclaim is a retry, not a stop or a hold. Hermes tries to terminate the
+   attempt's worker (best-effort, and only for a process on the same host), then
+   releases the claim and makes the same task runnable again with its comments and
+   attachments. The profile, model and provider are unchanged, and the task is not
+   cancelled, blocked or completed, so a new attempt can start on it. Do not
+   promise that the old process has stopped. Read the deployed outcome instead: the
+   task's latest `reclaimed` event and run record say whether termination was
+   attempted and whether it succeeded, was refused, or did not apply. Reclaiming
+   discards the attempt's unsaved in-process work, so prefer direction first
+   unless the worker is stuck. Do not edit the board database, metadata or claim
+   locks by hand.
+
+   Reclaim does not retire work so that something else can replace it. Replacement
+   needs the old execution quiesced and out of the way, which reclaim alone does
+   not give you. If the supported controls available to you cannot hold or retire
+   the old execution, report that as the concrete blocker, keep the existing
+   comments, attachments and artifacts, and do not present reclaim as the missing
+   stop-and-replace operation.
 3. **Concrete blocker.** If the control is refused or you lack the authority,
    report the exact limitation (the refusal or missing access) and the decision
    needed. Do not substitute a cancel, merge, identity switch or provider change.

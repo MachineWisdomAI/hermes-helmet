@@ -43,14 +43,22 @@ board once per meaningful wake. Writing-specific points:
   There is no universal timeout, reviewer deadline or polling loop.
 - **Absent or unrelated progress.** Comment on the same card with the problem and
   next step; a comment is stored and read by a later run, so do not say it
-  interrupted the worker. If that is not enough, replace the contribution with
-  `helmet write supersede`, or reclaim the card as the shared rule describes.
-  `supersede` refuses while the editor is running (`editor_running`) and does
-  not stop a still-running old card, so reclaim that card first when you are
-  authorized. For a stalled editor, reclaim the editor card; it restarts from its
-  accepted inputs. Keep accepted inputs and available unfinished work. Never edit
-  task metadata or the board database. If a control is refused, name the refusal
-  and the decision needed.
+  interrupted the worker. If that is not enough, an authorized operator may
+  retry the card with reclaim, as the shared rule describes. That is a same-card
+  retry: it does not hold the card, and the card can run again. Check the
+  `reclaimed` event for the deployed termination outcome rather than assuming the
+  old worker stopped.
+- **Replacing a contribution.** `helmet write supersede` creates a replacement
+  card and re-gates the editor. It refuses while the editor is running
+  (`editor_running`) and it neither blocks nor cancels the old section card, so an
+  old contribution that is still running or gets retried can continue beside its
+  replacement. Reclaim does not close that gap, and reclaiming an editor does not
+  prevent it from being dispatched again before `supersede` runs. If the controls
+  you are authorized to use cannot hold or retire the old execution, report that
+  blocker and the decision needed, and do not claim the replacement is isolated.
+  Recovery of a stalled editor or of unfinished output stays deferred: keep the
+  accepted inputs, the old card's attachments and any unfinished work as they are,
+  never edit task metadata or the board database, and name any refused control.
 
 ## Reopening or superseding an accepted part
 
