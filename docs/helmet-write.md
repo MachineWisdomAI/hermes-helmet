@@ -98,6 +98,18 @@ the native runs:
   with `request_changes_conflict` and adds a comment saying the feedback belongs
   to the older revision, so the writer is not told to act on text written for a
   different draft. It never reports success for the older token.
+- `request-changes` also tolerates the dispatcher claiming the card before the
+  command reads it back. A `running` card counts as delivered only when the
+  native record ties it to this feedback: the card is held by the profile that
+  submitted the reviewed run, a `review_reopened` event follows that run's
+  `review_requested` event, every later run is by that same profile and was
+  claimed after the reopen event, the newest later run is the one running, and
+  exactly one `CHANGES REQUESTED` comment names the reviewed token. The command
+  then reports the observed `running` state without calling `reopen-review`
+  again or posting feedback twice. A running card with a different profile, a run
+  claimed before the reopen, no new claim, or a duplicate feedback comment still
+  fails with `request_changes_unverified`; an intervening submission still fails
+  with `request_changes_conflict`.
 
 The gap is not closable above the native API. Run one coordinator per project.
 
