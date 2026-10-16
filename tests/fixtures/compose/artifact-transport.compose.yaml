@@ -1,0 +1,18 @@
+# Disposable service for the helmet-compose transport integration test only.
+#
+# It is not the writing recipe and not a deployment: one idle service on the
+# pinned upstream Hermes image, the repository's own `src` mounted read-only where
+# the adapter expects it, and an anonymous data volume that `down -v` removes.
+# Run it through tests/test_compose_runtime.py with HELMET_COMPOSE_INTEGRATION=1.
+name: helmet-compose-transport-test
+
+services:
+  hermes:
+    image: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909}
+    command: ["sleep", "infinity"]
+    environment:
+      HERMES_HOME: /opt/data
+      HOME: /opt/data
+    volumes:
+      - ${HELMET_TEST_SRC:?set by the integration test}:/opt/hermes-helmet/src:ro
+      - /opt/data

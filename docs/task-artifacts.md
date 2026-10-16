@@ -105,9 +105,13 @@ deadline plus a short cleanup allowance.
 
 ## Adapter contract for the deployment
 
-The deployment adapter owns authentication, the Captain/worker boundary, and the
-native attachment calls. It needs exactly three verbs. `RUNTIME` is the configured
-command prefix.
+The adapter owns authentication, the Captain/worker boundary, and the native
+attachment calls. It needs exactly three verbs. `RUNTIME` is the configured
+command prefix. Hermes Helmet ships one reference adapter for a local Docker
+Compose worker, [`helmet-compose`](#reference-adapter-helmet-compose); a
+deployment with its own topology, identities, or other runtime verbs writes its
+own adapter to this contract, and may delegate these three verbs to the public
+helper instead of reimplementing them.
 
 | Invocation | stdin | stdout |
 | --- | --- | --- |
@@ -147,6 +151,53 @@ The adapter must:
 The coordinator verifies every record and every download again, so a faulty adapter
 fails closed instead of delivering the wrong bytes.
 
+## Reference adapter: `helmet-compose`
+
+`helmet-compose` is the public reference adapter for a native Hermes worker in a
+dedicated Docker Compose project. It is a single console entrypoint
+(`hermes_helmet.compose_runtime`), installed with the package, and it plays two
+roles:
+
+```sh
+export HERMES_HELMET_HERMES=helmet-compose           # native `hermes kanban ...`
+export HERMES_HELMET_WORKER_RUNTIME=helmet-compose   # artifact-upload|list|download
+```
+
+| Supported | Behavior |
+| --- | --- |
+| `helmet-compose kanban ...` | The container's native `hermes kanban ...`, arguments unchanged |
+| `helmet-compose artifact-upload\|artifact-list\|artifact-download BOARD TASK ...` | The adapter contract above, served by `hermes_helmet.native_artifacts` |
+| `ledger-root`, `ledger-watch`, `dispatch-root`, `prepare-repo`, `wait`, and anything else | Refused with exit `2` and `unsupported_verb`; Docker is not called |
+
+- **Explicit target.** `COMPOSE_FILE` and `COMPOSE_PROJECT_NAME` must both be set.
+  Neither has a default, so the adapter never falls back to another project.
+  They are Docker-wide variables: every `docker compose` command in that shell
+  targets the same project. Use a dedicated shell for the worker project, do not
+  export them from a shell startup file, and close the shell when finished. Set
+  `HERMES_HELMET_HERMES` and `HERMES_HELMET_WORKER_RUNTIME` in that shell only so
+  an existing general worker-runtime configuration is not replaced.
+- **Transport.** Each call is `docker compose -p PROJECT exec -T hermes ...` into
+  the service named `hermes`, with the argument vector passed without a shell. The
+  adapter then hands the process to Docker, so stdin and stdout stay the caller's
+  binary streams, the exit status is the container command's (`3`, `4`, `5`
+  unchanged), and the coordinator's timeout and process-group kill reach Docker.
+  Bytes never appear in arguments.
+- **Actor.** The in-container Hermes identity is pinned to `default`
+  (`HERMES_PROFILE` and `HERMES_PROFILE_NAME`), independent of any host profile
+  variable, so attachments are recorded as uploaded by `default`.
+- **Native store.** `hermes_helmet.native_artifacts` runs inside the container and
+  uses the runtime's own attachment functions, so the 25 MiB cap, name
+  sanitization, collision-free storage, and attachment ids are native. It verifies
+  the declared size and SHA-256 before storing, hashes the stored blob when
+  listing, scopes every lookup to board and task, and writes only a fixed code to
+  stderr.
+- **Container prerequisites.** The service is named `hermes`, runs the Hermes
+  image's interpreter at `/opt/hermes/.venv/bin/python`, and has this package's
+  `src` at `/opt/hermes-helmet/src` (the Hermes Helmet image already does).
+
+Docker being absent is reported as exit `127`, which the coordinator treats as an
+unavailable transport.
+
 ## How tests differ from real-host acceptance
 
 The repository tests use an in-memory transport and an isolated fixture adapter
@@ -156,6 +207,25 @@ ExampleCo DOCX and PPTX archives and prove the coordinator behavior: byte-identi
 round trips, format metadata, revision checks, error codes, and no content or
 credentials in arguments, errors, or output. They do not use a real Kanban board,
 Docker, or a worker profile.
+
+`tests/test_compose_runtime.py` covers `helmet-compose` in three layers: argument
+vector, project selection, pinned actor, unsupported verbs, binary streams and
+timeouts through the real executable and a stand-in `docker`; the exit-status
+matrix over a stand-in native store; and, when a Hermes interpreter is present,
+the real native Kanban store through the adapter chain. Its explicit integration
+command runs a disposable Compose project on the pinned Hermes image with a
+minimal idle `hermes` service (not the writing recipe, and no model dispatch):
+
+```sh
+HELMET_COMPOSE_INTEGRATION=1 PYTHONPATH=src \
+  python3 -m unittest tests.test_compose_runtime.ComposeIntegrationTests -v
+```
+
+It round-trips DOCX and PPTX bytes through native attachments, checks exit `3`
+for a missing attachment, wrong task, and wrong board, `4` for oversize input, and
+`5` for an integrity mismatch (calling the adapter directly, because the
+coordinator would refuse those inputs first), and confirms earlier bytes are
+unchanged. The unique project and its volume are removed afterwards.
 
 Real-host acceptance is separate and belongs to the deployment adapter. It must run
 a real DOCX input through the real boundary, have a worker produce a revision as a

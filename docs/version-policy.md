@@ -33,6 +33,15 @@ Prereleases advance the base and reset the counter: `0.1.0-rc.5` becomes
 accepts YYYY-MM-DD for reproducible runs. CI accepts a valid date between the
 previous version's date and today, so an overnight review does not invalidate it.
 
+A Captain may select a lower standard increment for one PR by putting exactly one
+line `Version-Override: X.Y.Z` in the PR body (the body only; commit messages are
+ignored). `X.Y.Z` must equal the patch or minor increment of the base version that
+does not exceed the increment the PR would otherwise get, so a `feat` PR can take
+the patch increment but never a larger one. It is refused for breaking changes and
+release promotion, and for a PR where no unit needed the version. Without the line
+the default rules above apply unchanged. The check still runs; only the selected
+number changes, and the PR title and commit types stay truthful.
+
 Explicit release promotion uses the exact title `chore(release): promote version`
 and changes only configured version values: `0.1.1-rc.1` becomes `0.1.1`, without
 another base increment. Existing release review and publication authority still

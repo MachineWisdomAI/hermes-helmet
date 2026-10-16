@@ -173,6 +173,7 @@ consent.
 | `helmet status ISSUE_URL` | Read-only status |
 | `helmet prepare-repo REQUEST_REF --purpose work\|review` | Named-request enrollment of one exact repository (Captain-authorized, idempotent) |
 | `helmet artifact upload\|list\|download` | Task-owned DOCX/PPTX handoff through native attachments; see [task-artifacts.md](task-artifacts.md) |
+| `helmet-compose` | Public reference worker-runtime adapter for a dedicated local Docker Compose worker: native `kanban ...` and the three `artifact-*` verbs only; see [task-artifacts.md](task-artifacts.md#reference-adapter-helmet-compose) |
 | `helmet install-skills` | Install skill into host skill directories |
 | `github-issue-poller` | Sole creator of repair Kanban tasks |
 
@@ -186,8 +187,14 @@ effective merge mode, persisted choice/source, authority fingerprint,
 command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,
-`dispatch-root`, `wait`) so an absent local ledger can still adopt worker truth
-without inventing a second queue. `helmet wait ISSUE_URL` holds one bounded,
+`dispatch-root`, `wait`, plus `prepare-repo` and the `artifact-*` verbs) so an
+absent local ledger can still adopt worker truth without inventing a second
+queue. These verbs are served by a deployment's own adapter. The exception is the
+public reference adapter `helmet-compose`, which supports only native
+`kanban ...` and `artifact-upload|artifact-list|artifact-download` for a dedicated
+local Docker Compose worker and refuses the ledger, dispatch and wait verbs; a
+deployment adapter keeps those and may delegate the supported verbs to it
+([task-artifacts.md](task-artifacts.md#reference-adapter-helmet-compose)). `helmet wait ISSUE_URL` holds one bounded,
 read-only worker-side wait and returns a secret-free cursor plus a wake reason.
 Use it through a native background facility that automatically resumes the
 First Officer on completion. A process handle requiring repeated output checks

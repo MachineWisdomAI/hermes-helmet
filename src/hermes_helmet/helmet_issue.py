@@ -108,8 +108,13 @@ def _resolve_worker_runtime() -> tuple[str, ...]:
       task-attachment handoff over stdin/stdout (see ``task_artifacts`` and
       ``docs/task-artifacts.md``)
 
-    Deployment-specific adapters stay outside this repository; this is only the
-    portable configuration seam. Empty means local ledger/Path only.
+    The ledger, dispatch, wait and repository-preparation verbs are served by
+    deployment-specific adapters that stay outside this repository. The one
+    exception is the public reference Docker Compose adapter, ``helmet-compose``
+    (``compose_runtime``): it owns only ``kanban ...`` and the three
+    ``artifact-*`` verbs for a dedicated local writing project, and a deployment
+    adapter may delegate those verbs to it. This is otherwise the portable
+    configuration seam. Empty means local ledger/Path only.
     """
 
     raw = (os.environ.get("HERMES_HELMET_WORKER_RUNTIME") or "").strip()

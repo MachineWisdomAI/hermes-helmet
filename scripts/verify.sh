@@ -73,6 +73,11 @@ for required in \
     src/hermes_helmet/task_artifacts.py \
     tests/test_task_artifacts.py \
     tests/fixtures/artifact_adapter.py \
+    src/hermes_helmet/compose_runtime.py \
+    src/hermes_helmet/native_artifacts.py \
+    tests/test_compose_runtime.py \
+    tests/fixtures/docker_shim.py \
+    tests/fixtures/compose/artifact-transport.compose.yaml \
     src/hermes_helmet/fava_trails.py \
     src/hermes_helmet/cli.py \
     src/hermes_helmet/install_skills.py \
