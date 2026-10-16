@@ -58,6 +58,9 @@ state. Do not reproduce those checks in this skill.
 6. Present the pinned Matt Pocock skills and gstack entries as recommendations.
    Do not install them. Keep any company skill pack in a separate company-owned
    repository and include a `repo-bootstrap` skill for local initialization rules.
+   For multi-part writing, point the operator to `docs/writing-setup.md`: a
+   dedicated writing worker is configured once there, after which the operator
+   invokes `helmet-write` with only the assignment.
 7. After `~/.hermes-helmet/policy.json` exists, confirm every configured
    repository `worktree` is an existing Git checkout root on this host, with
    origin URLs matching the configured slug. Then run

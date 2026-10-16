@@ -71,6 +71,7 @@ SCAN_ROOTS = (
     "tests",
     "docs",
     "deploy",
+    "examples",
     "skills",
     "scripts",
     ".github",

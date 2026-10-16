@@ -408,7 +408,10 @@ Do this in order:
 3. Keep every factual claim faithful to its section's sources. Do not add
    claims. Record each intentional cut and why in your summary.
 4. Revise for clarity before compressing length.
-5. Save the result as one file in your workspace and submit it with
+5. Before you submit, read the complete assembled {fmt} from the first line
+   to the last (every table, every slide with its notes) for continuity and for
+   fidelity to the accepted inputs. Reading each part alone is not enough.
+6. Save the result as one file in your workspace and submit it with
    `kanban_request_review` (`reviewer` `{coordinator}`, `metadata`
    `{{"artifacts": ["<path>"]}}`). Do not call `kanban_complete`.
 """

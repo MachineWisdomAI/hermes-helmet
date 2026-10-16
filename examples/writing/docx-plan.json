@@ -1,0 +1,36 @@
+{
+  "project": "example-q3-update",
+  "format": "document",
+  "title": "ExampleCo Widgets Q3 Update",
+  "audience": "ExampleCo Widgets customers: operations managers at small warehouses",
+  "purpose": "Explain what shipped in Q3, show the quarter's figures, and show how an order flows through Widgets 4.",
+  "guidance": "Load the neutral skill example-writing-guidance and follow its house style. Voice: direct, calm, specific; plain sentences. Name the product ExampleCo Widgets on first use, then Widgets. Deliver a Word document (.docx) built with the docx skill. Quote every figure exactly as its source gives it, with units in table headers. The section order is: shipped, then order-flow. Figures belong to the shipped section; the order-flow section owns the diagram. The order-flow section embeds the PNG of a Mermaid diagram rendered with the diagram skill and keeps the .mmd and .svg as separate files; the .docx stays the one primary submission. Extra files (the .mmd, .svg and .png) are attached to your card with kanban_attach before you submit; metadata.artifacts names only the one primary file, so the coordinator reviews exactly one submission. The editor reads the complete assembled document, from the title to the last line, against the accepted inputs for continuity and fidelity before submitting it.",
+  "coordinator": "default",
+  "editor": {"assignee": "writing"},
+  "sections": [
+    {
+      "key": "shipped",
+      "title": "What shipped and the quarter in numbers",
+      "assignee": "writing",
+      "brief": "Write one section of about 250 words for a .docx: the two releases with their dates and what each adds, then a table of the four quarter figures (Q2 against Q3), then two sentences on why the load time fell. Save it as shipped.docx.",
+      "sources": [
+        "Assigned source: q3-shipped-notes.md (attached to this card).",
+        "Neighboring passage, for orientation only: the next section, order-flow, explains how an order moves from the device to the ExampleCo order service. Do not write it.",
+        "Authoritative decision: the load-time figure was measured on the 30 September production sample, not in the lab. Say so."
+      ],
+      "input_files": ["sources/q3-shipped-notes.md"]
+    },
+    {
+      "key": "order-flow",
+      "title": "How an order flows",
+      "assignee": "writing",
+      "brief": "Write one section of about 150 words for a .docx that explains the order flow in prose, and embed one rendered Mermaid diagram of it. Author the diagram as order-flow.mmd, render it with the diagram skill, embed order-flow.png in order-flow.docx, and keep order-flow.mmd and order-flow.svg beside it. Submit only order-flow.docx as the primary file.",
+      "sources": [
+        "Assigned source: q3-order-flow-notes.md (attached to this card).",
+        "Neighboring passage, for orientation only: the shipped section lists Widgets 4.0 (14 July, offline mode) and 4.1 (9 September, shared order lists). Do not repeat its figures.",
+        "Authoritative decision: the diagram shows exactly two ways in, online and offline, and only the order service confirms or rejects an order. Q4 plans in the notes belong to another document and are out of scope."
+      ],
+      "input_files": ["sources/q3-order-flow-notes.md"]
+    }
+  ]
+}

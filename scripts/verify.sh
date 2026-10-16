@@ -91,6 +91,13 @@ for required in \
     examples/writing/guidance/example-writing-guidance/SKILL.md \
     examples/writing/guidance/example-writing-guidance/references/house-style.md \
     docs/writing-setup.md \
+    examples/writing/docx-plan.json \
+    examples/writing/pptx-plan.json \
+    examples/writing/sources/q3-shipped-notes.md \
+    examples/writing/sources/q3-order-flow-notes.md \
+    examples/writing/sources/product-overview-notes.md \
+    tests/test_writing_walkthrough.py \
+    tests/fixtures/codex_skills_probe.py \
     tests/fixtures/docker_shim.py \
     tests/fixtures/compose/artifact-transport.compose.yaml \
     src/hermes_helmet/fava_trails.py \

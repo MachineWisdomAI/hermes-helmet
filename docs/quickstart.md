@@ -313,7 +313,9 @@ fresh issue or epic pass. Exit `2` is a clean timeout. Pass the returned cursor
 to the next wait after every outcome. Exit `1` is a transport or contract
 failure.
 
-See [helmet-issue.md](helmet-issue.md) and [helmet-epic.md](helmet-epic.md).
+See [helmet-issue.md](helmet-issue.md) and [helmet-epic.md](helmet-epic.md). To
+have a worker write a DOCX or PPTX instead, follow the runnable walkthrough in
+[Fresh writing worker](writing-setup.md) and [Helmet Write](helmet-write.md).
 
 ## Host setup wizard (optional)
 

@@ -5,6 +5,23 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Expose **Hermes Helmet: Helmet Write** through the installed plugin and prove the
+  writing walkthrough. The Codex and Claude manifests and the marketplace entry now name
+  `hermes-helmet:helmet-write` beside `hermes-helmet:helmet-epic`; the canonical
+  `skills/helmet-write/` tree is unchanged in layout (no second copy). The skill now runs
+  from the assignment alone, checks readiness of every selected profile (including a
+  replacement), gives each contributor only its assigned sources, neighboring passages and
+  authoritative decisions, never promotes a raw unaccepted review to a requirement, and
+  reports structural checks apart from its source-based editorial assessment. The editor
+  card now requires reading the complete assembled artifact before submitting.
+  `examples/writing/` adds synthetic sources and DOCX (two contributions plus editor) and
+  PPTX (one contribution plus editor) plans. `docs/writing-setup.md` gains the runnable
+  walkthrough, capacity notes and format/diagram limits. `tests/test_writing_walkthrough.py`
+  runs both plans on the real native Kanban CLI with scripted workers and, when
+  `HELMET_CODEX_BIN` is set, installs and updates the plugin in an isolated Codex home and
+  asks that host which skills it discovers. This PR takes 0.23.3 through
+  `Version-Override`.
+
 - Make the YAML parser part of the normal installation. `pyproject.toml` now declares
   PyYAML as a runtime dependency (the `worker` extra remains for compatibility), so a
   coordinator that installs only the wheel can run `helmet write profile-check`. The
