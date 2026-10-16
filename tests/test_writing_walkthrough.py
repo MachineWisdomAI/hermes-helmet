@@ -502,7 +502,9 @@ class CodexHostDiscoveryTests(unittest.TestCase):
         work = self.base / "work"
         repo = self.base / "srv" / "helmet.git"
         work.mkdir()
-        subprocess.run(["git", "init", "-q", str(work)], check=True)
+        # Name the branch explicitly: the host's init.defaultBranch must not decide
+        # which ref the bare marketplace repository serves as HEAD.
+        subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
         for relative in (".claude-plugin", ".codex-plugin", "skills", "codex.mcp.json", "mcp", "hooks", "types"):
             source = ROOT / relative
             target = work / relative
@@ -526,7 +528,7 @@ class CodexHostDiscoveryTests(unittest.TestCase):
                 self.assertTrue((write_dir / "references" / f"{reference}.md").is_file(), reference)
             # Update from the previously installed version.
             self.commit_tree(work, "0.0.2")
-            subprocess.run(["git", "-C", str(work), "push", "-q", str(repo), "HEAD:refs/heads/master"], check=True)
+            subprocess.run(["git", "-C", str(work), "push", "-q", str(repo), "HEAD:refs/heads/main"], check=True)
             subprocess.run(["git", "-C", str(repo), "update-server-info"], check=True)
             self.codex("plugin", "marketplace", "upgrade", "hermes-helmet")
             updated = json.loads(self.codex("plugin", "list", "--marketplace", "hermes-helmet", "--json"))
