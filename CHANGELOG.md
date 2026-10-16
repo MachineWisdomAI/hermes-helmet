@@ -19,7 +19,7 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   walkthrough, capacity notes and format/diagram limits. `tests/test_writing_walkthrough.py`
   runs both plans on the real native Kanban CLI with scripted workers and, when
   `HELMET_CODEX_BIN` is set, installs and updates the plugin in an isolated Codex home and
-  asks that host which skills it discovers. This PR takes 0.23.3 through
+  asks that host which skills it discovers. This PR takes 0.23.4 through
   `Version-Override`.
 
 - Fix `helmet write request-changes` reporting `request_changes_unverified` when the
