@@ -22,6 +22,16 @@ Everything lives in native Kanban tasks and attachments; the `helmet write`
 commands only add revision checks. Writers get writing guidance on their cards,
 never Captain authority.
 
+## Invocation
+
+The user invokes this skill with its reference and a writing assignment, for
+example "write the Q3 update for customers from these notes". That is all.
+They do not paste a spec, a handoff, CLI setup commands, plan JSON or
+orchestration instructions. You shape the plan, run the workflow and report.
+Ask only for what the assignment lacks (audience, purpose, format, sources).
+The worker and its provider are configured once beforehand
+(`docs/writing-setup.md`); if the readiness checks below fail, say so and stop.
+
 ## When to Use
 
 - Several people-hours of writing that splits into parts: a report with
@@ -32,15 +42,27 @@ never Captain authority.
 
 ## Steps
 
+0. **Check readiness.** Before the first card, for every profile the plan will
+   name (writers, editor, and any replacement you may supersede to), confirm it
+   is dispatchable and fresh: it is in the worker's `kanban.dispatch_profiles`,
+   `helmet write profile-check` is clean, and its guidance skill is discoverable.
+   Check a replacement the same way before you rely on it.
 1. **Shape the plan.** Fix audience, purpose, format (`document` or `deck`),
    guidance, sources per part, writer profiles, one editor profile, and
    yourself as coordinator. Only the coordinator must differ from every writer
    and the editor. Writers and the editor may share one writing profile (for
    example `writing`); each works its own card in its own session. For
    assignment rules by format, read
-   `references/assignments.md`.
-2. **Create the cards.** Write the plan JSON ([schema](references/plan.md)) and
-   run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its
+   `references/assignments.md`. Give each contributor only its assigned
+   sources, the neighboring passages it needs and the authoritative decisions
+   that apply; never the whole source collection. Put audience, voice and the
+   guidance pack in the plan's `guidance` so the editor receives them too.
+2. **Create the cards.** Choose the board and make sure it exists: a fresh
+   worker has only `default`, and `plan` does not create a board. Run
+   `$HERMES_HELMET_HERMES kanban boards list`; if your board is missing, create
+   it with `$HERMES_HELMET_HERMES kanban boards create BOARD` (repeating it is
+   harmless), or plan on `default`. Then write the plan JSON
+   ([schema](references/plan.md)) and run `helmet write plan BOARD plan.json`. Re-running the same plan reuses its
    cards; a changed plan is refused.
    Input files named in the plan are attached as native artifacts.
 3. **Wait for submissions.** A writer submits with native request-review and
@@ -62,8 +84,14 @@ never Captain authority.
    `helmet write release-editor BOARD EDITOR`. It checks each accepted run was
    made by you and not the writer, attaches the accepted files and decisions,
    and only then starts the editor.
-7. **Accept the final.** Review the editor's submission the same way. The
-   canonical document is `helmet write canonical BOARD EDITOR --output PATH`.
+7. **Accept the final.** The editor's completion criterion includes reading
+   the complete assembled artifact for continuity and fidelity to the accepted
+   inputs before it submits. Review that actual artifact the same way, as an
+   exact revision. Report two things separately: structural checks (file opens,
+   required text, table values, slide order, notes, embedded image) and your
+   source-based editorial assessment. Sizes, elapsed time and word counts are
+   descriptive, not targets. The canonical document is
+   `helmet write canonical BOARD EDITOR --output PATH`.
 
 ## Rules
 
@@ -71,6 +99,8 @@ never Captain authority.
   alone dispatches nothing.
 - Never complete a section card yourself and never unblock the editor by hand.
 - Revise for clarity and fidelity before compressing length.
+- Never promote a raw, unaccepted review comment to a requirement. Only
+  `--decision` text you record at acceptance reaches the editor.
 - Writers never edit the canonical document or another writer's file.
 - Check fresh context with `helmet write context BOARD TASK` and read
   `references/context.md` for what the profile must configure.

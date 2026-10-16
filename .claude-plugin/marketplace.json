@@ -8,7 +8,7 @@
     {
       "name": "hermes-helmet",
       "source": "./",
-      "description": "Captain-side setup-helmet, helmet-issue, helmet-epic, helmet-review, and helmet-write skills."
+      "description": "Captain-side setup-helmet, helmet-issue, helmet-epic, helmet-review, and helmet-write skills (hermes-helmet:helmet-epic and hermes-helmet:helmet-write)."
     }
   ]
 }

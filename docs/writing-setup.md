@@ -10,8 +10,10 @@ Your first officer plans and reviews the writing on your host with
 through native Kanban attachments, reached by the `helmet-compose` adapter
 described in [Task artifacts](task-artifacts.md).
 
-This page covers the image, the Compose project and the profile configuration.
-It does not run a model for you. You supply the provider and credentials.
+This page covers the image, the Compose project, the profile configuration and a
+runnable first walkthrough: install the plugin, point your first officer at the
+worker, and ask for a DOCX or PPTX. It does not run a model for you. You supply
+the provider and credentials.
 
 ## What you get
 
@@ -189,8 +191,115 @@ export HERMES_HELMET_WORKER_RUNTIME=helmet-compose
 
 `helmet-compose` requires both `COMPOSE_FILE` and `COMPOSE_PROJECT_NAME`. It
 supports native `kanban ...` and the three `artifact-*` verbs only. See
-[Task artifacts](task-artifacts.md). The Helmet Write plugin invocation and a
-worked end-to-end example are a separate step and not part of this page.
+[Task artifacts](task-artifacts.md).
+
+## 8. Install the plugin
+
+The plugin supplies the `hermes-helmet:helmet-write` skill beside
+`hermes-helmet:helmet-epic`. Install it once per first-officer host
+([all hosts and updates](first-officer-plugins.md)):
+
+```bash
+codex plugin marketplace add MachineWisdomAI/hermes-helmet
+codex plugin add hermes-helmet@hermes-helmet
+# Claude Code instead:
+#   claude plugin marketplace add MachineWisdomAI/hermes-helmet
+#   claude plugin install hermes-helmet@hermes-helmet
+```
+
+Open a **new** session afterwards (Claude Code: `/reload-plugins` also works).
+Skills are read when a session starts. After a later update
+(`codex plugin marketplace upgrade hermes-helmet`) open a new session again.
+
+If the skill is missing, a standalone copy of `helmet-write` in `~/.codex/skills`
+or `~/.claude/skills` can mask the plugin's. Remove only that copy; leave
+unrelated skills alone.
+
+## 9. Ask for a document
+
+Invoke the skill by its reference and describe the writing, nothing else:
+
+```text
+Use hermes-helmet:helmet-write. Write a Q3 update for ExampleCo Widgets
+customers as a Word document: what shipped, the quarter's figures, and how an
+order flows, with a diagram. Use the notes in examples/writing/sources.
+```
+
+For a deck: "Use hermes-helmet:helmet-write. Make a four-slide Widgets 4
+overview deck with speaker notes from examples/writing/sources/product-overview-notes.md."
+
+You do not paste a plan, a handoff, CLI commands or instructions for the
+workers. The skill shapes the plan, runs the workflow and reports back. It asks
+only for what the assignment lacks, such as the audience or the sources.
+
+What the skill does, and what you can check afterwards:
+
+1. **Readiness.** For every profile the plan names, including any replacement
+   writer, it confirms the profile is in `kanban.dispatch_profiles`,
+   `helmet write profile-check` is clean and the guidance skill is discoverable.
+2. **Assignments.** Each contributor card carries only its assigned sources,
+   the neighboring passages it needs and the decisions that apply, not the
+   whole source collection. Audience, voice and the guidance pack travel in the
+   plan's `guidance`, so the editor receives them too.
+3. **Review.** Each submission is reviewed as an exact revision. One round of
+   concrete requested changes goes back to the same card and writing profile.
+   A raw review comment is never promoted to a requirement: only the decisions
+   recorded at acceptance reach the editor.
+4. **Assembly.** The editor receives the accepted files and decisions, and its
+   completion criterion includes reading the complete assembled artifact for
+   continuity and fidelity to those inputs before it submits.
+5. **Retrieval.** The first officer reviews the editor's exact revision, then
+   retrieves the canonical file with `helmet write canonical` into a local path.
+   The file survives the worker's scratch cleanup because native Kanban stages
+   it as an attachment when the card is submitted.
+
+The reference plans are `examples/writing/docx-plan.json` (two contributions on
+the same `writing` profile, plus the editor) and `examples/writing/pptx-plan.json`
+(one contribution plus the editor), with synthetic notes in
+`examples/writing/sources/`. They are examples of what the skill produces, not
+something you type in. A fresh worker has only the `default` board, and
+`helmet write plan` does not create one, so create the board first. The command
+is safe to repeat; it reports `already exists` when the board is there. To run
+one plan directly:
+
+```bash
+helmet-compose kanban boards create writing-demo
+helmet write plan writing-demo examples/writing/docx-plan.json
+```
+
+To use the `default` board instead, name `default` in place of `writing-demo`.
+
+### Capacity and the shared profile
+
+Writers and the editor use one `writing` profile. Two writers run at the same
+time only when native capacity allows it (`kanban.max_in_progress_per_profile`
+at least 2, step 3). With capacity 1 the second card waits and nothing is wrong.
+Each card still has its own session and its own workspace.
+
+### Reading the result
+
+Report two kinds of finding separately:
+
+- **Structural checks**: the file opens; required text and table values are
+  present; for a deck, slide order, slide text and speaker notes; the diagram
+  image is embedded; the `.mmd`, `.svg` and `.png` are separate attachments and
+  the DOCX or PPTX is the one primary submission.
+- **Source-based editorial assessment**: your own reading of the final artifact
+  against the sources and accepted decisions, for fidelity and continuity.
+
+Source size, elapsed time and word counts are descriptive. They are not targets.
+Structural checks do not establish pagination or slide layout.
+
+## Limits
+
+| Area | Supported | Not supported |
+| --- | --- | --- |
+| Formats | `.docx` and `.pptx`, built with the image's `docx` and `powerpoint` skills | Other formats; PDF output |
+| Diagrams | Mermaid source to `.svg` and `.png`, embedded as PNG | Excalidraw, other diagram languages, hand-drawn images |
+| Attachments | Files up to 25 MiB each | Larger files |
+| Dispatch | The fixed allowlist `[writing]` | A profile you add later, until you add it yourself |
+| Reset | Fresh-only: a disposable pre-use project | Reconfiguring a deployment that has tasks |
+| Office preview | Optional, later, as `preview` attachments | Page and slide rendering is not installed |
 
 ## Diagrams
 

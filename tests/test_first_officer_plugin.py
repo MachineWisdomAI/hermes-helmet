@@ -151,6 +151,70 @@ class FirstOfficerPluginTests(unittest.TestCase):
             self.assertTrue(reference.is_file())
             self.assertGreater(reference.stat().st_size, 0)
 
+    def test_manifests_and_docs_expose_helmet_write_beside_helmet_epic(self) -> None:
+        codex = _load_json(".codex-plugin/plugin.json")
+        claude = _load_json(".claude-plugin/plugin.json")
+        marketplace = _load_json(".claude-plugin/marketplace.json")
+        interface = codex["interface"]
+        self.assertTrue(any("helmet-write" in prompt for prompt in interface["defaultPrompt"]))
+        self.assertTrue(any("helmet-epic" in prompt for prompt in interface["defaultPrompt"]))
+        self.assertIn("helmet-write", interface["longDescription"])
+        self.assertTrue(any("writing" in item.lower() for item in interface["capabilities"]))
+        self.assertIn("writing", codex["description"].lower())
+        self.assertIn("Helmet Write", claude["description"])
+        entry = marketplace["plugins"][0]["description"]
+        for skill in ("helmet-epic", "helmet-write"):
+            self.assertIn(f"hermes-helmet:{skill}", entry)
+        guide = (ROOT / INSTALL_GUIDE).read_text(encoding="utf-8")
+        self.assertIn("/hermes-helmet:helmet-write", guide)
+
+    def test_writing_walkthrough_is_linked_from_quickstart_writing_and_setup_docs(self) -> None:
+        for relative in (
+            "docs/quickstart.md", "docs/helmet-write.md", "docs/setup-helmet.md",
+            "skills/setup-helmet/SKILL.md",
+        ):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("writing-setup", text, relative)
+        setup = " ".join((ROOT / "docs" / "writing-setup.md").read_text(encoding="utf-8").split())
+        for phrase in (
+            "Use hermes-helmet:helmet-write", "dedicated shell", "dispatch allowlist", "Fresh-only",
+            "Office preview", "Mermaid", "25 MiB", "down --volumes",
+            "examples/writing/docx-plan.json", "examples/writing/pptx-plan.json",
+            "Structural checks", "Source-based editorial assessment", "replacement writer",
+        ):
+            self.assertIn(phrase, setup, phrase)
+
+    def test_helmet_write_skill_runs_from_the_assignment_alone(self) -> None:
+        text = " ".join((ROOT / "skills" / "helmet-write" / "SKILL.md").read_text(encoding="utf-8").split())
+        for phrase in (
+            "They do not paste a spec", "Check readiness", "any replacement",
+            "only its assigned sources", "complete assembled artifact",
+            "structural checks", "source-based editorial assessment",
+            "Never promote a raw, unaccepted review comment",
+        ):
+            self.assertIn(phrase.lower(), text.lower(), phrase)
+
+    def test_writing_examples_are_synthetic_and_match_the_plan_schema(self) -> None:
+        from hermes_helmet import writing_review as wr
+
+        examples = ROOT / "examples" / "writing"
+        for name, fmt, contributions in (("docx-plan.json", "document", 2), ("pptx-plan.json", "deck", 1)):
+            plan = json.loads((examples / name).read_text(encoding="utf-8"))
+            checked = wr.validate_plan(plan)
+            self.assertEqual(checked["format"], fmt)
+            self.assertEqual(len(checked["sections"]), contributions)
+            self.assertEqual(checked["editor"]["assignee"], "writing")
+            self.assertEqual({s["assignee"] for s in checked["sections"]}, {"writing"})
+            self.assertNotEqual(checked["coordinator"], "writing")
+            self.assertIn("example-writing-guidance", checked["guidance"])
+            self.assertIn("complete assembled", checked["guidance"])
+            for section in plan["sections"]:
+                for source in section["input_files"]:
+                    self.assertTrue((examples / source).is_file(), source)
+                    self.assertIn("Synthetic", (examples / source).read_text(encoding="utf-8"))
+        self.assertIn("examples", public_surface.SCAN_ROOTS)
+        self.assertEqual(public_surface.scan_public_surface(ROOT), [])
+
     def test_plugin_trees_do_not_duplicate_skills(self) -> None:
         nested = [
             path

@@ -1,6 +1,10 @@
 # Plan file
 
-`helmet write plan BOARD plan.json` reads one JSON object:
+`helmet write plan BOARD plan.json` reads one JSON object. `BOARD` must already
+exist: `plan` fails with `kanban_command_failed` before creating cards when it
+does not. A fresh worker has only `default`; list boards with
+`$HERMES_HELMET_HERMES kanban boards list` and create one with
+`$HERMES_HELMET_HERMES kanban boards create BOARD` (safe to repeat), or use `default`.
 
 ```json
 {

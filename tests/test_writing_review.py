@@ -1155,19 +1155,19 @@ class NativeAttachmentTransport:
     def __init__(self, runner: CleanEnvRunner) -> None:
         self.runner = runner
 
-    def _rows(self, task_id: str) -> list[dict]:
-        out = self.runner.run(["hermes", "kanban", "--board", BOARD, "attachments", task_id, "--json"])
+    def _rows(self, board: str, task_id: str) -> list[dict]:
+        out = self.runner.run(["hermes", "kanban", "--board", board, "attachments", task_id, "--json"])
         return json.loads(out)
 
     def list_attachments(self, board, task_id):  # type: ignore[no-untyped-def]
         rows = []
-        for row in self._rows(task_id):
+        for row in self._rows(board, task_id):
             data = Path(row["stored_path"]).read_bytes()
             rows.append({**row, "task_id": task_id, "sha256": hashlib.sha256(data).hexdigest()})
         return rows
 
     def download(self, board, task_id, attachment_id):  # type: ignore[no-untyped-def]
-        row = next(r for r in self._rows(task_id) if r["id"] == attachment_id)
+        row = next(r for r in self._rows(board, task_id) if r["id"] == attachment_id)
         return Path(row["stored_path"]).read_bytes()
 
     def upload(self, board, task_id, *, name, media_type, data, sha256):  # type: ignore[no-untyped-def]
@@ -1176,7 +1176,7 @@ class NativeAttachmentTransport:
         source = staging / name
         source.write_bytes(data)
         self.runner.run(
-            ["hermes", "kanban", "--board", BOARD, "attach", task_id, str(source),
+            ["hermes", "kanban", "--board", board, "attach", task_id, str(source),
              "--name", name, "--content-type", media_type]
         )
         return next(r for r in reversed(self.list_attachments(board, task_id)) if r["filename"] == name)
@@ -1273,7 +1273,7 @@ class NativeBoardTests(unittest.TestCase):
         names = [r["filename"] for r in self.transport.list_attachments(BOARD, editor)]
         self.assertEqual(len(names), 2)
         self.assertNotIn("draft one", "".join(
-            self.transport.download(BOARD, editor, r["id"]).decode() for r in self.transport._rows(editor)
+            self.transport.download(BOARD, editor, r["id"]).decode() for r in self.transport._rows(BOARD, editor)
         ))
 
     def test_native_events_show_an_immediate_claim_as_delivery_of_this_feedback(self) -> None:

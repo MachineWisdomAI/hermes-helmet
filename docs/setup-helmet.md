@@ -83,12 +83,16 @@ and a company skill pack are all declined.
 
 ## Bundled skills
 
-`setup-helmet`, `helmet-issue`, and `helmet-epic` install atomically into the
+`setup-helmet`, `helmet-issue`, `helmet-epic`, `helmet-review`, `helmet-write` and
+`observe-chat` install atomically into the
 standard Codex, Claude Code, and Hermes skill locations. Conflicting hosts are
 reported before any setup or GitHub mutation; foreign skill files are left
 untouched. Existing host roots, skill roots, destination directories, and
 `SKILL.md` files are checked component by component before they are read or
 changed; symlink redirects and group/other-writable components fail closed.
+
+For writing, set up a worker once with [Fresh writing worker](writing-setup.md), then
+invoke `hermes-helmet:helmet-write` with only your assignment.
 
 Claude Code and Codex can instead load the same root `skills/` tree as a plugin;
 see [first-officer-plugins.md](first-officer-plugins.md). That path does not

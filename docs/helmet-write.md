@@ -239,7 +239,8 @@ settings.
    the deployment's role policy) for writers and editor; they may all be the
    same profile, each on its own card and session. The coordinator is the
    first officer's own profile and must be none of them. For a fresh Docker
-   Compose worker, see [Fresh writing worker](writing-setup.md).
+   Compose worker and a runnable first walkthrough, see
+   [Fresh writing worker](writing-setup.md).
 3. Configure the writing profiles: memory and provider off, `session_search`
    disabled through `agent.disabled_toolsets`, plugin installed and enabled,
    `profile-check` clean. Run the coordinator commands as the planned coordinator
