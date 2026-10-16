@@ -22,6 +22,16 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   asks that host which skills it discovers. This PR takes 0.23.3 through
   `Version-Override`.
 
+- Fix `helmet write request-changes` reporting `request_changes_unverified` when the
+  correct writer claimed the card immediately after the native reopen. A `running` card
+  now verifies as delivered only when the native record correlates it: the profile that
+  submitted the reviewed run holds it, a `review_reopened` event follows that run's
+  review request, every later run is by that profile and was claimed after the reopen,
+  and exactly one feedback comment names the reviewed token. Wrong-profile, earlier,
+  unclaimed, duplicate-feedback and intervening-submission cases still fail, and the
+  command never replays feedback. Partial fix; editor replacement for #122 is deferred
+  (Refs #122).
+
 - Make the YAML parser part of the normal installation. `pyproject.toml` now declares
   PyYAML as a runtime dependency (the `worker` extra remains for compatibility), so a
   coordinator that installs only the wheel can run `helmet write profile-check`. The

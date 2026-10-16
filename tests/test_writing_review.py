@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
+from collections.abc import Callable
 import shutil
 import subprocess
 import sys
@@ -74,10 +76,11 @@ class FakeBoard:
         self.calls: list[str] = []
         self.before_complete = None
         self.before_reopen = None
+        self.after_reopen: Callable[[], None] | None = None
 
     # -- helpers ------------------------------------------------------------
-    def _event(self, task: dict, kind: str, **payload: object) -> None:
-        task["events"].append({"kind": kind, "payload": payload or None})
+    def _event(self, task: dict, kind: str, run_id: int | None = None, **payload: object) -> None:
+        task["events"].append({"kind": kind, "payload": payload or None, "run_id": run_id})
 
     def _parents_done(self, task: dict) -> bool:
         return all(self.tasks[p]["status"] == "done" for p in task["parents"])
@@ -176,6 +179,7 @@ class FakeBoard:
             {"id": self.run_seq, "profile": task["assignee"], "status": "running",
              "outcome": None, "summary": None, "metadata": None}
         )
+        self._event(task, "claimed", run_id=self.run_seq, run=self.run_seq)
 
     def request_review(self, task_id: str, name: str, data: bytes, reviewer: str, summary: str) -> ta.ArtifactRef:
         """Test-only: the writer's native request-review (stages the file)."""
@@ -192,6 +196,7 @@ class FakeBoard:
         task["implementer"] = task["assignee"]
         task["assignee"] = reviewer
         task["status"] = "review"
+        self._event(task, "review_requested", run_id=run["id"], implementer=task["implementer"], reviewer=reviewer)
         return ref
 
     def writer_complete(self, task_id: str) -> None:
@@ -213,7 +218,11 @@ class FakeBoard:
             self._fail()
         task["status"] = "ready" if self._parents_done(task) else "todo"
         task["assignee"] = task["implementer"] or task["assignee"]
+        self._event(task, "review_reopened", status=task["status"], implementer=task["assignee"])
         task["comments"].append({"author": self.profile, "body": f"CHANGES REQUESTED: {reason}"})
+        if self.after_reopen:
+            hook, self.after_reopen = self.after_reopen, None
+            hook()
 
     def complete(self, task_id: str, summary: str, metadata) -> None:  # type: ignore[no-untyped-def]
         self.calls.append("complete")
@@ -855,6 +864,103 @@ class RequestChangesRaceTests(Harness):
         newest = self.review.history(self.s1)["revisions"][-1]["revision"]
         self.assertNotEqual(newest, first.revision.token)
 
+    # -- immediate claim after the native reopen ---------------------------------
+
+    def claim_after_reopen(self, profile: str | None = None) -> None:
+        def hook() -> None:
+            self.board.claim(self.s1)
+            if profile:
+                self.board.tasks[self.s1]["runs"][-1]["profile"] = profile
+
+        self.board.after_reopen = hook
+
+    def feedback_comments(self, token: str) -> list[str]:
+        return [c["body"] for c in self.board.tasks[self.s1]["comments"]
+                if "CHANGES REQUESTED" in c["body"] and token in c["body"]]
+
+    def test_the_correct_writer_claiming_immediately_is_a_verified_success(self) -> None:
+        first = self.submit(self.s1, "draft one")
+        self.claim_after_reopen()
+        result = self.review.request_changes(self.s1, first.revision.token, "Tighten paragraph two.")
+        self.assertEqual((result["status"], result["assignee"]), ("running", "writer1"))
+        self.assertEqual(result["reviewed_revision"], first.revision.token)
+        self.assertEqual(self.board.calls.count("reopen"), 1)
+        self.assertEqual(len(self.feedback_comments(first.revision.token)), 1)
+        self.assertEqual(len(self.board.tasks[self.s1]["runs"]), 2)
+
+    def test_a_claim_by_the_wrong_profile_is_not_delivery(self) -> None:
+        first = self.submit(self.s1, "draft one")
+        self.claim_after_reopen(profile="writer2")
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten.")
+        self.assertEqual(caught.exception.code, "request_changes_unverified")
+
+    def test_a_running_card_without_a_claim_after_the_reopen_is_not_delivery(self) -> None:
+        first = self.submit(self.s1, "draft one")
+        task = self.board.tasks[self.s1]
+
+        def unrelated_running_state() -> None:
+            # The card shows `running` for the right profile, but no new claim
+            # followed the reopen event.
+            task["status"] = "running"
+
+        self.board.after_reopen = unrelated_running_state
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten.")
+        self.assertEqual(caught.exception.code, "request_changes_unverified")
+
+    def test_a_claim_that_precedes_the_reopen_event_is_not_delivery(self) -> None:
+        first = self.submit(self.s1, "draft one")
+        task = self.board.tasks[self.s1]
+
+        def earlier_run() -> None:
+            # A run exists after the reviewed one, but its claim event sits
+            # ahead of the reopen event, so it is not the delivery of this feedback.
+            self.board.claim(self.s1)
+            claim = task["events"].pop()
+            reopen_at = max(i for i, e in enumerate(task["events"]) if e["kind"] == "review_reopened")
+            task["events"].insert(reopen_at, claim)
+
+        self.board.after_reopen = earlier_run
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten.")
+        self.assertEqual(caught.exception.code, "request_changes_unverified")
+
+    def test_an_intervening_submission_after_the_claim_is_a_conflict_not_success(self) -> None:
+        first = self.submit(self.s1, "draft one")
+
+        def claim_and_resubmit() -> None:
+            self.board.claim(self.s1)
+            self.board.request_review(self.s1, "section.md", b"draft two", FO, "revised")
+
+        self.board.after_reopen = claim_and_resubmit
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten.")
+        self.assertEqual(caught.exception.code, "request_changes_conflict")
+
+    def test_feedback_recorded_twice_is_not_verified_as_sent_once(self) -> None:
+        first = self.submit(self.s1, "draft one")
+
+        def duplicate() -> None:
+            self.board.claim(self.s1)
+            self.board.tasks[self.s1]["comments"].append(
+                {"author": FO, "body": f"CHANGES REQUESTED: on {first.revision.token}: Tighten."})
+
+        self.board.after_reopen = duplicate
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten.")
+        self.assertEqual(caught.exception.code, "request_changes_unverified")
+
+    def test_a_stale_token_cannot_reach_the_claimed_card(self) -> None:
+        first = self.submit(self.s1, "draft one")
+        self.claim_after_reopen()
+        self.review.request_changes(self.s1, first.revision.token, "Tighten.")
+        before = self.board.calls.count("reopen")
+        with self.assertRaises(wr.WritingReviewError) as caught:
+            self.review.request_changes(self.s1, first.revision.token, "Tighten again.")
+        self.assertEqual(caught.exception.code, "not_in_review")
+        self.assertEqual(self.board.calls.count("reopen"), before)
+
     def test_the_normal_request_changes_still_succeeds_with_the_run_check(self) -> None:
         sub = self.submit(self.s1, "draft one")
         result = self.review.request_changes(self.s1, sub.revision.token, "Tighten.")
@@ -1169,6 +1275,20 @@ class NativeBoardTests(unittest.TestCase):
         self.assertNotIn("draft one", "".join(
             self.transport.download(BOARD, editor, r["id"]).decode() for r in self.transport._rows(BOARD, editor)
         ))
+
+    def test_native_events_show_an_immediate_claim_as_delivery_of_this_feedback(self) -> None:
+        planned = self.plan()
+        s1 = planned["sections"]["shipped"]
+        first = self.submit(s1, "section.md", "draft one")
+        self.kanban("reopen-review", s1, "--reason", f"on {first.revision.token}: Tighten.", profile=FO)
+        self.kanban("claim", s1)
+        shown = json.loads(self.kanban("show", s1, "--json"))
+        self.assertEqual(shown["task"]["status"], "running")
+        self.assertTrue(wr._feedback_delivered(shown, first))
+        # The same record does not vouch for a different writer, token or run.
+        self.assertFalse(wr._feedback_delivered(shown, dataclasses.replace(first, implementer="writer2")))
+        other = dataclasses.replace(first, revision=dataclasses.replace(first.revision, run_id=99))
+        self.assertFalse(wr._feedback_delivered(shown, other))
 
     def test_a_non_coordinator_runtime_cannot_review_on_the_real_board(self) -> None:
         planned = self.plan()
