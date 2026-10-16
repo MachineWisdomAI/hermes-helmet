@@ -190,7 +190,10 @@ class GitHubClient:
         try:
             with request.urlopen(req, timeout=20) as response:
                 raw = response.read()
-        except (OSError, urlerror.URLError, urlerror.HTTPError) as exc:
+        except urlerror.HTTPError as exc:
+            with exc:
+                raise SetupError("GitHub worker verification failed") from exc
+        except (OSError, urlerror.URLError) as exc:
             raise SetupError("GitHub worker verification failed") from exc
         if not raw:
             return {}
@@ -250,30 +253,32 @@ class GitHubClient:
                 # the non-mutating contract, so fail closed.
                 raise SetupError("GitHub capability probe unexpectedly succeeded")
         except urlerror.HTTPError as exc:
-            if exc.code == 422:
-                try:
-                    payload = json.loads(exc.read().decode("utf-8"))
-                except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
-                    raise SetupError("GitHub capability probe returned unexpected validation") from exc
-                expected = set(expected_errors)
-                observed = _structured_write_errors(payload)
-                if observed is not None:
-                    valid = observed == expected if exact_errors else expected.issubset(observed)
-                    if valid:
+            # HTTPError owns a response body, including on rejected probes.
+            with exc:
+                if exc.code == 422:
+                    try:
+                        payload = json.loads(exc.read().decode("utf-8"))
+                    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+                        raise SetupError("GitHub capability probe returned unexpected validation") from exc
+                    expected = set(expected_errors)
+                    observed = _structured_write_errors(payload)
+                    if observed is not None:
+                        valid = observed == expected if exact_errors else expected.issubset(observed)
+                        if valid:
+                            return True
+                        raise SetupError("GitHub capability probe returned unexpected validation") from exc
+                    named = _invalid_request_missing_fields(payload)
+                    expected_fields = {field for field, _code in expected_errors}
+                    if (
+                        named is not None
+                        and named == expected_fields
+                        and all(code == "missing_field" for _field, code in expected_errors)
+                    ):
                         return True
                     raise SetupError("GitHub capability probe returned unexpected validation") from exc
-                named = _invalid_request_missing_fields(payload)
-                expected_fields = {field for field, _code in expected_errors}
-                if (
-                    named is not None
-                    and named == expected_fields
-                    and all(code == "missing_field" for _field, code in expected_errors)
-                ):
-                    return True
-                raise SetupError("GitHub capability probe returned unexpected validation") from exc
-            if exc.code in {401, 403, 404}:
-                return False
-            raise SetupError("GitHub worker capability verification failed") from exc
+                if exc.code in {401, 403, 404}:
+                    return False
+                raise SetupError("GitHub worker capability verification failed") from exc
         except (OSError, urlerror.URLError) as exc:
             raise SetupError("GitHub worker capability verification failed") from exc
 

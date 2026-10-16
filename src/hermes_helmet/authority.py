@@ -1390,6 +1390,18 @@ from memory, the run is incomplete even when its technical task succeeded.
 """
 
 
+VERIFICATION_GUIDANCE = (
+    "\n\nCapture verification output to a log and preserve its exit status; a tail or "
+    "grep pipeline is not a passing test result. On failure, read the complete failure "
+    "and reproduce the named failing test before changing code; do not rerun the unchanged full suite "
+    "to rediscover the same failure. After the focused fix passes, run required full verification "
+    "on the final candidate. If the failure is unrelated, confirm it once on the base, "
+    "record that evidence, and report the blocker without expanding scope. For long commands, "
+    "use the supported background/process-status path with bounded waits. A tool timeout "
+    "does not prove the process stopped; inspect it before starting another copy."
+)
+
+
 def render_issue_task_body(
     *,
     issue_url: str,
@@ -1412,6 +1424,7 @@ def render_issue_task_body(
         f"({allowlist}). Do not use the Captain identity "
         f"({policy.captain_github_login or 'configured-captain'}) or any identity "
         "other than the configured worker."
+        + VERIFICATION_GUIDANCE
     )
 
 
@@ -1439,6 +1452,7 @@ def render_repair_task_body(
         "cleanup. Complete this repair card after pushing the same PR with "
         "metadata.published_pr; a later external review event will create the next "
         "dependent card."
+        + VERIFICATION_GUIDANCE
     )
 
 

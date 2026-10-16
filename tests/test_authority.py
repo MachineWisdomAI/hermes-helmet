@@ -481,6 +481,22 @@ class AuthorityTests(unittest.TestCase):
         for marker in FORBIDDEN_PUBLIC_MARKERS:
             self.assertNotIn(marker, body)
 
+    def test_build_and_repair_contracts_preserve_validation_exit_status_and_focus_failures(self):
+        policy = authority.load_authority(EXAMPLECO)
+        bodies = [
+            authority.render_issue_task_body(issue_url="https://github.com/example-org/demo-repo/issues/1",
+                                             issue_body="Implement the accepted fix", policy=policy),
+            authority.render_repair_task_body(pull_url="https://github.com/example-org/demo-repo/pull/1",
+                                              event_kind="reviewed", event_state="changes_requested",
+                                              event_actor="reviewer", event_url="https://example.invalid/review"),
+        ]
+        for body in bodies:
+            with self.subTest(body=body[:25]):
+                self.assertIn("preserve its exit status", body)
+                self.assertIn("reproduce the named failing test", body)
+                self.assertIn("do not rerun the unchanged full suite", body)
+                self.assertIn("required full verification", body)
+
     def test_trusted_human_and_bot_handling(self) -> None:
         policy = authority.load_authority(EXAMPLECO)
         self.assertTrue(

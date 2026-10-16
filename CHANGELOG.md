@@ -5,6 +5,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Close GitHub HTTP error responses on every setup-probe path, preventing deferred resource warnings from leaking into unrelated command output.
+- Tell build and repair workers to preserve verification exit status, diagnose named failures before repeating full verification, and inspect timed-out processes before launching duplicates.
+
 - Expose **Hermes Helmet: Helmet Write** through the installed plugin and prove the
   writing walkthrough. The Codex and Claude manifests and the marketplace entry now name
   `hermes-helmet:helmet-write` beside `hermes-helmet:helmet-epic`; the canonical
