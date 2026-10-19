@@ -24,6 +24,7 @@ worker-authored PR after conflicting external state is resolved.
 ```sh
 helmet issue ISSUE_URL --config /path/to/policy.json
 helmet status ISSUE_URL --config /path/to/policy.json
+helmet merge ISSUE_URL --expected-head SHA --config /path/to/policy.json
 ```
 
 Expected result: a checkpoint past preflight, a recorded root task or a
@@ -50,7 +51,13 @@ rechecked on the configured checkpoint directory (custom `--checkpoint-dir`
 when used). An expired managed parent fails closed; standalone issues and
 actually completed `DONE` truth stay as they are. A whole-line `Merge when
 clean: no` on the issue (or an inheriting parent epic) requires separate
-explicit approval.
+explicit approval. The supported operation is `helmet merge ISSUE_URL
+--expected-head SHA`. It reads current required checks, including a configured
+App and both a same-name check run and commit status when both exist, rather
+than treating GitHub `mergeable_state=clean` as those checks. Neutral is a
+passing conclusion. It re-reads the pull request before submitting, withholds
+if that read is no longer mergeable, submits at most one SHA-bound request,
+and reconciles a confirmed merge without a second task or queue.
 
 Interactive session hosts ask once before dispatch when no valid persisted
 choice exists. `helmet issue --merge-mode …` stores the choice, source, and
@@ -162,8 +169,11 @@ consent.
 | --- | --- |
 | `skills/helmet-issue/SKILL.md` | Portable skill (also packaged under `hermes_helmet/bundled_skills/`) |
 | `helmet issue ISSUE_URL` | Deterministic preflight/adopt/discover pass + checkpoint |
+| `helmet merge ISSUE_URL --expected-head SHA` | Captain exact-head merge through the existing gate; no second queue |
 | `helmet status ISSUE_URL` | Read-only status |
 | `helmet prepare-repo REQUEST_REF --purpose work\|review` | Named-request enrollment of one exact repository (Captain-authorized, idempotent) |
+| `helmet artifact upload\|list\|download` | Task-owned DOCX/PPTX handoff through native attachments; see [task-artifacts.md](task-artifacts.md) |
+| `helmet-compose` | Public reference worker-runtime adapter for a dedicated local Docker Compose worker: native `kanban ...` and the three `artifact-*` verbs only; see [task-artifacts.md](task-artifacts.md#reference-adapter-helmet-compose) |
 | `helmet install-skills` | Install skill into host skill directories |
 | `github-issue-poller` | Sole creator of repair Kanban tasks |
 
@@ -177,14 +187,30 @@ effective merge mode, persisted choice/source, authority fingerprint,
 command stdout/stderr, or free-form review prose (GitHub remains the review
 ledger). Optional first-officer→worker transport: `--worker-runtime` /
 `HERMES_HELMET_WORKER_RUNTIME` (verbs: `ledger-root`, `ledger-watch`,
-`dispatch-root`, `wait`) so an absent local ledger can still adopt worker truth
-without inventing a second queue. `helmet wait ISSUE_URL` holds one
-bounded, read-only worker-side wait and returns a secret-free cursor plus a wake
-reason. A long-lived host keeps that process handle, runs one fresh issue pass
-after a meaningful wake, and avoids model-driven status loops. Exit `2` is a
-clean timeout; exit `1` is a transport or contract failure. Pass the returned
-cursor to the next wait after every outcome so an observed terminal state does
-not wake repeatedly.
+`dispatch-root`, `wait`, plus `prepare-repo` and the `artifact-*` verbs) so an
+absent local ledger can still adopt worker truth without inventing a second
+queue. These verbs are served by a deployment's own adapter. The exception is the
+public reference adapter `helmet-compose`, which supports only native
+`kanban ...` and `artifact-upload|artifact-list|artifact-download` for a dedicated
+local Docker Compose worker and refuses the ledger, dispatch and wait verbs; a
+deployment adapter keeps those and may delegate the supported verbs to it
+([task-artifacts.md](task-artifacts.md#reference-adapter-helmet-compose)). `helmet wait ISSUE_URL` holds one bounded,
+read-only worker-side wait and returns a secret-free cursor plus a wake reason.
+Use it through a native background facility that automatically resumes the
+First Officer on completion. A process handle requiring repeated output checks
+does not provide that capability. Exit `2` is a clean timeout; exit `1` is a
+transport or contract failure. Pass the returned cursor to the next wait after
+every outcome so an observed terminal state does not wake repeatedly.
+
+When completion delivery is unavailable, one native schedule resumes this
+issue at the policy's `first_officer_check_interval_minutes` cadence (default
+five minutes). An explicit per-run override is saved in that schedule. Each
+wake reconciles once, continues actionable authorized work, and yields silently
+when unchanged. The schedule replaces the process waiter and stops when the
+run completes, is cancelled, exhausts its original budget, or needs human
+action. Codex uses a same-chat heartbeat on its poll-only terminal surface.
+Hosts with neither capability perform one pass and report the limitation. See
+the bundled [host continuation procedure](../skills/helmet-issue/references/host-continuation.md).
 
 ## Legacy checkpoint compatibility
 

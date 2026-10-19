@@ -49,6 +49,7 @@ DEFAULT_MAX_REPAIR_ROUNDS = 10
 DEFAULT_WORKER_MAX_TURNS = 2000
 DEFAULT_WORKER_MAX_RUNTIME_SECONDS = 86400  # 24 hours per worker attempt
 MANAGED_WAIT_TIMEOUT_SECONDS = 1800
+DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES = 5
 ELAPSED_WINDOW_DISCLAIMER = (
     "These are bounded elapsed windows, not a promise of uninterrupted CPU "
     "execution or unlimited model spending."
@@ -125,6 +126,7 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
         "worker_github_login",
         "github_identity",
         "schedule",
+        "first_officer_check_interval_minutes",
         "board",
         "assignee",
         "inference_provider",
@@ -275,6 +277,7 @@ class Policy:
     worker_access_scope: str = DEFAULT_WORKER_ACCESS_SCOPE
     worker_completion_contract: str = DEFAULT_WORKER_COMPLETION_CONTRACT
     enrollment: EnrollmentPolicy = EnrollmentPolicy()
+    first_officer_check_interval_minutes: int = DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES
 
     @property
     def worker_github_login(self) -> str:
@@ -472,12 +475,29 @@ def render_budget_announcement(
         )
     else:
         windows = f"Captain issue window {issue_window}."
+    if continuation in {"cron", "scheduled"}:
+        continuation_text = (
+            f"Continuation mode is `{continuation}`; scheduled checks default to "
+            f"{policy.first_officer_check_interval_minutes} minutes. "
+            "The registered host schedule records any per-run cadence override."
+        )
+    elif continuation == "session":
+        continuation_text = (
+            "Continuation mode is `session`; automatic completion delivery is required "
+            f"for one waiter per active child with a {MANAGED_WAIT_TIMEOUT_SECONDS}-second bound."
+        )
+    elif continuation.startswith("one_pass_only") or continuation in {"none", "unknown"}:
+        continuation_text = "Continuation is unavailable; perform one pass only."
+    else:
+        continuation_text = (
+            f"Continuation mode is `{continuation}`; confirm automatic completion delivery "
+            "or a registered host schedule before promising resumption."
+        )
     return (
         f"{windows} Worker attempt quota {worker_seconds} seconds wall-clock and "
         f"{policy.worker_max_turns} turns; repair rounds capped at "
         f"{policy.budgets.max_repair_rounds}. Effective merge mode is `{merge_mode}` "
-        f"({merge_source}). Continuation is `{continuation}` with one event-driven "
-        f"waiter per child and a {MANAGED_WAIT_TIMEOUT_SECONDS}-second wait bound."
+        f"({merge_source}). {continuation_text}"
         f"{origin} {ELAPSED_WINDOW_DISCLAIMER}"
     )
 
@@ -497,6 +517,7 @@ def captain_budget_status_details(
         else policy.budgets.max_issue_runtime_minutes
     )
     return {
+        "first_officer_check_interval_minutes": policy.first_officer_check_interval_minutes,
         "budgets": effective_budgets_dict(policy),
         "budget_window": budget_provenance(
             policy, started_at, window_minutes=window_minutes
@@ -929,6 +950,9 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
     )
 
     schedule = _require_non_empty_string(raw, "schedule")
+    first_officer_check_interval_minutes = _optional_positive_int(
+        raw, "first_officer_check_interval_minutes", DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES
+    )
     board = _require_non_empty_string(raw, "board")
     assignee = _require_non_empty_string(raw, "assignee")
     worker = _worker_login(raw)
@@ -1019,6 +1043,7 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
         worker_roles=worker_roles,
         version=version,
         schedule=schedule,
+        first_officer_check_interval_minutes=first_officer_check_interval_minutes,
         board=board,
         assignee=assignee,
         github_identity=worker,
@@ -1440,17 +1465,22 @@ def render_review_task_body(
         "worktree on its local review branch; verify with `git rev-parse HEAD` "
         "that the checkout matches before any analysis or validation. If the "
         "selected head cannot be fetched or verified, block the task.\n\n"
-        "Perform a full review of the complete pull request, not an incremental "
-        "diff, against its description, the linked issue, and the repository's "
-        "instructions (AGENTS.md and equivalents). Use an installed review skill "
-        "when one is available and run the repository's own validation where it "
-        "is essential. Prior reviews and approvals can guide attention but never "
-        "substitute for this review. Use whatever model and provider this "
-        "runtime is configured with; do not select or change either.\n\n"
+        "Review the complete merge-base-to-head diff against the PR's actual base "
+        "branch, description, linked issue and repository instructions. Inspect "
+        "surrounding code where needed to understand affected behavior. Run relevant "
+        "existing checks; add a focused temporary probe only for a concrete unresolved "
+        "risk. Do not start unrelated hardening, mutation campaigns, new test frameworks "
+        "or another reviewer round. You are the assigned independent reviewer; do not "
+        "outsource this review. Conclude when the full diff is covered, relevant checks "
+        "are complete and specific suspected defects are resolved. Missing essential "
+        "evidence means incomplete, never approval. Submit the exact-head verdict "
+        "and stop. Use whatever model and provider this runtime is configured with; "
+        "do not select or change either. Respect the installed effort policy.\n\n"
         "The selected head is a snapshot taken when this task was queued. Pushes "
         "while this request is pending do not create another task: re-read the "
         "live pull request head when you start and again before submitting. If it "
-        "has moved from the selected head, review the full new snapshot first and "
+        "has moved from the selected head, inspect the changed portion and revalidate "
+        "affected conclusions, retaining valid prior evidence; cover the full PR and "
         "attach the review to the commit actually examined; never knowingly "
         "approve a head you did not examine.\n\n"
         "Correlate by request, never by time. Put this exact line on its own "
@@ -1504,7 +1534,7 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
                     key: value for key, value in lane_raw.items() if key != "lane"
                 }
 
-    return {
+    result = {
         "version": policy.version,
         "company": {
             "display_name": policy.company_display_name,
@@ -1514,6 +1544,7 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
         "captain_model_provider_consent": policy.captain_model_provider_consent,
         "worker_github_login": policy.github_identity,
         "schedule": policy.schedule,
+        "first_officer_check_interval_minutes": policy.first_officer_check_interval_minutes,
         "board": policy.board,
         "assignee": policy.assignee,
         "inference_provider": policy.inference_provider,
@@ -1565,3 +1596,13 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
             else {}
         ),
     }
+    if policy.worker_roles is not None:
+        roles = policy.worker_roles
+        result["worker_roles"] = {
+            "profiles": dict(roles.profiles),
+            "max_in_progress": roles.max_in_progress,
+            "max_in_progress_per_profile": roles.max_in_progress_per_profile,
+            **({"reasoning_effort": dict(roles.reasoning_effort)} if roles.reasoning_effort else {}),
+            **({"sonnet_55_effort": dict(roles.sonnet_55_effort)} if roles.sonnet_55_effort else {}),
+        }
+    return result

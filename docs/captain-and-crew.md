@@ -129,7 +129,8 @@ secret values.
    The epic root is never dispatch-labeled.
 
 The worker never merges and never force-pushes. The Captain merges by default
-only after current-head review, required checks, and mergeability pass. An
+only after current-head review, required checks, and mergeability pass, using
+`helmet merge ISSUE_URL --expected-head SHA`. An
 unambiguous `Merge when clean: no` directive on an issue or epic root requires a
 separate explicit approval. Private-plan `local-only` worker completion does not
 treat GitHub `mergeable_state=clean` as those required checks.
@@ -163,10 +164,13 @@ It installs with the Captain skill and is available without this source
 checkout or any external review, planning, or company skill pack. Optional
 skills can help apply the contract; their installation is not an acceptance gate.
 
-One `helmet wait` process and cursor per active child owns unchanged
-waiting. The Captain resumes for meaningful changes or a bounded timeout,
-reconciles once, and continues pending work. Repeated model turns announcing an
-unchanged waiter waste quota; an extra watcher does not improve continuity.
+The host owns pending waits. With automatic completion delivery, one bounded
+`helmet wait` and cursor per active child resumes the First Officer on change
+or timeout. Otherwise, one native schedule covers the issue or entire epic at
+the configured fallback cadence. The First Officer reconciles once on each
+wake and yields when unchanged. The bundled
+[host continuation procedure](../skills/helmet-issue/references/host-continuation.md)
+defines adoption, interruption recovery, and cleanup.
 
 ## Six-question closeout
 

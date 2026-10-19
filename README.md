@@ -82,6 +82,7 @@ Hermes does the implementation.
 | [`helmet-issue`](skills/helmet-issue/SKILL.md) | Carry one issue through implementation, review, repairs, and acceptance. |
 | [`helmet-epic`](skills/helmet-epic/SKILL.md) | Coordinate dependent issues and run independent work in parallel. |
 | [`helmet-review`](skills/helmet-review/SKILL.md) | Request a worker review of a pull request and read its formal verdict. |
+| [`helmet-write`](skills/helmet-write/SKILL.md) | Coordinate multi-part writing: section writers, exact-revision review, and a separate editor. |
 
 Install those skills with `helmet install-skills`, or as a Claude Code / Codex
 plugin; see [First-officer plugin](docs/first-officer-plugins.md). Choosing
@@ -200,7 +201,8 @@ state. The merge request includes the head SHA, and Hermes Helmet reads back
 GitHub's merge state afterward.
 
 By default, the first officer merges after it has reviewed the exact current
-head, required checks pass, and GitHub reports the pull request mergeable. An
+head, required checks pass, and GitHub reports the pull request mergeable.
+The installed command is `helmet merge ISSUE_URL --expected-head SHA`. An
 explicit whole-line `Merge when clean: no` directive on an issue or parent epic
 requires a separate Captain approval instead. A child can explicitly re-enable
 autonomous merge with `Merge when clean: yes`. Implementation and repair stay
@@ -309,6 +311,7 @@ Build and smoke-test a local development image with
 - [Model configuration](docs/model-lanes.md) and [Claude subscription workers](docs/claude-subscription.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
+- [Task artifacts](docs/task-artifacts.md): hand documents to a worker and retrieve deliverables through native Kanban attachments
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)
 - [Public preview](docs/public-preview.md) and [changelog](CHANGELOG.md)
 - [Brand attribution and logos](docs/brand.md)

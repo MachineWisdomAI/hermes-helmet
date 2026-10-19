@@ -5,6 +5,147 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Clarify review supervision and truthful continuation in the bundled skills. The shared
+  host continuation reference gains one "Supervise pending work" section: pending work
+  yields on host delivery or one native schedule; drift (a loop, repeated use of an
+  unavailable tool, unrelated investigation) gets one same-task `hermes kanban comment`
+  and, if needed, authorized `hermes kanban reclaim`, or a stated blocker. Both were
+  checked against Hermes source: a comment is stored and appears in later task context
+  (current source also steers a running worker, version dependent), and `reclaim` is an
+  authorized same-card retry: termination is best-effort and host-local, the outcome is
+  read from the `reclaimed` event, and the task becomes runnable again, so it is not a
+  stop or a hold. `helmet-review` and `helmet-write` link to that section instead of
+  copying it; `helmet-write` adds its own progress guidance and says plainly that
+  `supersede` does not retire the old card and reclaim does not substitute for that,
+  so a missing hold is reported as a blocker with artifacts preserved. Instructions
+  only: no new command, observer, deadline or authority, and installed copies are
+  unchanged.
+
+- Expose **Hermes Helmet: Helmet Write** through the installed plugin and prove the
+  writing walkthrough. The Codex and Claude manifests and the marketplace entry now name
+  `hermes-helmet:helmet-write` beside `hermes-helmet:helmet-epic`; the canonical
+  `skills/helmet-write/` tree is unchanged in layout (no second copy). The skill now runs
+  from the assignment alone, checks readiness of every selected profile (including a
+  replacement), gives each contributor only its assigned sources, neighboring passages and
+  authoritative decisions, never promotes a raw unaccepted review to a requirement, and
+  reports structural checks apart from its source-based editorial assessment. The editor
+  card now requires reading the complete assembled artifact before submitting.
+  `examples/writing/` adds synthetic sources and DOCX (two contributions plus editor) and
+  PPTX (one contribution plus editor) plans. `docs/writing-setup.md` gains the runnable
+  walkthrough, capacity notes and format/diagram limits. `tests/test_writing_walkthrough.py`
+  runs both plans on the real native Kanban CLI with scripted workers and, when
+  `HELMET_CODEX_BIN` is set, installs and updates the plugin in an isolated Codex home and
+  asks that host which skills it discovers. This PR takes 0.23.4 through
+  `Version-Override`.
+
+- Fix `helmet write request-changes` reporting `request_changes_unverified` when the
+  correct writer claimed the card immediately after the native reopen. A `running` card
+  now verifies as delivered only when the native record correlates it: the profile that
+  submitted the reviewed run holds it, a `review_reopened` event follows that run's
+  review request, every later run is by that profile and was claimed after the reopen,
+  and exactly one feedback comment names the reviewed token. Wrong-profile, earlier,
+  unclaimed, duplicate-feedback and intervening-submission cases still fail, and the
+  command never replays feedback. Partial fix; editor replacement for #122 is deferred
+  (Refs #122).
+
+- Make the YAML parser part of the normal installation. `pyproject.toml` now declares
+  PyYAML as a runtime dependency (the `worker` extra remains for compatibility), so a
+  coordinator that installs only the wheel can run `helmet write profile-check`. The
+  clean-wheel test in `tests/test_packaged_release.py` now installs the wheel with its
+  declared dependencies and runs the installed command against valid and invalid
+  synthetic profiles outside the checkout.
+
+- Add a fresh, isolated writing worker for Docker Compose. `deploy/Dockerfile` gains a
+  `writing` target (a plain build is unchanged) that installs hash-locked `python-docx`
+  and `python-pptx` into all three image Pythons at build time and stages the offline
+  gstack Mermaid render bundle, fetched at a full pinned commit with its SHA-256 verified,
+  beside a small reusable adapter that renders Mermaid to SVG and PNG. Build-time smoke
+  checks drive the bundled `docx` and `powerpoint` skills with each interpreter. Provenance,
+  lockfiles and notices ship in the image and in `NOTICE`. The standalone
+  `deploy/writing.compose.yaml` needs no GitHub token, policy, poller, bind mount or
+  published port and sets no global names. `python -m hermes_helmet.writing_setup
+  configure|verify` configures the native `default` coordinator and one `writing` profile
+  (memory off, `session_search` disabled, the writing-context plugin, the fixed
+  `kanban.dispatch_profiles: ["writing"]`, and a neutral guidance pack imported through the
+  company-skill importer), refuses unknown or used state before any change, and reports
+  Office visual rendering as unavailable without failing. `helmet-write` now says only the
+  coordinator must differ from the writers and editor. See `docs/writing-setup.md`.
+
+- Add a narrow, documented `Version-Override: X.Y.Z` PR-body line to the
+  repository-local version updater so a Captain can select a lower standard
+  increment for one PR (for example patch for a `feat` PR). It can never raise the
+  increment, lower a breaking change, or apply to release promotion; without it the
+  default rules are unchanged. This PR (#121) takes 0.23.1 this way.
+
+- Add `helmet-compose`, the public reference worker-runtime adapter for a native
+  Hermes worker in a dedicated Docker Compose project. It supports native
+  `kanban ...` and the existing `artifact-upload`, `artifact-list` and
+  `artifact-download` verbs through `docker compose exec -T` into service
+  `hermes`, requires explicit `COMPOSE_FILE` and `COMPOSE_PROJECT_NAME`, pins the
+  in-container actor to `default`, keeps binary stdin/stdout, the 25 MiB cap,
+  size/SHA-256 checks and exit statuses 3/4/5 unchanged, and refuses the ledger,
+  dispatch and wait verbs. The reusable helper `hermes_helmet.native_artifacts`
+  stores attachments through the runtime's own attachment functions, so
+  deployment adapters can delegate to it. The ownership rule in
+  `helmet_issue.py` and the adapter documentation now name this one public
+  exception; follow-up to epic #106's deployment boundary.
+
+- Add `helmet write` and the `helmet-write` first-officer skill, a portable
+  workflow for multi-part writing. A coordinator plans one native Kanban card per
+  contribution plus a held editor card, reviews each submission as an exact
+  revision (task, review run, attachment id, SHA-256), and sends concrete
+  feedback back to the same writing profile with the native reopen-review
+  operation. Stale feedback or acceptance is refused, historical revisions stay
+  readable, and the editor is released only from revisions a different profile
+  accepted, receiving those exact files and the editorial decisions. Superseding
+  an accepted part re-gates the editor. A native plugin
+  (`helmet write context-plugin`) drops unrelated role history from writing-card
+  context, and `helmet write profile-check` reports the profile memory settings
+  Hermes cannot scope per task, including native `session_search`. `plan`
+  creates held cards, attaches and verifies sources, then releases them, and
+  refuses a changed plan; review commands verify the coordinator identity and
+  the reviewed run around the native call. See [helmet-write.md](docs/helmet-write.md) for
+  the guarantees, the remaining native gaps, and integration instructions.
+
+- Add `helmet artifact upload|list|download`, a coordinator handoff for DOCX,
+  PPTX, and other files through native Kanban task attachments. References carry
+  board, task, attachment id, media type, size, and SHA-256, so review and
+  acceptance bind to an exact revision. Transfer is binary-safe over the existing
+  worker-runtime seam (new `artifact-upload`, `artifact-list`, `artifact-download`
+  verbs), honors the 25 MiB attachment cap, keeps the original editable file
+  separate from any preview or extracted text, and fails with fixed,
+  content-free errors. See [task-artifacts.md](docs/task-artifacts.md) for the
+  adapter contract a deployment implements.
+
+- Deliver the accepted company contract to an unchanged stock builder persona,
+  and fail verification when that delivery is missing or stale. Custom personas
+  and unexpected symlinks stay unchanged and report action required. Replaced
+  stock identities are backed up outside discovery paths and can be restored
+  while drained; recovery stages and validates the replacement before swapping,
+  so an occupied temporary path or failed write leaves the prior identity intact.
+
+- Add `helmet providers configure/status/use/auto` for ordered native Hermes
+  fallbacks and manual selection through deployment-owned persistent state.
+  Provision role effort for backup models and remove obsolete inherited legacy
+  fallbacks when the canonical chain replaces them.
+
+- Add `helmet merge ISSUE_URL --expected-head SHA`, a Captain exact-head merge
+  that reuses the existing gate and SHA-bound merge helper, reads current
+  required checks (configured App, both same-name check and status sources,
+  and neutral as a passing conclusion), withholds if the final pull-request
+  read is no longer mergeable, and reconciles a confirmed merge without a
+  second queue.
+
+- Add a consolidated writing profile and per-role reasoning policy that survives
+  provisioning. Keep documentation/media declarations as writing aliases, retain
+  four-profile policies, and verify managed model-specific effort alongside capacity.
+
+- Prefer automatic background completion delivery for First Officer waits;
+  use one native schedule when the host exposes only pollable process handles.
+  Add `first_officer_check_interval_minutes` with a five-minute default,
+  per-run schedule overrides, and truthful continuation status. Issue and epic
+  skills share the same continuation procedure.
+
 ### 0.17.3
 
 - Release the epic slot of a child explicitly reviewed BLOCKED at its unchanged

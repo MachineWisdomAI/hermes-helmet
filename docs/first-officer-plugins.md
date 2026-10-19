@@ -2,7 +2,7 @@
 
 Give Hermes the wings to carry your plan through, under its own identity.
 
-Install the bundled `setup-helmet`, `helmet-issue`, `helmet-epic`, and `helmet-review` skills
+Install the bundled `setup-helmet`, `helmet-issue`, `helmet-epic`, `helmet-review`, and `helmet-write` skills
 on a configured first-officer host. This repository is the plugin
 marketplace. It packages those existing skills for Claude Code and Codex; it
 does not fork them, change the worker, or replace `helmet` setup.
@@ -62,7 +62,7 @@ claude plugin install hermes-helmet@hermes-helmet
 Claude namespaces plugin skills. After a new session starts, or after you
 reload plugins in an existing session, invoke them as
 `/hermes-helmet:setup-helmet`, `/hermes-helmet:helmet-issue`, and
-`/hermes-helmet:helmet-epic`, and `/hermes-helmet:helmet-review` (ask the worker to review a PR; see [helmet-issue](helmet-issue.md#ask-hermes-to-review-a-pull-request)).
+`/hermes-helmet:helmet-epic`, `/hermes-helmet:helmet-review` (ask the worker to review a PR; see [helmet-issue](helmet-issue.md#ask-hermes-to-review-a-pull-request)), and `/hermes-helmet:helmet-write` (coordinate multi-part writing; see [helmet-write](helmet-write.md)).
 
 ### Captain's Bridge in Claude Code
 
@@ -307,13 +307,23 @@ export HERMES_HELMET_CONFIG="$HOME/.hermes-helmet/policy.json"
 # setup do not install placeholder adapters.
 # export HERMES_HELMET_HERMES="/usr/local/bin/hermes"  # one executable path
 # export HERMES_HELMET_WORKER_RUNTIME="your-adapter"   # command prefix
+# A dedicated local Docker Compose writing worker can use the public
+# reference adapter instead, from a dedicated shell that also sets
+# COMPOSE_FILE and COMPOSE_PROJECT_NAME for that project:
+# export HERMES_HELMET_HERMES=helmet-compose
+# export HERMES_HELMET_WORKER_RUNTIME=helmet-compose
 # export HERMES_HELMET_CHECKPOINT_DIR="$HOME/.hermes-helmet/other/checkpoints"
 ```
 
 `HERMES_HELMET_CONFIG` is the generated policy path. The worker-transport
 contract (verbs `ledger-root`, `ledger-watch`, `dispatch-root`, `wait`) is in
 [helmet-issue.md](helmet-issue.md#checkpoint); this file only selects an
-already-configured prefix. Credentials stay in existing `gh` and provider
+already-configured prefix. Your deployment owns that adapter, except for the
+public `helmet-compose` reference adapter, which supports only native
+`kanban ...` and the `artifact-*` verbs ([task-artifacts.md](task-artifacts.md#reference-adapter-helmet-compose));
+it does not serve the ledger, dispatch or wait verbs, and the dedicated-shell
+rule there keeps `COMPOSE_FILE`/`COMPOSE_PROJECT_NAME` out of your general
+shell, so it never replaces an existing worker-runtime configuration. Credentials stay in existing `gh` and provider
 login stores.
 
 ```sh

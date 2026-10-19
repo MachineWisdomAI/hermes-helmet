@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -16,6 +17,13 @@ RAW['worker_roles'] = {
     'max_in_progress': 4, 'max_in_progress_per_profile': 2,
 }
 POLICY = authority.policy_from_mapping(RAW)
+WRITING_RAW = json.loads(json.dumps(RAW))
+WRITING_RAW['worker_roles'] = {
+    'profiles': {'builder': 'builder', 'reviewer': 'reviewer', 'writing': 'writing'},
+    'max_in_progress': 12, 'max_in_progress_per_profile': 4,
+    'reasoning_effort': {'builder': 'xhigh', 'reviewer': 'max', 'writing': 'high'},
+}
+WRITING_POLICY = authority.policy_from_mapping(WRITING_RAW)
 
 class ProvisionTests(unittest.TestCase):
     def setUp(self):
@@ -42,9 +50,70 @@ class ProvisionTests(unittest.TestCase):
         (home / 'skills').mkdir()
         (home / 'SOUL.md').write_text('Default identity')
 
-    def provision(self, **kwargs):
-        runtime.provision(self.root, POLICY.worker_roles, provider='approved', model='approved-model', turns=2000,
+    def provision(self, roles=POLICY.worker_roles, **kwargs):
+        runtime.provision(self.root, roles, provider='approved', model='approved-model', turns=2000,
                           create=self.create, guard=lambda: None, **kwargs)
+
+    def test_provider_chain_and_manual_pin_survive_role_reprovisioning(self):
+        from hermes_helmet import provider_selection as selection
+        chain = selection.configure(['sonnet=anthropic:sonnet-test', 'grok=provider-two:grok-test'])
+        selection.configure_profile(self.builder / 'config.yaml', chain)
+        runtime.provision(self.root, WRITING_POLICY.worker_roles, provider='anthropic', model='sonnet-test', turns=2000,
+                          create=self.create, guard=lambda: None)
+        for role, name in WRITING_POLICY.worker_roles.profiles:
+            config = runtime._read_config(self.root / 'profiles' / name / 'config.yaml')
+            self.assertEqual(config['fallback_providers'], [{'provider': 'provider-two', 'model': 'grok-test'}])
+            self.assertEqual(config['agent']['reasoning_overrides']['grok-test'], dict(WRITING_POLICY.worker_roles.reasoning_effort)[role])
+        reviewer = self.root / 'profiles/reviewer/config.yaml'
+        config = runtime._read_config(reviewer)
+        config['fallback_model'] = {'provider': 'unselected', 'model': 'legacy'}
+        reviewer.write_text(runtime._yaml_dump(config))
+        history = reviewer.parent / 'state.db'
+        history.write_bytes(b'retained sessions')
+        selection.configure_profile(self.builder / 'config.yaml', selection.choose(chain, 'grok'))
+        runtime.provision(self.root, WRITING_POLICY.worker_roles, provider='provider-two', model='grok-test', turns=2000,
+                          create=self.create, guard=lambda: None)
+        for _, name in WRITING_POLICY.worker_roles.profiles:
+            config = runtime._read_config(self.root / 'profiles' / name / 'config.yaml')
+            self.assertEqual(config['fallback_providers'], [])
+            self.assertNotIn('fallback_model', config)
+        self.assertEqual(history.read_bytes(), b'retained sessions')
+
+    def test_writing_reprovision_restores_efforts_and_preserves_retired_histories(self):
+        # Start from four profiles with work history, then consolidate future routing.
+        self.provision()
+        for role in ('documentation', 'media'):
+            (self.root / 'profiles' / role / 'state.db').write_bytes(b'retained history')
+        reviewer = self.root / 'profiles/reviewer/config.yaml'
+        config = runtime._read_config(reviewer)
+        config.setdefault('agent', {})['reasoning_overrides'] = {'fallback-model': 'low'}
+        reviewer.write_text(runtime._yaml_dump(config))
+        self.provision(WRITING_POLICY.worker_roles)
+        # Drift the reviewer and reinstall: policy must win over builder inheritance.
+        config = runtime._read_config(reviewer)
+        config['agent']['reasoning_overrides']['approved-model'] = 'low'
+        reviewer.write_text(runtime._yaml_dump(config))
+        with self.assertRaisesRegex(RuntimeError, 'reasoning effort drift'):
+            runtime.verify(self.root, WRITING_POLICY.worker_roles, provider='approved', model='approved-model', turns=2000)
+        self.provision(WRITING_POLICY.worker_roles)
+        for role, effort in WRITING_POLICY.worker_roles.reasoning_effort:
+            config = runtime._read_config(self.root / 'profiles' / role / 'config.yaml')
+            self.assertEqual(config['agent']['reasoning_overrides']['approved-model'], effort)
+            self.assertEqual(config['kanban']['max_in_progress'], 12)
+            self.assertEqual(config['kanban']['max_in_progress_per_profile'], 4)
+        self.assertEqual(runtime._read_config(reviewer)['agent']['reasoning_overrides']['fallback-model'], 'low')
+        for role in ('documentation', 'media'):
+            self.assertEqual((self.root / 'profiles' / role / 'state.db').read_bytes(), b'retained history')
+        self.assertEqual(self.created.count('writing'), 1)
+
+    def test_failed_writing_acceptance_restores_role_efforts(self):
+        self.provision(WRITING_POLICY.worker_roles)
+        before = {p: p.read_bytes() for p in (self.root / 'profiles').glob('*/config.yaml')}
+        def fail(*args):
+            raise RuntimeError('identity mismatch')
+        with self.assertRaisesRegex(RuntimeError, 'identity mismatch'):
+            self.provision(WRITING_POLICY.worker_roles, runtime_check=fail)
+        self.assertTrue(all(p.read_bytes() == content for p, content in before.items()))
 
     def test_idempotent_roles_keep_separate_state_and_configure_limits(self):
         self.provision()
@@ -146,6 +215,56 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(check.call_count, 8)
 
 class RoutingTests(unittest.TestCase):
+    def test_policy_canonicalization_preserves_roles_limits_and_efforts(self):
+        for policy in (POLICY, WRITING_POLICY):
+            with self.subTest(profiles=policy.worker_roles.profiles):
+                canonical = authority.authority_public_dict(policy)
+                self.assertEqual(authority.policy_from_mapping(canonical).worker_roles, policy.worker_roles)
+
+    def test_writing_and_legacy_issue_names_select_one_profile(self):
+        for declaration in ('writing', 'documentation', 'media'):
+            with self.subTest(declaration=declaration):
+                selected = for_issue(WRITING_POLICY, f'Worker role: {declaration}')
+                self.assertEqual(selected.assignee, 'writing')
+                self.assertEqual(selected.repositories, WRITING_POLICY.repositories)
+                self.assertEqual(selected.integrations, WRITING_POLICY.integrations)
+        self.assertEqual(for_issue(WRITING_POLICY, '').assignee, 'builder')
+        self.assertEqual(for_role(WRITING_POLICY, 'reviewer').assignee, 'reviewer')
+        with self.assertRaisesRegex(ValueError, 'not configured'):
+            for_issue(POLICY, 'Worker role: writing')
+
+    def test_invalid_efforts_or_mixed_role_layouts_fail_closed(self):
+        for efforts in ({}, {'builder': 'high'}, [],
+                        {'builder': True, 'reviewer': 'xhigh', 'writing': 'medium'},
+                        {'builder': 'high', 'reviewer': 'extra high', 'writing': 'medium'},
+                        {'builder': 'high', 'reviewer': 'xhigh', 'writing': 'medium', 'media': 'medium'}):
+            bad = json.loads(json.dumps(WRITING_RAW))
+            bad['worker_roles']['reasoning_effort'] = efforts
+            with self.subTest(efforts=efforts), self.assertRaises(authority.AuthorityError):
+                authority.policy_from_mapping(bad)
+        bad = json.loads(json.dumps(WRITING_RAW))
+        bad['worker_roles']['profiles']['media'] = 'media'
+        with self.assertRaises(authority.AuthorityError):
+            authority.policy_from_mapping(bad)
+
+    def test_writing_issue_intake_and_repair_keep_the_assignment(self):
+        from tests.test_github_issue_poller import FakeRunner
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = replace(WRITING_POLICY.repositories[0], worktree=Path(tmp))
+            issue = poller.Issue(repo, 131, 'Writing', 'Worker role: media')
+            runner = FakeRunner([])
+            ledger = Path(tmp) / 'ledger.sqlite3'
+            self.assertTrue(poller.create_task_once(issue, WRITING_POLICY, ledger, runner)[1])
+            self.assertFalse(poller.create_task_once(issue, WRITING_POLICY, ledger, runner)[1])
+            context = poller.PullRequestContext(repo, 131, 3, 'https://github.com/example-org/demo-repo/pull/3',
+                't_root', 'writing', Path(tmp), 'automation/writing-131')
+            event = poller.ReviewEvent(2, 'reviewed', 'changes_requested', 'exampleco-captain',
+                                      context.pull_url + '#review-2', '2026-10-14T00:00:00Z')
+            poller._create_review_task(context, event, 't_root', WRITING_POLICY, runner)
+            creations = [c for c in runner.calls if 'create' in c]
+            self.assertEqual(len(creations), 2)
+            self.assertTrue(all(c[c.index('--assignee') + 1] == 'writing' for c in creations))
+
     def test_roles_preserve_authority_and_defaults(self):
         for role in ('builder', 'documentation', 'media'):
             selected = for_issue(POLICY, f'Work to do\nWorker role: {role}\n')
@@ -265,3 +384,379 @@ class InstallTests(unittest.TestCase):
             self.assertIn('/company/gh', commands[1])
             self.assertIn("'schedule': 'every 1m'", commands[2][-1])
             self.assertIn("'no_agent': True", commands[2][-1])
+
+
+FIXTURE = ROOT / "tests/fixtures/exampleco-stock-builder/company-contract.md"
+CONTRACT = FIXTURE.read_text(encoding="utf-8").strip()
+
+
+def installed_stock_persona():
+    try:
+        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+    except ImportError:
+        install = Path("/opt/hermes")
+        if install.is_dir() and str(install) not in sys.path:
+            sys.path.insert(0, str(install))
+        try:
+            from hermes_cli.default_soul import DEFAULT_SOUL_MD
+        except ImportError:
+            return None
+    return DEFAULT_SOUL_MD.encode("utf-8")
+
+
+def installed_identity_loader():
+    try:
+        from agent.prompt_builder import load_soul_md
+        return load_soul_md
+    except ImportError:
+        install = Path("/opt/hermes")
+        venv_sites = sorted(install.glob(".venv/lib/python*/site-packages")) if install.is_dir() else []
+        for entry in [install, *venv_sites]:
+            text = str(entry)
+            if entry.is_dir() and text not in sys.path:
+                sys.path.insert(0, text)
+        try:
+            from agent.prompt_builder import load_soul_md
+        except ImportError:
+            return None
+        return load_soul_md
+
+
+class BuilderContractTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.builder = self.root / "profiles/builder"
+        (self.builder / "home").mkdir(parents=True)
+        (self.builder / "skills/custom").mkdir(parents=True)
+        (self.builder / "memories").mkdir()
+        (self.builder / "sessions").mkdir()
+        (self.builder / "config.yaml").write_text("model: {provider: old, default: old}\n")
+        (self.builder / "auth.json").write_text("credential")
+        (self.builder / "memories/MEMORY.md").write_text("keep memory")
+        (self.builder / "sessions/session.json").write_text("keep session")
+        (self.builder / "skills/custom/SKILL.md").write_text("keep skill")
+        (self.root / "config.yaml").write_text("kanban: {max_in_progress: 1, max_in_progress_per_profile: 1}\n")
+        (self.root / "SOUL.md").write_text(FIXTURE.read_text(encoding="utf-8"))
+        self.preserved = {
+            self.builder / "auth.json": b"credential",
+            self.builder / "memories/MEMORY.md": b"keep memory",
+            self.builder / "sessions/session.json": b"keep session",
+            self.builder / "skills/custom/SKILL.md": b"keep skill",
+        }
+
+    def create(self, name, role):
+        home = self.root / "profiles" / name
+        (home / "home").mkdir(parents=True)
+        (home / "skills").mkdir()
+        (home / "SOUL.md").write_text("Default identity")
+
+    def provision(self, **kwargs):
+        runtime.provision(self.root, POLICY.worker_roles, provider="approved", model="approved-model", turns=2000,
+                          create=self.create, guard=lambda: None, **kwargs)
+
+    def assert_preserved(self):
+        for path, content in self.preserved.items():
+            self.assertEqual(path.read_bytes(), content)
+
+    def test_public_fixture_false_positive_fails_verification(self):
+        # The old provision/verify pair succeeded while the builder still held
+        # only a non-contract persona. Verification must now be incomplete.
+        for name in ("reviewer", "documentation", "media"):
+            self.create(name, name)
+            soul = self.root / "profiles" / name / "SOUL.md"
+            soul.unlink()
+            soul.symlink_to(self.root / "SOUL.md")
+            config = self.root / "profiles" / name / "config.yaml"
+            config.write_text(runtime._yaml_dump({
+                "model": {"provider": "approved", "default": "approved-model"},
+                "agent": {"max_turns": 2000},
+                "kanban": {"max_in_progress": 4, "max_in_progress_per_profile": 2,
+                           "decompose": False, "dispatch_in_gateway": False},
+                "delegation": {"max_concurrent_children": 1},
+            }))
+        (self.builder / "config.yaml").write_text(runtime._yaml_dump({
+            "model": {"provider": "approved", "default": "approved-model"},
+            "agent": {"max_turns": 2000},
+            "kanban": {"max_in_progress": 4, "max_in_progress_per_profile": 2,
+                       "decompose": False, "dispatch_in_gateway": False},
+            "delegation": {"max_concurrent_children": 1},
+        }))
+        (self.root / "config.yaml").write_text("kanban: {max_in_progress: 4, max_in_progress_per_profile: 2}\n")
+        (self.builder / "SOUL.md").write_text("stock persona without the company contract")
+        before = (self.builder / "SOUL.md").read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "action required: company contract missing or stale for builder"):
+            runtime.verify(self.root, POLICY.worker_roles, provider="approved", model="approved-model", turns=2000)
+        self.assertEqual((self.builder / "SOUL.md").read_bytes(), before)
+
+    def test_missing_and_already_linked_identity_is_idempotent(self):
+        self.provision()
+        soul = self.builder / "SOUL.md"
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), (self.root / "SOUL.md").resolve())
+        self.assertEqual(soul.read_text(encoding="utf-8").strip(), CONTRACT)
+        self.provision()
+        self.assertTrue(soul.is_symlink())
+        self.assert_preserved()
+        runtime.verify(self.root, POLICY.worker_roles, provider="approved", model="approved-model", turns=2000)
+
+    def test_custom_persona_stays_byte_identical_and_verification_is_incomplete(self):
+        custom = b"ExampleCo custom persona, not the accepted contract\n"
+        (self.builder / "SOUL.md").write_bytes(custom)
+        with self.assertRaisesRegex(RuntimeError, "action required: company contract missing or stale for builder"):
+            self.provision()
+        self.assertEqual((self.builder / "SOUL.md").read_bytes(), custom)
+        self.assertFalse((self.builder / "SOUL.md").is_symlink())
+        self.assert_preserved()
+        self.assertFalse((self.root / "profiles/reviewer").exists())
+
+    def test_unexpected_symlink_is_not_followed_or_replaced(self):
+        outside = self.root / "outside.md"
+        outside.write_text("do not modify")
+        soul = self.builder / "SOUL.md"
+        soul.symlink_to(outside)
+        with self.assertRaisesRegex(RuntimeError, "action required: unexpected SOUL symlink for builder"):
+            self.provision()
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), outside.resolve())
+        self.assertEqual(outside.read_text(), "do not modify")
+        self.assert_preserved()
+
+    def test_guard_blocks_identity_mutation(self):
+        (self.builder / "SOUL.md").write_text("untouched")
+        before = (self.builder / "SOUL.md").read_bytes()
+
+        def fail():
+            raise RuntimeError("not drained")
+
+        with self.assertRaisesRegex(RuntimeError, "not drained"):
+            runtime.provision(self.root, POLICY.worker_roles, provider="p", model="m", turns=2000, guard=fail)
+        self.assertEqual((self.builder / "SOUL.md").read_bytes(), before)
+        self.assertFalse((self.root / _private_backup_root()).exists())
+
+    def test_failed_acceptance_rolls_back_a_replaced_link(self):
+        (self.builder / "SOUL.md").write_text("not stock, left alone")
+        # Missing identity is linked, then a later failure must remove that new link.
+        (self.builder / "SOUL.md").unlink()
+
+        def fail(*args):
+            raise RuntimeError("identity mismatch")
+
+        with self.assertRaisesRegex(RuntimeError, "identity mismatch"):
+            self.provision(runtime_check=fail)
+        self.assertFalse((self.builder / "SOUL.md").exists())
+        self.assertFalse((self.root / "profiles/reviewer").exists())
+
+    def test_marker_or_length_is_not_stock_ownership(self):
+        marker = b"You are Hermes Agent, but this is a custom persona."
+        (self.builder / "SOUL.md").write_bytes(marker)
+        self.assertFalse(runtime._owned_stock_persona(self.builder / "SOUL.md"))
+        same_length = b"x" * len(marker)
+        (self.builder / "SOUL.md").write_bytes(same_length)
+        self.assertFalse(runtime._owned_stock_persona(self.builder / "SOUL.md"))
+        with self.assertRaisesRegex(RuntimeError, "action required"):
+            self.provision()
+        self.assertEqual((self.builder / "SOUL.md").read_bytes(), same_length)
+
+    def test_installed_stock_persona_is_linked_once_and_backed_up(self):
+        stock = installed_stock_persona()
+        if stock is None:
+            self.skipTest("installed Hermes stock persona is not importable")
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(stock)
+        self.provision()
+        self.provision()
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), (self.root / "SOUL.md").resolve())
+        self.assertEqual(soul.read_text(encoding="utf-8").strip(), CONTRACT)
+        self.assertNotIn(stock.decode("utf-8"), soul.read_text(encoding="utf-8"))
+        backups = list((self.root / ".helmet-private/identity-backups/builder").glob("*.md"))
+        self.assertEqual(len(backups), 1)
+        self.assertNotEqual(backups[0].name, "SOUL.md")
+        self.assertEqual(backups[0].read_bytes(), stock)
+        self.assertTrue(runtime._outside_discovery(backups[0], self.root))
+        self.assertFalse(any(part == "SOUL.md" for part in backups[0].relative_to(self.root).parts))
+        self.assert_preserved()
+        runtime.verify(self.root, POLICY.worker_roles, provider="approved", model="approved-model", turns=2000)
+        with patch("hermes_helmet.worker_role_runtime.os.getuid", return_value=os.getuid() + 1):
+            self.assertFalse(runtime._owned_stock_persona(backups[0]))
+
+    def test_stock_replacement_rolls_back_when_acceptance_fails(self):
+        stock = installed_stock_persona()
+        if stock is None:
+            self.skipTest("installed Hermes stock persona is not importable")
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(stock)
+
+        def fail(*args):
+            raise RuntimeError("identity mismatch")
+
+        with self.assertRaisesRegex(RuntimeError, "identity mismatch"):
+            self.provision(runtime_check=fail)
+        self.assertFalse(soul.is_symlink())
+        self.assertEqual(soul.read_bytes(), stock)
+
+    def test_recover_restores_backup_and_refuses_custom_or_unexpected_symlink(self):
+        original = b"owned stock persona bytes"
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(original)
+        runtime._backup_owned_identity(self.root, "builder", soul)
+        soul.unlink()
+        soul.symlink_to(self.root / "SOUL.md")
+        runtime.recover_owned_identity(self.root, "builder")
+        self.assertFalse(soul.is_symlink())
+        self.assertEqual(soul.read_bytes(), original)
+        soul.write_bytes(b"custom persona")
+        with self.assertRaisesRegex(RuntimeError, "custom persona"):
+            runtime.recover_owned_identity(self.root, "builder")
+        self.assertEqual(soul.read_bytes(), b"custom persona")
+        outside = self.root / "outside.md"
+        outside.write_text("elsewhere")
+        soul.unlink()
+        soul.symlink_to(outside)
+        with self.assertRaisesRegex(RuntimeError, "unexpected SOUL symlink"):
+            runtime.recover_owned_identity(self.root, "builder")
+        self.assertEqual(outside.read_text(), "elsewhere")
+        self.assertEqual(soul.resolve(), outside.resolve())
+
+    def test_recover_keeps_prior_identity_when_temporary_path_is_occupied(self):
+        original = b"owned stock persona bytes"
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(original)
+        runtime._backup_owned_identity(self.root, "builder", soul)
+        soul.unlink()
+        soul.symlink_to(self.root / "SOUL.md")
+        occupied = self.builder / "SOUL.md.new"
+        occupied.write_bytes(b"unrelated occupant")
+        with self.assertRaisesRegex(RuntimeError, "occupied temporary path: SOUL.md.new"):
+            runtime.recover_owned_identity(self.root, "builder")
+        # The prior identity survives exactly, and the occupant is untouched.
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), (self.root / "SOUL.md").resolve())
+        self.assertEqual(occupied.read_bytes(), b"unrelated occupant")
+        occupied.unlink()
+        runtime.recover_owned_identity(self.root, "builder")
+        self.assertFalse(soul.is_symlink())
+        self.assertEqual(soul.read_bytes(), original)
+
+    def test_recover_keeps_prior_identity_when_staging_write_fails(self):
+        original = b"owned stock persona bytes"
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(original)
+        runtime._backup_owned_identity(self.root, "builder", soul)
+        soul.unlink()
+        soul.symlink_to(self.root / "SOUL.md")
+        with patch.object(runtime.os, "replace", side_effect=OSError("staging failed")):
+            with self.assertRaisesRegex(OSError, "staging failed"):
+                runtime.recover_owned_identity(self.root, "builder")
+        self.assertTrue(soul.is_symlink())
+        self.assertEqual(soul.resolve(), (self.root / "SOUL.md").resolve())
+        self.assertFalse((self.builder / "SOUL.md.new").exists())
+        runtime.recover_owned_identity(self.root, "builder")
+        self.assertEqual(soul.read_bytes(), original)
+
+    def test_recover_refuses_receipt_path_traversal(self):
+        original = b"owned stock persona bytes"
+        soul = self.builder / "SOUL.md"
+        soul.write_bytes(original)
+        runtime._backup_owned_identity(self.root, "builder", soul)
+        soul.unlink()
+        soul.symlink_to(self.root / "SOUL.md")
+        destination = self.root / ".helmet-private/identity-backups/builder"
+        receipt_path = destination / "receipt.json"
+        good = json.loads(receipt_path.read_text(encoding="utf-8"))
+        outside = self.root / "outside.md"
+        outside.write_text("elsewhere")
+        for bad, message in (
+            ("../outside.md", "escapes the private backup directory"),
+            ("profiles/builder/SOUL.md", "escapes the private backup directory"),
+            (str(outside), "not relative"),
+            (".helmet-private/identity-backups/reviewer/x.md", "escapes the private backup directory"),
+        ):
+            receipt_path.write_text(json.dumps(dict(good, backup=bad)))
+            with self.assertRaisesRegex(RuntimeError, message):
+                runtime.recover_owned_identity(self.root, "builder")
+        receipt_path.write_text(json.dumps(dict(good, schema=2)))
+        with self.assertRaisesRegex(RuntimeError, "unexpected owned identity receipt"):
+            runtime.recover_owned_identity(self.root, "builder")
+        # A receipt in another profile's directory cannot reach this profile's backup.
+        other = self.root / ".helmet-private/identity-backups/reviewer"
+        other.mkdir(parents=True)
+        (other / "receipt.json").write_text(json.dumps(dict(good, profile="reviewer")))
+        with self.assertRaisesRegex(RuntimeError, "escapes the private backup directory"):
+            runtime.recover_owned_identity(self.root, "reviewer")
+        receipt_path.write_text(json.dumps(good))
+        runtime.recover_owned_identity(self.root, "builder")
+        self.assertEqual(soul.read_bytes(), original)
+        self.assertEqual(outside.read_text(), "elsewhere")
+
+    def test_installed_loader_sees_the_contract_once(self):
+        load_soul_md = installed_identity_loader()
+        if load_soul_md is None:
+            self.skipTest("installed Hermes identity loader is not importable")
+        stock = installed_stock_persona()
+        if stock is None:
+            self.skipTest("installed Hermes stock persona is not importable")
+        (self.builder / "SOUL.md").write_bytes(stock)
+        self.provision()
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+        with tempfile.TemporaryDirectory() as scratch:
+            token = set_hermes_home_override(scratch)
+            try:
+                loaded = load_soul_md(home_override=self.builder)
+                reviewer = self.root / "profiles/reviewer"
+                reviewer_loaded = load_soul_md(home_override=reviewer)
+            finally:
+                reset_hermes_home_override(token)
+        self.assertEqual(loaded, CONTRACT)
+        self.assertEqual(loaded.count(CONTRACT), 1)
+        self.assertEqual(reviewer_loaded, CONTRACT)
+        self.assertNotIn(stock.decode("utf-8"), loaded)
+        runtime.verify(self.root, POLICY.worker_roles, provider="approved", model="approved-model", turns=2000)
+        import agent.prompt_builder as prompt_builder
+
+        def stale_for_builder(context_length=None, home_override=None):
+            if home_override is not None and Path(home_override).name == "builder":
+                return "stale contract"
+            return CONTRACT
+
+        with patch.object(prompt_builder, "load_soul_md", side_effect=stale_for_builder):
+            with self.assertRaisesRegex(RuntimeError, "action required: company contract missing or stale for builder"):
+                runtime.verify(self.root, POLICY.worker_roles, provider="approved", model="approved-model", turns=2000)
+
+
+def _private_backup_root():
+    return ".helmet-private"
+
+class SonnetPolicyTests(unittest.TestCase):
+    setUp = ProvisionTests.setUp
+    create = ProvisionTests.create
+    provision = ProvisionTests.provision
+
+    def test_sonnet_policy_migrates_all_profiles_without_lowering_other_models(self):
+        raw = json.loads(json.dumps(WRITING_RAW))
+        raw['worker_roles']['sonnet_55_effort'] = {
+            'builder': 'high', 'reviewer': 'medium', 'writing': 'medium'}
+        try:
+            policy = authority.policy_from_mapping(raw)
+        except ValueError as exc:
+            self.fail(f'Model-specific Sonnet policy is not supported: {exc}')
+        config = runtime._read_config(self.builder / 'config.yaml')
+        config['agent'] = {'reasoning_overrides': {
+            'claude-sonnet-5-5': 'max', 'anthropic/claude-sonnet-5.5': 'xhigh',
+            'grok-4.7': 'max', 'custom-model': 'low'}}
+        config['fallback_providers'] = [{'provider': 'anthropic', 'model': 'sonnet'}]
+        (self.builder / 'config.yaml').write_text(runtime._yaml_dump(config))
+        self.provision(policy.worker_roles)
+        for role, name in policy.worker_roles.profiles:
+            cfg = runtime._read_config(self.root / 'profiles' / name / 'config.yaml')
+            overrides = cfg['agent']['reasoning_overrides']
+            expected = 'high' if role == 'builder' else 'medium'
+            self.assertEqual(overrides['claude-sonnet-5-5'], expected)
+            self.assertEqual(overrides['anthropic/claude-sonnet-5.5'], expected)
+            self.assertEqual(overrides['sonnet'], expected)
+            self.assertEqual(overrides['grok-4.7'], 'max')
+            self.assertEqual(overrides['custom-model'], 'low')
+        self.provision(policy.worker_roles)
+        authority.policy_from_mapping(authority.authority_public_dict(policy))

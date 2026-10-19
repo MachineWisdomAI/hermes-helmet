@@ -24,6 +24,32 @@ FAVA Trails (optional)
   cited from docs/fava-trails.md. Enabling it is an adopter choice and is not
   required for the minimum runtime.
 
+Writing image (deploy/Dockerfile `writing` target; installed at build time only)
+  The fresh writing worker image adds the following. Versions and hashes are
+  pinned in deploy/writing/requirements.lock, and the diagram bundle record is
+  deploy/writing/notices/diagram-bundle.md (retained in the image beside the
+  bundle at /opt/hermes-helmet/writing/skills/diagram/notices/).
+  python-docx 1.2.0 (MIT) and python-pptx 1.0.2 (MIT)
+    Copyright Steve Canny and contributors.
+  Pillow 12.3.0 (MIT-CMU)
+    Copyright 1997-2011 Secret Labs AB, 1995-2011 Fredrik Lundh and
+    contributors, and 2010 Jeffrey 'Alex' Clark and contributors.
+  lxml 6.1.3 (BSD-3-Clause)
+    Copyright lxml contributors.
+  XlsxWriter 3.2.9 (BSD-2-Clause)
+    Copyright John McNamara.
+  typing_extensions 4.16.0 (PSF-2.0)
+    Copyright Python Software Foundation.
+  gstack diagram-render bundle (MIT)
+    Copyright (c) 2026 Garry Tan, https://github.com/garrytan/gstack, fetched at
+    commit 47d639abffa882b8cbb641d7d1dedf08ecada9ec. It embeds mermaid,
+    @excalidraw/excalidraw, @excalidraw/mermaid-to-excalidraw, react and
+    react-dom (all MIT) and the Excalidraw font data, including Excalifont
+    (SIL Open Font License 1.1). The bundle's dependency list is verified at
+    build time against deploy/writing/bundle-deps.json.
+  Full license texts ship inside each Python distribution's dist-info
+  directory and in the retained gstack LICENSE.
+
 GitHub, Docker, and model providers
   Marks and services are the property of their respective owners. Hermes Helmet
   does not claim them as product requirements beyond documented integrations.

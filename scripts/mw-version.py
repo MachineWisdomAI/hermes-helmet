@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 CONFIG = ".version-policy.json"
 SUBJECT = re.compile(r"^([a-z][a-z0-9-]*)(?:\([^()\r\n]+\))?(!)?: ([^\r\n]+)$")
 BREAKING = re.compile(r"^BREAKING(?: CHANGE|-CHANGE):\s*\S", re.MULTILINE)
+OVERRIDE = re.compile(r"^Version-Override:[ \t]*(\S*)[ \t]*$", re.MULTILINE)
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$")
 WORKFLOW = '''name: Version policy
 on:
@@ -80,6 +81,15 @@ Prereleases advance the base and reset the counter: `0.1.0-rc.5` becomes
 `0.1.1rc1`. Date prereleases retain that format and refresh the date; `--date`
 accepts YYYY-MM-DD for reproducible runs. CI accepts a valid date between the
 previous version's date and today, so an overnight review does not invalidate it.
+
+A Captain may select a lower standard increment for one PR by putting exactly one
+line `Version-Override: X.Y.Z` in the PR body (the body only; commit messages are
+ignored). `X.Y.Z` must equal the patch or minor increment of the base version that
+does not exceed the increment the PR would otherwise get, so a `feat` PR can take
+the patch increment but never a larger one. It is refused for breaking changes and
+release promotion, and for a PR where no unit needed the version. Without the line
+the default rules above apply unchanged. The check still runs; only the selected
+number changes, and the PR title and commit types stay truthful.
 
 Explicit release promotion uses the exact title `chore(release): promote version`
 and changes only configured version values: `0.1.1-rc.1` becomes `0.1.1`, without
@@ -159,6 +169,18 @@ def intent(title: str, body: str, commits: list[str]) -> int:
         elif match and match[1] == "feat":
             level = max(level, 2)
     return level
+
+
+def override_request(body: str) -> str | None:
+    """Return the single Captain-selected version from the PR body, if any."""
+    found = OVERRIDE.findall(body)
+    if len(found) > 1:
+        raise PolicyError("PR body must contain at most one Version-Override line")
+    if not found:
+        return None
+    if not SEMVER.fullmatch(found[0]) or found[0] != found[0].split("-")[0].split("+")[0]:
+        raise PolicyError("Version-Override needs a plain X.Y.Z version: Version-Override: X.Y.Z")
+    return found[0]
 
 
 def date_pre(pre: str | None) -> dt.date | None:
@@ -289,6 +311,12 @@ def evaluate(root: Path, args) -> list[tuple[Path, str]]:
     commits = git(root, "log", "--format=%B%x00", base + "..HEAD").split("\0")
     level = intent(title, body, [c.strip() for c in commits if c.strip()])
     promote = title == "chore(release): promote version"
+    override = override_request(body)
+    if override and promote:
+        raise PolicyError("Version-Override cannot be used with release promotion")
+    if override and level == 3:
+        raise PolicyError("Version-Override cannot lower a breaking change")
+    override_used = False
     raw_changes = set(git(root, "diff", "--name-only", "--no-renames", base).splitlines())
     raw_changes.update(git(root, "ls-files", "--others", "--exclude-standard").splitlines())
     changes = {p for p in raw_changes if not any(fnmatch.fnmatchcase(p, pat) for pat in config.get("exclude_paths", []))}
@@ -349,6 +377,13 @@ def evaluate(root: Path, args) -> list[tuple[Path, str]]:
                         if not old_date <= bump_date <= today:
                             raise PolicyError("date prerelease must be between its previous date and today")
                     target = advance(baseline, level, bump_date)
+                    if override:
+                        allowed = {advance(baseline, lower, bump_date) for lower in range(1, level + 1)}
+                        chosen = parse_version(override)
+                        if chosen not in allowed:
+                            raise PolicyError(f"Version-Override {override} is not an allowed increment of {serialize(baseline)} for {unit['name']}")
+                        target = chosen
+                        override_used = True
         for path, content, spec in contents:
             expected = serialize(target, spec.get("format", "semver"))
             values = read_values(content, spec)
@@ -362,6 +397,8 @@ def evaluate(root: Path, args) -> list[tuple[Path, str]]:
             if content != new:
                 writes.append((path, new))
         print(f"{unit['name']}: {serialize(baseline)} -> {serialize(target)}" + (" (unchanged component)" if not affected else ""))
+    if override and not override_used:
+        raise PolicyError("Version-Override did not apply to any version unit")
     if promote and raw_changes - owned_files:
         raise PolicyError("release promotion may change configured version values only")
     if promote and not promoted:

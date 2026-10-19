@@ -5,6 +5,20 @@ skill and needs no external planning, review, or company skill pack. The issue,
 repository rules, authority policy, and explicit operator decisions define the
 accepted outcome. Additional reviewer preferences do not redefine it.
 
+Optional implementation skills apply within that accepted outcome and the
+assigned workspace. If an approved Blueprint exists, TDD can use its relevant
+contracts and expected outcomes; otherwise use the accepted issue or
+specification. Blueprints are optional. Choose one active TDD instruction source.
+Helmet retains dispatch, dependencies, task state, worker lifecycle, same-PR
+repair, independent review, and merge gates. Implementation skills must not
+start a competing planning, dispatch, worktree, review, or merge workflow.
+
+Verify instruction loading and test-first claims against chronological worker
+tool events: test edit, meaningful assertion failure, minimal correction,
+passing result, then refactor while green. Label later regression reproduction
+separately; neither an installation receipt nor a final report proves this
+sequence.
+
 ## Repair the source, then reinstall
 
 Change Hermes Helmet behavior in its source repository and have a separate
@@ -17,6 +31,26 @@ Use the configured implementation and review identities. A missing approval
 is resolved through the review workflow, not by editing approval records,
 switching to another actor's credentials, or weakening checks. Source policy
 changes remain subject to the existing review workflow until they are installed.
+
+## Authorized exact-head merge
+
+When the issue is ready, merge only through the installed command:
+
+```sh
+helmet merge ISSUE_URL --expected-head SHA --config /path/to/policy.json
+```
+
+It reuses the existing merge gate and SHA-bound merge helper. It reads the
+current required checks, including a configured App and both a same-name
+check run and commit status when both exist. Neutral is a passing conclusion.
+`mergeable_state=clean` is not a substitute. It re-reads the pull request
+before submitting and withholds if that read is no longer mergeable. It
+submits at most one merge request for that head, re-queries afterward, and
+records the outcome on the issue checkpoint. It does not create a task, queue,
+or ledger. Review-only enrollment, explicit-approval ceilings, restrictive
+markers, and exhausted original budgets still withhold the merge. A missing
+approval is not bypassed. Repeating the command after a confirmed merge
+reconciles; it does not merge again.
 
 ## Named-request enrollment boundaries
 

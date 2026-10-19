@@ -1,0 +1,23 @@
+{
+  "project": "example-widgets-deck",
+  "format": "deck",
+  "title": "ExampleCo Widgets 4 Overview Deck",
+  "audience": "Operations managers at ExampleCo customers who have not yet moved to Widgets 4",
+  "purpose": "Show why moving to Widgets 4 is worth it and what it costs to move.",
+  "guidance": "Load the neutral skill example-writing-guidance and follow its house style: one idea per slide, a title that states the point, at most five short bullets, and speaker notes that carry the explanation rather than repeat the slide. Voice: direct, calm, specific. Deliver a PowerPoint file (.pptx) built with the powerpoint skill. The deck has four slides in this order: what Widgets is, why move (offline mode and shared order lists), the order flow diagram, and what it costs to move. The order-flow slide embeds the PNG of a Mermaid diagram rendered with the diagram skill; the .mmd and .svg stay separate files and the .pptx is the one primary submission. Extra files (the .mmd, .svg and .png) are attached to your card with kanban_attach before you submit; metadata.artifacts names only the one primary file, so the coordinator reviews exactly one submission. The editor reads the complete assembled deck, slide by slide with its speaker notes, against the accepted input for continuity and fidelity before submitting it.",
+  "coordinator": "default",
+  "editor": {"assignee": "writing"},
+  "sections": [
+    {
+      "key": "overview",
+      "title": "Four-slide overview",
+      "assignee": "writing",
+      "brief": "Write the four slides named in the guidance, each with speaker notes, as overview.pptx. Slide 3 embeds order-flow.png rendered from order-flow.mmd with the diagram skill; keep order-flow.mmd and order-flow.svg beside it. Submit only overview.pptx as the primary file.",
+      "sources": [
+        "Assigned source: product-overview-notes.md (attached to this card).",
+        "Authoritative decision: say that there is no price change and that existing orders carry over. Do not mention pricing tiers, discounts or any Q4 date; they are out of scope."
+      ],
+      "input_files": ["sources/product-overview-notes.md"]
+    }
+  ]
+}

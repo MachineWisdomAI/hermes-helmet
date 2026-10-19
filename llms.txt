@@ -20,6 +20,7 @@ Use these when you are the coding-agent first officer on the Captain host. The i
 - Coordinating delivery and review of one issue: [helmet-issue](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-issue/SKILL.md).
 - Coordinating dependent issues: [helmet-epic](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-epic/SKILL.md).
 - Requesting a worker pull-request review: [helmet-review](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-review/SKILL.md).
+- Coordinating multi-part writing with section writers and an editor: [helmet-write](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-write/SKILL.md).
 - Configuring identities and the worker: [setup-helmet](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/setup-helmet/SKILL.md).
 
 ## Changing this repository
@@ -36,4 +37,5 @@ Use these when you are the coding-agent first officer on the Captain host. The i
 - [setup-helmet reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/setup-helmet.md): Setup commands and diagnostics.
 - [helmet-issue reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-issue.md): First-officer single-issue orchestration.
 - [helmet-epic reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-epic.md): First-officer dependent-issue orchestration.
+- [Task artifacts](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/task-artifacts.md): Upload inputs to, list, and retrieve deliverables from a native Kanban task; the narrow worker-transport adapter contract.
 - [Private overlay](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/private-overlay.md): Company policy, mounts, and state outside this repository. Optional; not a product prerequisite.

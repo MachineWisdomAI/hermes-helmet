@@ -30,6 +30,7 @@ Load helpers:
   "captain_model_provider_consent": false,
   "worker_github_login": "example-agent",
   "schedule": "every 15m",
+  "first_officer_check_interval_minutes": 5,
   "board": "default",
   "assignee": "builder",
   "inference_provider": "openai",
@@ -107,6 +108,13 @@ Optional executor company pack (omit for minimum startup):
 - `ready_label` is the triage label used by later orchestration stages. It must
   differ from `dispatch_label` case-insensitively so the specified→dispatched
   frontier cannot collapse.
+- Optional `first_officer_check_interval_minutes` is a positive integer,
+  default `5`. It sets the installation's fallback check cadence for the
+  First Officer. An explicit per-run override is retained in that run's native
+  schedule. Status exposes the policy value as
+  `details.first_officer_check_interval_minutes`. This setting does not change
+  the worker poller's `schedule`, budget starts, or merge authority. Update the
+  policy readers before adding this new optional key to an existing deployment.
 - `trusted_human_associations` is limited to GitHub repository roles
   `OWNER`, `MEMBER`, and `COLLABORATOR`.
 - `trusted_review_bots` is an exact-login allowlist (case-insensitive uniqueness).

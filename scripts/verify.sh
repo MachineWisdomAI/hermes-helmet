@@ -34,6 +34,7 @@ for required in \
     docs/public-preview.md \
     docs/helmet-issue.md \
     docs/helmet-epic.md \
+    docs/task-artifacts.md \
     docs/fava-trails.md \
     docs/company-skills.md \
     docs/openviking.md \
@@ -49,6 +50,12 @@ for required in \
     skills/helmet-epic/SKILL.md \
     skills/observe-chat/SKILL.md \
     skills/helmet-review/SKILL.md \
+    skills/helmet-write/SKILL.md \
+    skills/helmet-write/references/assignments.md \
+    skills/helmet-write/references/review.md \
+    skills/helmet-write/references/plan.md \
+    skills/helmet-write/references/context.md \
+    docs/helmet-write.md \
     codex.mcp.json \
     hooks/hooks.json \
     hooks/register.tsx \
@@ -63,6 +70,36 @@ for required in \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
     src/hermes_helmet/repo_enroll.py \
+    src/hermes_helmet/task_artifacts.py \
+    tests/test_task_artifacts.py \
+    tests/fixtures/artifact_adapter.py \
+    src/hermes_helmet/compose_runtime.py \
+    src/hermes_helmet/native_artifacts.py \
+    tests/test_compose_runtime.py \
+    src/hermes_helmet/writing_setup.py \
+    tests/test_writing_setup.py \
+    deploy/writing.compose.yaml \
+    deploy/writing/requirements.in \
+    deploy/writing/requirements.lock \
+    deploy/writing/bundle-deps.json \
+    deploy/writing/install-libs.py \
+    deploy/writing/stage-diagram.py \
+    deploy/writing/smoke.py \
+    deploy/writing/notices/diagram-bundle.md \
+    deploy/writing/skills/diagram/SKILL.md \
+    deploy/writing/skills/diagram/scripts/render.mjs \
+    examples/writing/guidance/example-writing-guidance/SKILL.md \
+    examples/writing/guidance/example-writing-guidance/references/house-style.md \
+    docs/writing-setup.md \
+    examples/writing/docx-plan.json \
+    examples/writing/pptx-plan.json \
+    examples/writing/sources/q3-shipped-notes.md \
+    examples/writing/sources/q3-order-flow-notes.md \
+    examples/writing/sources/product-overview-notes.md \
+    tests/test_writing_walkthrough.py \
+    tests/fixtures/codex_skills_probe.py \
+    tests/fixtures/docker_shim.py \
+    tests/fixtures/compose/artifact-transport.compose.yaml \
     src/hermes_helmet/fava_trails.py \
     src/hermes_helmet/cli.py \
     src/hermes_helmet/install_skills.py \
@@ -302,6 +339,8 @@ assert (bundled / "helmet-epic" / "SKILL.md").is_file()
 assert (bundled / "setup-helmet" / "SKILL.md").is_file()
 assert (bundled / "observe-chat" / "SKILL.md").is_file()
 assert (bundled / "helmet-review" / "SKILL.md").is_file()
+assert (bundled / "helmet-write" / "SKILL.md").is_file()
+assert (bundled / "helmet-write" / "references" / "review.md").is_file()
 messages = static_validate_all_targets()
 assert any("helmet-issue" in item for item in messages), messages
 assert any("helmet-epic" in item for item in messages), messages
@@ -314,8 +353,8 @@ with tempfile.TemporaryDirectory() as tmp:
         targets=["codex", "claude", "hermes"],
         prefix=Path(tmp),
     )
-    # Five skills × three targets.
-    assert len(installed) == 15, installed
+    # Six skills × three targets.
+    assert len(installed) == 18, installed
 print("setup-helmet, helmet-issue, and helmet-epic validate for all targets")
 print("canonical skills validate; packaged sdist/wheel asset coverage runs in tests.test_packaged_release")
 PY

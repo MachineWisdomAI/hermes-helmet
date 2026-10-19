@@ -2,22 +2,33 @@
 
 The installer invokes this module as the worker UID. It does not copy profile
 history or OAuth grants, and does not start workers or restart the gateway.
+
+An owned stock builder persona is linked to the accepted root company contract
+through the same SOUL path as other roles. The replaced persona is backed up
+under ``.helmet-private/identity-backups`` and can be restored, while drained,
+with ``--recover-identity PROFILE``.
 """
 from __future__ import annotations
 
+from .effort_policy import is_sonnet_55, migrate_config
+
+import hashlib
 import json
 import io
 import logging
 import os
+import copy
+import tempfile
 from pathlib import Path
 import shutil
 import subprocess
 from typing import Callable
 
-from .worker_roles import WorkerRoles
+from .worker_roles import PROFILE_RE, WorkerRoles
 
 HERMES = "hermes"
 DESCRIPTIONS = {
+    "writing": "Documentation, technical specifications, media, marketing and public writing within the accepted task scope.",
     "reviewer": "Independent pull request review against acceptance criteria and repository rules.",
     "documentation": "Documentation, technical specifications and user-facing instructions.",
     "media": "Media, marketing and public writing within the accepted task scope.",
@@ -66,6 +77,272 @@ def _yaml_dump(value: dict) -> str:
     return yaml.safe_dump(value, sort_keys=False)
 
 
+_PRIVATE_DIR = ".helmet-private"
+_DISCOVERY_NAMES = ("profiles", "skills", "memories", "cron", "sessions", "home", "logs")
+
+
+def _approved_soul_link(soul: Path, source: Path) -> bool:
+    if not soul.is_symlink():
+        return False
+    try:
+        return soul.resolve() == source.resolve()
+    except OSError:
+        return False
+
+
+def _owned_stock_persona(path: Path) -> bool:
+    """Recognize an unchanged installed stock persona by content and ownership.
+
+    Filename, length, and a shared marker are not ownership. A symlink is never
+    owned content: replacing through it could modify another file.
+    """
+    if path.is_symlink() or not path.is_file():
+        return False
+    try:
+        info = path.stat()
+        content = path.read_bytes()
+    except OSError:
+        return False
+    if info.st_uid != os.getuid():
+        return False
+    try:
+        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+    except ImportError:
+        return False
+    return content == DEFAULT_SOUL_MD.encode("utf-8")
+
+
+def _discovery_roots(root: Path) -> list[Path]:
+    roots = [root / name for name in _DISCOVERY_NAMES]
+    profiles = root / "profiles"
+    if profiles.is_dir() and not profiles.is_symlink():
+        for entry in profiles.iterdir():
+            if entry.is_dir() and not entry.is_symlink():
+                roots.append(entry)
+                roots.extend(entry / name for name in _DISCOVERY_NAMES)
+    return roots
+
+
+def _outside_discovery(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        root_resolved = root.resolve()
+    except OSError:
+        return False
+    if resolved == root_resolved or (resolved.name == "SOUL.md" and resolved.parent == root_resolved):
+        return False
+    for base in _discovery_roots(root):
+        try:
+            resolved.relative_to(base.resolve())
+        except (OSError, ValueError):
+            continue
+        return False
+    return True
+
+
+def _backup_dir(root: Path, profile: str) -> Path:
+    if not PROFILE_RE.fullmatch(profile):
+        raise RuntimeError("refusing unsafe profile name")
+    destination = root / _PRIVATE_DIR / "identity-backups" / profile
+    for directory in (root / _PRIVATE_DIR, root / _PRIVATE_DIR / "identity-backups", destination):
+        if directory.is_symlink():
+            raise RuntimeError("refusing symlink identity backup directory")
+    if not _outside_discovery(destination, root):
+        raise RuntimeError("identity backup would land inside a discovery path")
+    return destination
+
+
+def _atomic_private_write(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise RuntimeError(f"refusing symlink backup: {path.name}")
+    temporary = path.with_name(path.name + ".new")
+    if temporary.exists() or temporary.is_symlink():
+        raise RuntimeError(f"refusing occupied temporary path: {temporary.name}")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(content)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    os.chmod(path, 0o600)
+
+
+def _atomic_replace_identity(soul: Path, content: bytes) -> None:
+    """Swap an active identity for prepared content without a destructive gap.
+
+    The replacement is fully staged and written before ``os.replace`` touches the
+    active path, so an occupied temporary path or any staging failure leaves the
+    previous symlink or bytes exactly as they were. ``os.replace`` swaps the
+    directory entry atomically and replaces a symlink rather than following it.
+    """
+    temporary = soul.with_name(soul.name + ".new")
+    if temporary.exists() or temporary.is_symlink():
+        raise RuntimeError(f"refusing occupied temporary path: {temporary.name}")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(content)
+        os.replace(temporary, soul)
+    finally:
+        temporary.unlink(missing_ok=True)
+    os.chmod(soul, 0o600)
+
+
+def _backup_owned_identity(root: Path, profile: str, soul: Path) -> Path:
+    """Copy a replaced persona outside profile, skill, and memory discovery."""
+    if soul.is_symlink() or not soul.is_file():
+        raise RuntimeError("refusing to back up an unowned identity")
+    data = soul.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    destination = _backup_dir(root, profile)
+    private = root / _PRIVATE_DIR
+    if private.is_symlink() or (private / "identity-backups").is_symlink():
+        raise RuntimeError("refusing symlink private backup directory")
+    private.mkdir(exist_ok=True)
+    os.chmod(private, 0o700)
+    backups = private / "identity-backups"
+    backups.mkdir(exist_ok=True)
+    os.chmod(backups, 0o700)
+    destination.mkdir(exist_ok=True)
+    os.chmod(destination, 0o700)
+    backup = destination / f"{digest}.md"
+    if backup.exists() or backup.is_symlink():
+        if backup.is_symlink() or not backup.is_file() or backup.read_bytes() != data:
+            raise RuntimeError("identity backup path is unsafe")
+    else:
+        _atomic_private_write(backup, data)
+    if backup.name == "SOUL.md" or not _outside_discovery(backup, root):
+        raise RuntimeError("identity backup is inside a discovery path")
+    receipt = {
+        "schema": 1,
+        "profile": profile,
+        "digest": "sha256:" + digest,
+        "backup": backup.relative_to(root).as_posix(),
+        "replaced": f"profiles/{profile}/SOUL.md",
+    }
+    _atomic_private_write(destination / "receipt.json", (json.dumps(receipt, indent=2) + "\n").encode())
+    return backup
+
+
+def recover_owned_identity(root: Path, profile: str) -> None:
+    """Restore a backed-up persona. Refuses custom content and unexpected symlinks."""
+    destination = _backup_dir(root, profile)
+    receipt_path = destination / "receipt.json"
+    if receipt_path.is_symlink() or not receipt_path.is_file():
+        raise RuntimeError("no owned identity receipt")
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("unreadable owned identity receipt") from exc
+    if not isinstance(receipt, dict) or receipt.get("schema") != 1 or receipt.get("profile") != profile:
+        raise RuntimeError("unexpected owned identity receipt")
+    recorded = receipt.get("backup")
+    if not isinstance(recorded, str) or Path(recorded).is_absolute():
+        raise RuntimeError("identity backup path is not relative")
+    backup = root / recorded
+    try:
+        resolved = backup.resolve()
+        # The backup must stay inside this profile's private backup directory.
+        resolved.relative_to(destination.resolve())
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("identity backup escapes the private backup directory") from exc
+    if backup.is_symlink() or not backup.is_file():
+        raise RuntimeError("identity backup is not a private regular file")
+    if not _outside_discovery(resolved, root):
+        raise RuntimeError("identity backup is not a private regular file")
+    data = backup.read_bytes()
+    if "sha256:" + hashlib.sha256(data).hexdigest() != receipt.get("digest"):
+        raise RuntimeError("identity backup digest mismatch")
+    home = root / "profiles" / profile
+    if home.is_symlink() or not home.is_dir():
+        raise RuntimeError("profile home must be a regular directory")
+    soul = home / "SOUL.md"
+    source = root / "SOUL.md"
+    if soul.is_symlink():
+        if not _approved_soul_link(soul, source):
+            raise RuntimeError(f"refusing to replace an unexpected SOUL symlink for {profile}")
+    elif soul.exists():
+        current = soul.read_bytes()
+        source_bytes = source.read_bytes() if source.is_file() and not source.is_symlink() else None
+        if current != data and current != source_bytes:
+            raise RuntimeError(f"refusing to overwrite a custom persona for {profile}")
+    # Validate the prior identity, then stage and swap atomically. An occupied
+    # temporary path or a failed staging write leaves the prior symlink or bytes
+    # untouched, and the same backup can still be recovered once the path clears.
+    _atomic_replace_identity(soul, data)
+
+
+def _load_effective_identity(home: Path) -> str | None:
+    """Identity Hermes will inject for this home, via the installed loader when present."""
+    try:
+        from agent.prompt_builder import load_soul_md
+        from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    except ImportError:
+        return _read_profile_identity(home)
+    # The loader ensures the ambient home before reading home_override. Point
+    # that ambient home at a scratch directory so verification does not seed
+    # or rewrite the profile being checked.
+    with tempfile.TemporaryDirectory() as scratch:
+        token = set_hermes_home_override(scratch)
+        try:
+            return load_soul_md(home_override=home)
+        finally:
+            reset_hermes_home_override(token)
+
+
+def _read_profile_identity(home: Path) -> str | None:
+    soul = home / "SOUL.md"
+    if not soul.exists():
+        return None
+    try:
+        text = soul.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    text = text.strip()
+    return text or None
+
+
+def _company_identity(root: Path) -> str:
+    source = root / "SOUL.md"
+    if source.is_symlink() or not source.is_file():
+        raise RuntimeError("action required: company contract is missing")
+    loaded = _load_effective_identity(root)
+    if not loaded:
+        raise RuntimeError("action required: company contract is empty")
+    return loaded
+
+
+def _require_delivered_identity(root: Path, home: Path, contract: str) -> None:
+    soul = home / "SOUL.md"
+    source = root / "SOUL.md"
+    if soul.is_symlink() and not _approved_soul_link(soul, source):
+        raise RuntimeError(f"action required: unexpected SOUL symlink for {home.name}")
+    loaded = _load_effective_identity(home)
+    if not loaded or loaded != contract or loaded.count(contract) != 1:
+        raise RuntimeError(f"action required: company contract missing or stale for {home.name}")
+
+
+def _route_stock_builder_contract(root: Path, home: Path, link: Callable[[Path, Path], None],
+                                  snapshots: dict[Path, tuple[bytes, int] | None]) -> None:
+    """Link an owned stock builder persona to the accepted contract. Leave custom bytes alone."""
+    soul = home / "SOUL.md"
+    source = root / "SOUL.md"
+    if _approved_soul_link(soul, source):
+        return
+    if soul.is_symlink() or (soul.exists() and not _owned_stock_persona(soul)):
+        return
+    if not source.exists():
+        return
+    if soul.exists():
+        _backup_owned_identity(root, home.name, soul)
+        if soul not in snapshots:
+            snapshots[soul] = (soul.read_bytes(), soul.stat().st_mode & 0o777)
+        soul.unlink()
+    link(source, soul)
+
+
 def _read_config(path: Path) -> dict:
     if path.is_symlink() or not path.is_file():
         raise RuntimeError(f"expected a regular config: {path}")
@@ -90,12 +367,28 @@ def verify(root: Path, roles: WorkerRoles, *, provider: str, model: str, turns: 
             raise RuntimeError(f"worker model drift: {home.name}")
         if config.get("agent", {}).get("max_turns") != turns:
             raise RuntimeError(f"worker budget drift: {home.name}")
+        role = next(role for role, name in roles.profiles if name == home.name)
+        effort = (dict(roles.sonnet_55_effort).get(role) if roles.sonnet_55_effort and is_sonnet_55(model)
+                  else None if roles.sonnet_55_effort else dict(roles.reasoning_effort).get(role))
+        if effort is not None and config.get("agent", {}).get("reasoning_overrides", {}).get(model) != effort:
+            raise RuntimeError(f"worker reasoning effort drift: {home.name}")
         if kanban.get("decompose") is not False or kanban.get("dispatch_in_gateway") is not False:
             raise RuntimeError(f"worker dispatcher/decomposition drift: {home.name}")
         if config.get("delegation", {}).get("max_concurrent_children") != 1:
             raise RuntimeError(f"worker delegation drift: {home.name}")
         if not (home / "home").is_dir() or not (home / "skills").is_dir():
             raise RuntimeError(f"worker profile incomplete: {home.name}")
+    if roles.sonnet_55_effort:
+        preferences = {name: dict(roles.sonnet_55_effort)[role] for role, name in roles.profiles}
+        for home in [root] + list((root / "profiles").iterdir()):
+            if not (home / "config.yaml").is_file():
+                continue
+            config = _read_config(home / "config.yaml")
+            if migrate_config(config, preferences.get(home.name, "medium")) != config:
+                raise RuntimeError(f"Sonnet effort policy drift: {home.name}")
+    contract = _company_identity(root)
+    for _, name in roles.profiles:
+        _require_delivered_identity(root, root / "profiles" / name, contract)
 
 
 def create_profile(name: str, role: str, hermes_bin: str = HERMES) -> None:
@@ -148,10 +441,18 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                 create(name, role)
             config = _read_config(home / "config.yaml") if (home / "config.yaml").exists() else {}
             if role != "builder":
+                existing_agent = copy.deepcopy(config.get("agent", {}))
+                existing_overrides = copy.deepcopy(existing_agent.get("reasoning_overrides", {}))
                 # Use company-approved configuration, but retain unrelated role-specific keys.
                 for key in ("model", "agent", "fallback_providers", "provider_routing", "providers"):
                     if key in template:
-                        config[key] = template[key]
+                        config[key] = copy.deepcopy(template[key])
+                if "fallback_providers" in template and "fallback_model" not in template:
+                    config.pop("fallback_model", None)
+                if roles.sonnet_55_effort:
+                    config.setdefault("agent", {}).update(existing_agent)
+                if existing_overrides:
+                    config.setdefault("agent", {}).setdefault("reasoning_overrides", {}).update(existing_overrides)
                 for filename in (".env", "home/.gitconfig"):
                     source = builder / filename
                     if source.is_file() and not source.is_symlink():
@@ -175,8 +476,18 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                         for tool in tools.iterdir():
                             if tool.is_file() and os.access(tool, os.X_OK):
                                 link(tool.resolve(), home / relative / tool.name)
+            else:
+                _route_stock_builder_contract(root, home, link, snapshots)
             config.setdefault("model", {}).update(provider=provider, default=model)
             config.setdefault("agent", {})["max_turns"] = turns
+            effort = dict(roles.reasoning_effort).get(role)
+            if effort is not None and not roles.sonnet_55_effort:
+                config["agent"].setdefault("reasoning_overrides", {})[model] = effort
+                for backup in config.get("fallback_providers", []):
+                    if isinstance(backup, dict) and isinstance(backup.get("model"), str):
+                        config["agent"]["reasoning_overrides"][backup["model"]] = effort
+            if roles.sonnet_55_effort:
+                config = migrate_config(config, dict(roles.sonnet_55_effort)[role])
             config.setdefault("kanban", {}).update(
                 max_in_progress=roles.max_in_progress,
                 max_in_progress_per_profile=roles.max_in_progress_per_profile,
@@ -184,7 +495,17 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
             )
             config.setdefault("delegation", {})["max_concurrent_children"] = 1
             write(home / "config.yaml", _yaml_dump(config).encode())
+        # Retired/discovered profiles may still be selected directly. Preserve all
+        # their configuration except Sonnet policy values.
+        if roles.sonnet_55_effort:
+            managed = {name for _, name in roles.profiles}
+            for home in (root / "profiles").iterdir():
+                if home.name not in managed and (home / "config.yaml").is_file():
+                    config = migrate_config(_read_config(home / "config.yaml"), "medium")
+                    write(home / "config.yaml", _yaml_dump(config).encode())
         config = _read_config(root / "config.yaml")
+        if roles.sonnet_55_effort:
+            config = migrate_config(config, "medium")
         config.setdefault("kanban", {}).update(max_in_progress=roles.max_in_progress,
                                                max_in_progress_per_profile=roles.max_in_progress_per_profile)
         write(root / "config.yaml", _yaml_dump(config).encode())
@@ -246,7 +567,7 @@ def verification_program(policy, *, state_root: str, gh_bin: str = "gh",
         "from pathlib import Path; "
         "from hermes_helmet.worker_roles import WorkerRoles; "
         "from hermes_helmet.worker_role_runtime import verify, verify_identity; "
-        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}); "
+        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}, {roles.reasoning_effort!r}, {roles.sonnet_55_effort!r}); "
         f"verify(Path({state_root!r}), roles, provider={policy.inference_provider!r}, "
         f"model={policy.inference_model!r}, turns={policy.worker_max_turns!r}); "
         f"verify_identity(Path({state_root!r}), roles, {policy.worker_github_login!r}, "
@@ -266,9 +587,15 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--verify", action="store_true")
     mode.add_argument("--check-drained", action="store_true")
+    mode.add_argument("--recover-identity", metavar="PROFILE")
     args = parser.parse_args(argv)
     os.environ["HERMES_HOME"] = str(args.state_root)
     policy = load_policy(args.config)
+    if args.recover_identity:
+        require_drained(args.hermes)
+        recover_owned_identity(args.state_root, args.recover_identity)
+        print(f"Restored owned identity for {args.recover_identity}.")
+        return 0
     if policy.worker_roles is None:
         return 0
     if args.check_drained:
