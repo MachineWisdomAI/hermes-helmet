@@ -151,8 +151,11 @@ TOP_LEVEL_POLICY_KEYS = frozenset(
         "worker_access_scope",
         "worker_completion_contract",
         "enrollment",
+        "issue_routes",
     }
 )
+ROUTE_KEYS = frozenset({"label", "tracking_repository", "implementation_repository"})
+ROUTE_LABEL_MAX = 50
 COMPANY_KEYS = frozenset({"display_name", "slug"})
 MERGE_KEYS = frozenset({"default_mode", "unattended_marker", "narrow_marker"})
 INTEGRATION_KEYS = frozenset({"openviking", "fava_trails", "signal"})
@@ -181,6 +184,28 @@ class AuthorityError(ValueError):
 class Repository:
     slug: str
     worktree: Path
+
+
+@dataclass(frozen=True)
+class IssueRoute:
+    """One operator-configured tracking -> implementation repository route.
+
+    ``label`` selects the route on a tracking-repository issue; it never names
+    a destination. Both repositories are spelled as in the allowlist.
+    """
+
+    label: str
+    tracking_repository: str
+    implementation_repository: str
+
+
+@dataclass(frozen=True)
+class ResolvedRoute:
+    """A route bound to its allowlisted repositories (one resolved value)."""
+
+    label: str
+    tracking: Repository
+    implementation: Repository
 
 
 @dataclass(frozen=True)
@@ -278,6 +303,63 @@ class Policy:
     worker_completion_contract: str = DEFAULT_WORKER_COMPLETION_CONTRACT
     enrollment: EnrollmentPolicy = EnrollmentPolicy()
     first_officer_check_interval_minutes: int = DEFAULT_FIRST_OFFICER_CHECK_INTERVAL_MINUTES
+    issue_routes: tuple[IssueRoute, ...] = ()
+
+    def repository_for(self, slug: str) -> Repository | None:
+        """The allowlisted repository for *slug* (case-insensitive), if any."""
+
+        wanted = (slug or "").casefold()
+        return next((r for r in self.repositories if r.slug.casefold() == wanted), None)
+
+    def _resolved(self, route: IssueRoute) -> ResolvedRoute | None:
+        tracking = self.repository_for(route.tracking_repository)
+        implementation = self.repository_for(route.implementation_repository)
+        if tracking is None or implementation is None:
+            return None
+        return ResolvedRoute(route.label, tracking, implementation)
+
+    def route_for_labels(
+        self, tracking_slug: str, labels: Sequence[str]
+    ) -> ResolvedRoute | None:
+        """Resolve the dispatch route of a tracking issue from its labels.
+
+        Only operator-configured routes can match; issue text never names a
+        destination. No matching label means the issue is implemented in its
+        own repository. Labels selecting different targets are ambiguous and
+        refused.
+        """
+
+        present = {label.casefold() for label in labels}
+        slug = (tracking_slug or "").casefold()
+        matches = [
+            route
+            for route in self.issue_routes
+            if route.tracking_repository.casefold() == slug
+            and route.label.casefold() in present
+        ]
+        targets = {route.implementation_repository.casefold() for route in matches}
+        if len(targets) > 1:
+            raise AuthorityError("route labels select different implementation repositories")
+        return self._resolved(matches[0]) if matches else None
+
+    def route_for_target(
+        self, tracking_slug: str, implementation_slug: str
+    ) -> ResolvedRoute | None:
+        """The configured route from a tracking repository to a PR repository.
+
+        Used to validate adopted pull requests and transfers: a foreign pull
+        request is valid only for an explicitly configured target.
+        """
+
+        slug = (tracking_slug or "").casefold()
+        target = (implementation_slug or "").casefold()
+        for route in self.issue_routes:
+            if (
+                route.tracking_repository.casefold() == slug
+                and route.implementation_repository.casefold() == target
+            ):
+                return self._resolved(route)
+        return None
 
     @property
     def worker_github_login(self) -> str:
@@ -598,6 +680,72 @@ def _parse_repositories(raw: Mapping[str, object]) -> tuple[Repository, ...]:
     if len(set(worktree_keys)) != len(worktree_keys):
         raise _field_error("repositories", "worktree paths must be unique")
     return tuple(repositories)
+
+
+def _parse_issue_routes(
+    raw: Mapping[str, object],
+    repositories: Sequence[Repository],
+    *,
+    dispatch_label: str,
+    ready_label: str,
+) -> tuple[IssueRoute, ...]:
+    if "issue_routes" not in raw:
+        return ()
+    entries = raw.get("issue_routes")
+    if not isinstance(entries, list):
+        raise _field_error("issue_routes", "must be a list")
+    allowed = {repository.slug.casefold(): repository.slug for repository in repositories}
+    reserved = {dispatch_label.casefold(), ready_label.casefold()}
+    routes: list[IssueRoute] = []
+    seen: set[tuple[str, str]] = set()
+    for index, entry in enumerate(entries):
+        prefix = f"issue_routes[{index}]"
+        if not isinstance(entry, dict):
+            raise _field_error(prefix, "must be an object")
+        _reject_unknown_and_secret_keys(entry, ROUTE_KEYS, prefix=prefix)
+        label = entry.get("label")
+        if (
+            not isinstance(label, str)
+            or not label.strip()
+            or len(label.strip()) > ROUTE_LABEL_MAX
+        ):
+            raise _field_error(f"{prefix}.label", "must be a short non-empty label")
+        label = label.strip()
+        if label.casefold() in reserved:
+            raise _field_error(
+                f"{prefix}.label", "must differ from dispatch_label and ready_label"
+            )
+        slugs: list[str] = []
+        for key in ("tracking_repository", "implementation_repository"):
+            slug = entry.get(key)
+            if not isinstance(slug, str) or not REPOSITORY_RE.fullmatch(slug):
+                raise _field_error(f"{prefix}.{key}", "must be an owner/name repository slug")
+            if slug.casefold() not in allowed:
+                raise _field_error(f"{prefix}.{key}", "must be an allowlisted repository")
+            slugs.append(allowed[slug.casefold()])
+        if slugs[0].casefold() == slugs[1].casefold():
+            raise _field_error(
+                prefix, "tracking and implementation repositories must differ"
+            )
+        key = (slugs[0].casefold(), label.casefold())
+        if key in seen:
+            raise _field_error("issue_routes", "tracking repository and label must be unique")
+        seen.add(key)
+        routes.append(IssueRoute(label, slugs[0], slugs[1]))
+    return tuple(routes)
+
+
+def routed_branch(tracking_issue_url: str) -> str:
+    """Opaque canonical branch for a routed task.
+
+    Derived from the tracking issue URL so retries and resumes agree, while the
+    public branch name reveals neither the private repository nor the number.
+    """
+
+    digest = hashlib.sha256(
+        (tracking_issue_url or "").casefold().encode("utf-8")
+    ).hexdigest()
+    return f"automation/tracked-{digest[:12]}"
 
 
 def _parse_string_list(raw: Mapping[str, object], field: str, *, required: bool = False) -> tuple[str, ...]:
@@ -981,6 +1129,9 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
     budgets = _parse_budgets(raw)
     peers = _parse_peers(raw)
     skills = _parse_skills(raw)
+    issue_routes = _parse_issue_routes(
+        raw, repositories, dispatch_label=required_label, ready_label=ready_label
+    )
     from hermes_helmet.model_lanes import parse_model_lanes_for_policy
 
     model_lanes = parse_model_lanes_for_policy(
@@ -1073,6 +1224,7 @@ def policy_from_mapping(raw: Mapping[str, object]) -> Policy:
         worker_access_scope=worker_access_scope,
         worker_completion_contract=worker_completion_contract,
         enrollment=enrollment,
+        issue_routes=issue_routes,
     )
 
 
@@ -1297,6 +1449,19 @@ def render_crew_contract(policy: Policy) -> str:
     if policy.integrations.signal:
         integrations.append("Signal")
     integration_text = ", ".join(integrations) if integrations else "none enabled"
+    route_contract_text = ""
+    if policy.issue_routes:
+        route_lines = "\n".join(
+            f"  `{route.tracking_repository}` issues labeled `{route.label}` are "
+            f"implemented in `{route.implementation_repository}`"
+            for route in policy.issue_routes
+        )
+        route_contract_text = (
+            "- Issue routes (operator-configured; issue text never adds one). The "
+            "tracking issue keeps delivery and acceptance; the code pull request "
+            "lives in the implementation repository and must not expose the "
+            "tracking issue:\n" + route_lines + "\n"
+        )
     if policy.merge_default_mode == UNATTENDED_MERGE_MODE:
         merge_authority_text = f"""- Merge authority defaults to unattended merge after current-head Captain
   review, required checks, and mergeability pass (`{policy.merge_default_mode}`).
@@ -1333,7 +1498,7 @@ occurred when it has not.
   GitHub review request for `{worker}` inside the configured repository
   allowlist authorizes the review, and any request GitHub permits (including a
   fork pull request) follows the same path.
-- Trusted human review is limited to repository associations: {humans}.
+{route_contract_text}- Trusted human review is limited to repository associations: {humans}.
 - Trusted automation is limited to exact bot logins: {bots}.
 - Implement and repair pull requests as `{worker}`. Never approve your own head
   or switch profiles, tokens, sessions, or browser state to manufacture the
@@ -1390,19 +1555,54 @@ from memory, the run is incomplete even when its technical task succeeded.
 """
 
 
+def render_route_sections(route: ResolvedRoute, branch: str) -> str:
+    """Task-card sections for a routed tracking issue.
+
+    The task card is private Kanban state, so it may name the tracking issue.
+    The privacy contract is what the worker must keep out of everything public.
+    """
+
+    return (
+        "## Implementation route\n\n"
+        f"- Tracking repository: {route.tracking.slug} (internal; keeps acceptance)\n"
+        f"- Implementation repository: {route.implementation.slug}\n"
+        f"- Assigned worktree: a checkout of {route.implementation.slug}\n"
+        f"- Canonical branch: {branch}\n\n"
+        f"Implement only in {route.implementation.slug}. Push the canonical branch "
+        "there and open exactly one pull request from it. The route is configured by "
+        "the operator; association needs no link to the tracking issue.\n\n"
+        "## Public pull-request privacy contract\n\n"
+        "The tracking issue is internal. Do not put its URL, number, repository "
+        "name, title, body text, labels, approval or merge-marker provenance, or "
+        "any closing keyword that names it in the pull request title, pull request "
+        "body, commit message, branch name, review reply, or comment. Describe the "
+        "change on its own merits in public terms, using only what the public "
+        "repository already shows. Do not close the tracking issue: internal "
+        "acceptance is recorded explicitly by the Captain after the code merges.\n\n"
+    )
+
+
 def render_issue_task_body(
     *,
     issue_url: str,
     issue_body: str,
     policy: Policy,
+    route: ResolvedRoute | None = None,
+    branch: str | None = None,
 ) -> str:
     """Generate root-task language naming only the configured worker identity."""
 
     allowlist = ", ".join(repository.slug for repository in policy.repositories)
+    route_text = (
+        render_route_sections(route, branch or routed_branch(issue_url))
+        if route is not None
+        else ""
+    )
     return (
         f"## Source issue\n\n{issue_url}\n\n"
         f"## GitHub acceptance context\n\n"
         f"{issue_body.strip() or '(No issue body provided.)'}\n\n"
+        f"{route_text}"
         "## Hermes Helmet execution contract\n\n"
         "Work only in the assigned isolated worktree. Run the issue's verification, "
         f"open a tested pull request through the {policy.github_identity} identity, "
@@ -1422,8 +1622,17 @@ def render_repair_task_body(
     event_state: str,
     event_actor: str,
     event_url: str,
+    routed: bool = False,
 ) -> str:
     state = f" ({event_state})" if event_state else ""
+    privacy = (
+        "\n\nPublic pull-request privacy contract: this pull request is public while "
+        "its tracking issue is internal. Keep the tracking issue's URL, number, "
+        "repository, title, body, approval provenance, and closing keywords out of "
+        "the pull request, commits, replies, and comments."
+        if routed
+        else ""
+    )
     return (
         "## GitHub review event\n\n"
         f"- Pull request: {pull_url}\n"
@@ -1439,6 +1648,7 @@ def render_repair_task_body(
         "cleanup. Complete this repair card after pushing the same PR with "
         "metadata.published_pr; a later external review event will create the next "
         "dependent card."
+        f"{privacy}"
     )
 
 
@@ -1596,6 +1806,15 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
             else {}
         ),
     }
+    if policy.issue_routes:
+        result["issue_routes"] = [
+            {
+                "label": route.label,
+                "tracking_repository": route.tracking_repository,
+                "implementation_repository": route.implementation_repository,
+            }
+            for route in policy.issue_routes
+        ]
     if policy.worker_roles is not None:
         roles = policy.worker_roles
         result["worker_roles"] = {

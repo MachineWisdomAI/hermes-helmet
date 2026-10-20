@@ -63,6 +63,12 @@ watcher:
    without per-PR instructions. Issue implementation still uses the dispatch
    label; pull-request review uses the native review request.
 
+Routing is resolved once, from the authority policy, and carried through every
+part above. With `issue_routes`, the ledger key and acceptance identity stay the
+tracking issue URL, while the root task's checkout, branch, completion contract,
+pull-request discovery, repair, and merge use the implementation repository.
+Same-repository issues are untouched. See [issue-routing.md](issue-routing.md).
+
 Adopter configuration is one versioned authority policy (version 1 or
 version 2). See `config/policy.example.json`, `docs/authority-schema.md`, and
 `docs/private-overlay.md`. Machine Wisdom deployment values stay outside this

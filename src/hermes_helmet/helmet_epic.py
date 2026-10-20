@@ -1587,6 +1587,11 @@ def classify_children(
         if report.terminal and state == "BLOCKED":
             buckets["awaiting_human"].append(url)
             continue
+        if state == "AWAIT_ACCEPTANCE":
+            # Routed child whose code merged: the tracking issue stays open
+            # until the Captain records acceptance, so dependents keep waiting.
+            buckets["awaiting_human"].append(url)
+            continue
 
         # Authoritative recovered root ownership counts as in-flight before any
         # local PREFLIGHT/UNKNOWN checkpoint is treated as freshly ready.

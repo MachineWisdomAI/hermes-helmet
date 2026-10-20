@@ -28,12 +28,14 @@ from hermes_helmet.authority import (
     AuthorityError,
     Policy,
     Repository,
+    ResolvedRoute,
     is_trusted_bot,
     is_trusted_human,
     load_policy as load_authority_policy,
     render_issue_task_body,
     render_repair_task_body,
     render_review_task_body,
+    routed_branch,
     verify_worker_identity,
 )
 
@@ -69,13 +71,24 @@ class Issue:
     number: int
     title: str
     body: str
+    # Operator-configured route resolved from the tracking issue's labels. The
+    # issue (``repository``/``number``) stays the delivery and acceptance
+    # identity; the checkout, branch, PR repository and completion contract
+    # follow ``workspace_repository``.
+    route: ResolvedRoute | None = None
 
     @property
     def url(self) -> str:
         return f"https://github.com/{self.repository.slug}/issues/{self.number}"
 
     @property
+    def workspace_repository(self) -> Repository:
+        return self.route.implementation if self.route is not None else self.repository
+
+    @property
     def branch(self) -> str:
+        if self.route is not None:
+            return routed_branch(self.url)
         name = self.repository.slug.rsplit("/", 1)[1].lower()
         return f"automation/{name}-{self.number}"
 
@@ -90,6 +103,13 @@ class PullRequestContext:
     assignee: str
     workspace_path: Path
     branch_name: str
+    # Tracking repository slug when the pull request lives elsewhere; empty
+    # for the default same-repository flow.
+    tracking_slug: str = ""
+
+    @property
+    def routed(self) -> bool:
+        return bool(self.tracking_slug)
 
 
 @dataclass(frozen=True)
@@ -277,7 +297,14 @@ def list_eligible_issues(
             if body is not None and not isinstance(body, str):
                 warnings.append(f"Skipped malformed eligible issue from {repository.slug}.")
                 continue
-            issues.append(Issue(repository, number, title.strip(), body or ""))
+            try:
+                route = policy.route_for_labels(
+                    repository.slug, sorted(_label_names(raw.get("labels")))
+                )
+            except AuthorityError as exc:
+                errors.append(f"Skipped {repository.slug}#{number}: route {exc}")
+                continue
+            issues.append(Issue(repository, number, title.strip(), body or "", route))
     return issues, warnings, errors
 
 
@@ -286,6 +313,8 @@ def _task_body(issue: Issue, policy: Policy) -> str:
         issue_url=issue.url,
         issue_body=issue.body,
         policy=policy,
+        route=issue.route,
+        branch=issue.branch if issue.route is not None else None,
     )
 
 
@@ -312,6 +341,114 @@ def _ensure_ledger(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    # Retired tracking-issue URLs (explicit transfer adoption). Additive: it
+    # lets a retained old URL resolve to the one existing root instead of
+    # creating a second one.
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS issue_aliases (
+            retired_url TEXT PRIMARY KEY,
+            current_url TEXT NOT NULL,
+            adopted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def _current_issue_url(connection: sqlite3.Connection, issue_url: str) -> str:
+    row = connection.execute(
+        "SELECT current_url FROM issue_aliases WHERE retired_url = ?", (issue_url,)
+    ).fetchone()
+    return str(row[0]) if row else issue_url
+
+
+def current_issue_url(ledger: Path, issue_url: str) -> str:
+    """Read-only: the current tracking URL for a possibly retired one.
+
+    Tolerates a missing ledger or a ledger written before aliases existed.
+    """
+
+    if not ledger.is_file():
+        return issue_url
+    connection = sqlite3.connect(ledger, timeout=30)
+    try:
+        return _current_issue_url(connection, issue_url)
+    except sqlite3.OperationalError:
+        return issue_url
+    finally:
+        connection.close()
+
+
+def rekey_issue_ledger(
+    ledger: Path, *, old_url: str, new_url: str, task_id: str
+) -> bool:
+    """Atomically move one tracked issue's ledger identity to its new URL.
+
+    The root task, creation order and pull-request watch (cursor and repair
+    chain) are preserved by re-keying the existing rows, never by copying or
+    resetting them. Returns ``False`` when the adoption already happened.
+    Raises ``PollerError`` for a missing root, a different root, or a
+    conflicting root/watch at the new URL.
+    """
+
+    connection = sqlite3.connect(ledger, timeout=30, isolation_level=None)
+    try:
+        _ensure_ledger(connection)
+        connection.execute("BEGIN IMMEDIATE")
+        old_row = connection.execute(
+            "SELECT task_id FROM issue_tasks WHERE issue_url = ?", (old_url,)
+        ).fetchone()
+        new_row = connection.execute(
+            "SELECT task_id FROM issue_tasks WHERE issue_url = ?", (new_url,)
+        ).fetchone()
+        alias = connection.execute(
+            "SELECT current_url FROM issue_aliases WHERE retired_url = ?", (old_url,)
+        ).fetchone()
+        if old_row is None:
+            if (
+                new_row is not None
+                and str(new_row[0]) == task_id
+                and alias is not None
+                and str(alias[0]) == new_url
+            ):
+                connection.execute("COMMIT")
+                return False
+            raise PollerError("ledger has no root for the retired tracking URL")
+        if str(old_row[0]) != task_id:
+            raise PollerError("ledger root differs from the validated root task")
+        if new_row is not None:
+            raise PollerError("ledger already has a root for the new tracking URL")
+        if connection.execute(
+            "SELECT 1 FROM issue_aliases WHERE retired_url = ?", (new_url,)
+        ).fetchone():
+            raise PollerError("new tracking URL is a retired alias of another issue")
+        if connection.execute(
+            "SELECT 1 FROM pull_request_watches WHERE issue_url = ?", (new_url,)
+        ).fetchone():
+            raise PollerError("ledger already has a pull-request watch for the new URL")
+        connection.execute(
+            "UPDATE issue_tasks SET issue_url = ? WHERE issue_url = ?", (new_url, old_url)
+        )
+        connection.execute(
+            "UPDATE pull_request_watches SET issue_url = ? WHERE issue_url = ?",
+            (new_url, old_url),
+        )
+        connection.execute(
+            "UPDATE issue_aliases SET current_url = ? WHERE current_url = ?",
+            (new_url, old_url),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO issue_aliases(retired_url, current_url) VALUES (?, ?)",
+            (old_url, new_url),
+        )
+        connection.execute("COMMIT")
+        return True
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute("ROLLBACK")
+        raise
+    finally:
+        connection.close()
 
 
 def _watch_state(
@@ -475,7 +612,7 @@ def _pull_request_context_from_payload(
     issue_match = ISSUE_URL_RE.fullmatch(issue_url)
     if issue_match is None:
         raise PollerError(f"ledger contains an invalid issue URL: {issue_url}")
-    repository = next(
+    tracking = next(
         (
             candidate
             for candidate in policy.repositories
@@ -483,15 +620,27 @@ def _pull_request_context_from_payload(
         ),
         None,
     )
-    if repository is None:
+    if tracking is None:
         return None
 
     pull_url = _pull_request_url(payload, task_id=task_id)
     if pull_url is None:
         return None
     pull_match = PULL_REQUEST_URL_RE.fullmatch(pull_url)
-    if pull_match is None or pull_match.group("slug") != repository.slug:
-        raise PollerError(f"task {task_id} references a pull request outside {repository.slug}")
+    if pull_match is None:
+        raise PollerError(f"task {task_id} references a pull request outside {tracking.slug}")
+    repository = tracking
+    tracking_slug = ""
+    if pull_match.group("slug") != tracking.slug:
+        # A foreign pull request is valid only for an explicitly configured
+        # route target, and only for a task dispatched into that checkout.
+        route = policy.route_for_target(tracking.slug, pull_match.group("slug"))
+        if route is None:
+            raise PollerError(
+                f"task {task_id} references a pull request outside {tracking.slug}"
+            )
+        repository = route.implementation
+        tracking_slug = tracking.slug
 
     task = payload["task"]
     assert isinstance(task, dict)
@@ -502,6 +651,11 @@ def _pull_request_context_from_payload(
         raise PollerError(f"task {task_id} pull request is not backed by a worktree")
     if not isinstance(workspace_path, str) or not Path(workspace_path).is_absolute():
         raise PollerError(f"task {task_id} has no absolute pull-request worktree path")
+    if tracking_slug and not _within(Path(workspace_path), repository.worktree):
+        raise PollerError(
+            f"task {task_id} workspace does not match the configured route target "
+            f"{repository.slug}"
+        )
     if not isinstance(branch_name, str) or not branch_name.strip():
         raise PollerError(f"task {task_id} has no pull-request branch")
     assignee = task.get("assignee")
@@ -517,7 +671,18 @@ def _pull_request_context_from_payload(
         assignee=assignee.strip(),
         workspace_path=Path(workspace_path),
         branch_name=branch_name.strip(),
+        tracking_slug=tracking_slug,
     )
+
+
+def _within(path: Path, root: Path) -> bool:
+    """True when *path* is *root* or lives beneath it (task worktrees nest)."""
+
+    try:
+        resolved, base = path.resolve(), root.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return resolved == base or base in resolved.parents
 
 
 def _review_events(
@@ -636,6 +801,7 @@ def _review_task_body(context: PullRequestContext, event: ReviewEvent) -> str:
         event_state=event.state,
         event_actor=event.actor,
         event_url=event.url,
+        routed=context.routed,
     )
 
 
@@ -654,7 +820,8 @@ def _create_review_task(
             policy.board,
             "create",
             (
-                f"{context.repository.slug}#{context.issue_number}: "
+                f"{context.tracking_slug or context.repository.slug}"
+                f"#{context.issue_number}: "
                 f"review follow-up for PR #{context.pull_number}"
             ),
             "--body",
@@ -712,11 +879,11 @@ def _reconcile_review_task(
         raise PollerError(f"ledger contains an invalid issue URL: {issue_url}")
     repository_slug = issue_match.group("slug")
     watch = _watch_state(connection, issue_url)
-    if (
-        watch.pull_url is not None
-        and watch.pull_url not in open_pulls[repository_slug]
-    ):
-        return None
+    if watch.pull_url is not None:
+        watch_match = PULL_REQUEST_URL_RE.fullmatch(watch.pull_url)
+        watch_slug = watch_match.group("slug") if watch_match else repository_slug
+        if watch.pull_url not in open_pulls.get(watch_slug, ()):
+            return None
     if watch.pull_url is None:
         # Terminal null discovery is not final: re-read the root task each
         # poll so late canonical metadata.pr_url or metadata.published_pr
@@ -752,7 +919,7 @@ def _reconcile_review_task(
         )
     if context is None:
         return None
-    if context.pull_url not in open_pulls[context.repository.slug]:
+    if context.pull_url not in open_pulls.get(context.repository.slug, ()):
         # Keep a null discovery sentinel when late metadata points at a
         # closed/non-open same-repo PR so a later open URL can still be
         # adopted without ledger surgery.
@@ -849,8 +1016,11 @@ def _task_reads_for_reconciliation(
             if match is None or match.group("slug") not in open_pulls:
                 continue
             watch = _watch_state(connection, issue_url)
-            if watch.pull_url is not None and watch.pull_url not in open_pulls[match.group("slug")]:
-                continue
+            if watch.pull_url is not None:
+                watch_match = PULL_REQUEST_URL_RE.fullmatch(watch.pull_url)
+                watch_slug = watch_match.group("slug") if watch_match else match.group("slug")
+                if watch.pull_url not in open_pulls.get(watch_slug, ()):
+                    continue
             task_ids.append(root_task_id)
             if watch.last_repair_task_id is not None:
                 task_ids.append(watch.last_repair_task_id)
@@ -870,9 +1040,16 @@ def reconcile_review_tasks(
         for issue_url, _ in tracked_tasks
         if (match := ISSUE_URL_RE.fullmatch(issue_url)) is not None
     }
+    # A tracked issue may have its pull request in a configured route target.
+    listed = {slug.casefold() for slug in tracked_repositories}
+    listed |= {
+        route.implementation_repository.casefold()
+        for route in policy.issue_routes
+        if route.tracking_repository.casefold() in listed
+    }
     open_pulls: dict[str, set[str]] = {}
     for repository in policy.repositories:
-        if repository.slug not in tracked_repositories:
+        if repository.slug.casefold() not in listed:
             continue
         try:
             open_pulls[repository.slug] = _open_pull_urls(repository, runner)
@@ -931,19 +1108,22 @@ def create_task_once(issue: Issue, policy: Policy, ledger: Path, runner: Runner)
     try:
         _ensure_ledger(connection)
         connection.execute("BEGIN IMMEDIATE")
+        # A retired (transferred) URL resolves to the one existing root.
         row = connection.execute(
-            "SELECT task_id FROM issue_tasks WHERE issue_url = ?", (issue.url,)
+            "SELECT task_id FROM issue_tasks WHERE issue_url = ?",
+            (_current_issue_url(connection, issue.url),),
         ).fetchone()
         if row:
             connection.execute("COMMIT")
             return str(row[0]), False
-        if not issue.repository.worktree.is_dir():
-            raise PollerError(f"allowlisted worktree is unavailable: {issue.repository.worktree}")
+        workspace = issue.workspace_repository
+        if not workspace.worktree.is_dir():
+            raise PollerError(f"allowlisted worktree is unavailable: {workspace.worktree}")
         git_state = runner.run(
-            ["git", "-C", str(issue.repository.worktree), "rev-parse", "--is-inside-work-tree"]
+            ["git", "-C", str(workspace.worktree), "rev-parse", "--is-inside-work-tree"]
         ).strip()
         if git_state != "true":
-            raise PollerError(f"allowlisted worktree is not a Git repository: {issue.repository.worktree}")
+            raise PollerError(f"allowlisted worktree is not a Git repository: {workspace.worktree}")
         output = runner.run(
             [
                 HERMES,
@@ -959,11 +1139,11 @@ def create_task_once(issue: Issue, policy: Policy, ledger: Path, runner: Runner)
                 "--created-by",
                 CREATED_BY,
                 "--workspace",
-                f"worktree:{issue.repository.worktree}",
+                f"worktree:{workspace.worktree}",
                 "--branch",
                 issue.branch,
                 "--completion-contract",
-                policy.kanban_completion_contract(issue.repository.slug),
+                policy.kanban_completion_contract(workspace.slug),
                 *_kanban_max_runtime_args(policy),
                 "--idempotency-key",
                 issue.url,

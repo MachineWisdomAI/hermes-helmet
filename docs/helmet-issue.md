@@ -77,6 +77,17 @@ canonical repository identity before adoption: valid foreign references are
 ignored, references with no usable identity grant no authority, and
 contradictory metadata claiming the local repository fails closed.
 
+An issue whose repository has a configured `issue_routes` entry and carries the
+route label is a **routed tracking issue**: the tracking issue stays the
+delivery identity, while the checkout, canonical branch, pull request, required
+checks, and merge are in the configured implementation repository. Its public
+pull request is associated by the canonical branch or exact ledger/Kanban URL
+only (never by links or closing keywords), merged code waits in
+`AWAIT_ACCEPTANCE`, and `helmet accept ISSUE_URL --expected-head SHA` records
+acceptance explicitly. A tracking issue moved to another allowlisted repository
+is adopted with `helmet adopt-transfer OLD NEW`. See
+[issue-routing.md](issue-routing.md).
+
 ## Ask Hermes to review a pull request
 
 Issue implementation uses the dispatch label. Reviewing an existing pull
@@ -170,6 +181,8 @@ consent.
 | `skills/helmet-issue/SKILL.md` | Portable skill (also packaged under `hermes_helmet/bundled_skills/`) |
 | `helmet issue ISSUE_URL` | Deterministic preflight/adopt/discover pass + checkpoint |
 | `helmet merge ISSUE_URL --expected-head SHA` | Captain exact-head merge through the existing gate; no second queue |
+| `helmet accept ISSUE_URL --expected-head SHA` | Routed issues: explicit acceptance after the code merged; closes the tracking issue |
+| `helmet adopt-transfer OLD_URL NEW_URL` | Re-key an existing finished or blocked root, watch, and checkpoint to a transferred tracking issue; never touches Kanban |
 | `helmet status ISSUE_URL` | Read-only status |
 | `helmet prepare-repo REQUEST_REF --purpose work\|review` | Named-request enrollment of one exact repository (Captain-authorized, idempotent) |
 | `helmet artifact upload\|list\|download` | Task-owned DOCX/PPTX handoff through native attachments; see [task-artifacts.md](task-artifacts.md) |
@@ -258,6 +271,7 @@ runtime workflow has been exercised through Codex.
 
 ## Related
 
+- [issue-routing.md](issue-routing.md)
 - [authority-schema.md](authority-schema.md)
 - [control-loop.md](control-loop.md)
 - [quickstart.md](quickstart.md)

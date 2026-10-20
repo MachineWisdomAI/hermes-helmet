@@ -311,6 +311,7 @@ Build and smoke-test a local development image with
 - [Model configuration](docs/model-lanes.md) and [Claude subscription workers](docs/claude-subscription.md)
 - [Captain, first officer, and crew](docs/captain-and-crew.md)
 - [Single issues](docs/helmet-issue.md) and [dependent issues](docs/helmet-epic.md)
+- [Issue routing](docs/issue-routing.md): track an issue in one repository and implement it in another
 - [Task artifacts](docs/task-artifacts.md): hand documents to a worker and retrieve deliverables through native Kanban attachments
 - [Control loop](docs/control-loop.md) and [authority policy](docs/authority-schema.md)
 - [Public preview](docs/public-preview.md) and [changelog](CHANGELOG.md)
