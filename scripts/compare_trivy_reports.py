@@ -17,45 +17,9 @@ BLOCKING_SEVERITIES = frozenset({"HIGH", "CRITICAL"})
 BASE_LABEL = "org.opencontainers.image.base.name"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-# Reviewed wrapper-added findings that may pass the gate until their expiry.
-# Each entry matches one exact vulnerability, package, installed version, and
-# file target. An expired entry stops matching, so the finding fails again.
-WRAPPER_EXCEPTIONS: tuple[dict[str, str], ...] = tuple(
-    {
-        "id": identifier,
-        "package": "stdlib",
-        "installed_version": "v1.27.1",
-        "target": "usr/local/libexec/hermes-helmet/gh",
-        "expires": "2026-11-08",
-        "reason": (
-            "Denial-of-service fix in Go 1.27.2; gh 2.101.0 and "
-            "gh 2.102.0 are both built with Go 1.27.1. gh runs only as an "
-            "outbound client for one authorized command. Remove once a gh "
-            "release built with Go 1.27.2 or newer is pinned."
-        ),
-    }
-    for identifier in ("CVE-2026-78667", "CVE-2026-97031")
-) + tuple(
-    {
-        "id": "CVE-2026-78669",
-        "package": package,
-        "installed_version": version,
-        "target": "usr/local/libexec/hermes-helmet/gh",
-        "expires": "2026-11-08",
-        "reason": (
-            "HTTP/2 CPU-exhaustion advisory GO-2026-6611, reachable only from "
-            "a malicious HTTP/2 peer; gh 2.101.0 bundles Go stdlib v1.27.1 and "
-            "golang.org/x/net v0.58.0. gh is expected to be used as a trusted "
-            "outbound GitHub client, but the wrapper imposes no host "
-            "restriction: it forwards arbitrary arguments, hosts and absolute "
-            "URLs and enforces no hard timeout, so that residual exposure is "
-            "accepted rather than mitigated. gh provides no HTTP/2 listener. A "
-            "gh binary built with the fixed Go and x/net is not yet pinned. "
-            "Remove once a fixed gh is pinned."
-        ),
-    }
-    for package, version in (("stdlib", "v1.27.1"), ("golang.org/x/net", "v0.58.0"))
-)
+# The pinned GitHub CLI is built with the fixed Go and x/net releases.
+# No wrapper-added high or critical findings are currently accepted.
+WRAPPER_EXCEPTIONS: tuple[dict[str, str], ...] = ()
 
 
 class ReportError(RuntimeError):
