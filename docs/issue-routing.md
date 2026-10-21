@@ -84,6 +84,12 @@ Closing the tracking issue by hand has the same effect: status reports `DONE`
 for a closed issue with a merged pull request, and the next `helmet issue` pass
 records it.
 
+Discovering that the pull request merged is not a Captain review. When a pass
+finds a merged routed pull request, the checkpoint's `clean_head` and
+`reviewed_head` stay as they were, so a merge made outside this workflow, or at
+a head that was never reviewed clean, leaves `helmet accept` withholding with
+`head_lacks_clean_captain_review`. A note records the unreviewed merged head.
+
 A checkpoint in `AWAIT_ACCEPTANCE` is not readable by releases before this
 state existed; upgrade the Captain host before routing issues.
 
@@ -115,14 +121,22 @@ order:
    `node_id`. Otherwise it refuses.
 3. The root task (read only) is finished (`done`, `archived`) or held
    (`blocked`). Running, queued, ready, or triage tasks are refused.
-4. The task's checkout belongs to the new tracking repository itself or to a
+4. The latest same-PR repair task named by the pull-request watch is read the
+   same way: finished or held is accepted; running, queued, ready, triage, or
+   an unreadable status is refused, because a finished root routinely has an
+   active repair.
+5. The task's checkout belongs to the new tracking repository itself or to a
    configured route target of it, and any recorded pull request is in that
    target.
-5. The existing ledger rows (root, creation order, pull-request watch, review
+6. The checkpoint move is proven possible. If a checkpoint already exists at the
+   new URL, it must match the old one on start time, root task, state, pull
+   request, review heads, pending repair, repair rounds, and merge choice.
+   A conflicting or unreadable one is refused. Steps 1-6 write nothing.
+7. The existing ledger rows (root, creation order, pull-request watch, review
    cursor, repair chain) are re-keyed to the new URL in one transaction, and the
    old URL is recorded as an alias so a retained link or the old canonical
    branch resolves to the same root.
-6. The Captain checkpoint is carried to the new URL with `started_at`,
+8. The Captain checkpoint is carried to the new URL with `started_at`,
    `updated_at`, repair rounds, review heads, merge choice (including an
    explicit-approval hold), and state unchanged. The old checkpoint file is
    left in place.

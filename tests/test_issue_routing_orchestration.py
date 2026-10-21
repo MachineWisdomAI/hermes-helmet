@@ -154,6 +154,7 @@ class RoutedGitHub:
             }
         ]
         self.task_status = "done"
+        self.repair_status = "done"
         self.task_workspace = str(root / "product" / ".worktrees" / "t_root")
         self.task_branch = BRANCH
         self.task_pr: str | None = None
@@ -197,7 +198,11 @@ class RoutedGitHub:
                 {
                     "task": {
                         "id": task_id,
-                        "status": self.task_status if task_id == "t_root" else "done",
+                        "status": (
+                            self.task_status
+                            if task_id == "t_root"
+                            else self.repair_status if task_id == "t_repair" else "done"
+                        ),
                         "assignee": "builder",
                         "workspace_kind": "worktree",
                         "workspace_path": self.task_workspace,
@@ -289,7 +294,9 @@ class RoutedBase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
+        # Policy resolves worktree paths; canonicalize the fixture root so
+        # expectations match on macOS, where /var is a link to /private/var.
+        self.root = Path(self._tmp.name).resolve()
         for name in ("backlog", "planning", "product"):
             (self.root / name).mkdir()
         self.policy = make_policy(self.root)
@@ -633,6 +640,80 @@ class ExplicitAcceptanceTests(RoutedBase):
         self.assertEqual(buckets["blocked"], [])
 
 
+class MergedDiscoveryEvidenceTests(RoutedBase):
+    """Discovering a merged routed PR must not mint Captain review evidence."""
+
+    def discover_merged(self, **checkpoint_overrides):
+        seed_ledger(self.ledger)
+        if checkpoint_overrides:
+            self.ready_checkpoint(**checkpoint_overrides)
+        self.gh.merge_prs()
+        return self.adopt(apply_dispatch=False)
+
+    def planning_writes(self):
+        return self.gh.writes_to(PLANNING)
+
+    def test_externally_merged_unreviewed_pr_awaits_acceptance_without_clean_evidence(self) -> None:
+        checkpoint, _ = self.discover_merged()
+        self.assertEqual(checkpoint.state, "AWAIT_ACCEPTANCE")
+        self.assertIsNone(checkpoint.clean_head)
+        self.assertIsNone(checkpoint.reviewed_head)
+        self.assertIn(f"op:merged_head_not_reviewed_clean:{HEAD[:12]}", checkpoint.notes)
+        report = self.accept()
+        self.assertEqual(report.decision, "withheld")
+        self.assertFalse(report.closed)
+        self.assertIn("head_lacks_clean_captain_review", report.blocker or "")
+        self.assertEqual(self.gh.issues[f"repos/{PLANNING}/issues/7"]["state"], "open")
+        self.assertEqual(self.planning_writes(), [])
+
+    def test_merged_head_that_differs_from_the_reviewed_head_is_not_accepted(self) -> None:
+        old_head = "1" * 14
+        checkpoint, _ = self.discover_merged(clean_head=old_head, reviewed_head=old_head)
+        self.assertEqual(checkpoint.state, "AWAIT_ACCEPTANCE")
+        self.assertEqual((checkpoint.clean_head, checkpoint.reviewed_head), (old_head, old_head))
+        report = self.accept()
+        self.assertIn("head_lacks_clean_captain_review", report.blocker or "")
+        self.assertEqual(self.planning_writes(), [])
+
+    def test_merged_head_after_changes_requested_is_not_accepted(self) -> None:
+        checkpoint, _ = self.discover_merged(
+            state="REQUEST_REPAIR", clean_head=None, reviewed_head=HEAD, pending_repair=True
+        )
+        self.assertIsNone(checkpoint.clean_head)
+        report = self.accept()
+        self.assertIn("head_lacks_clean_captain_review", report.blocker or "")
+        self.assertEqual(self.planning_writes(), [])
+
+    def test_genuinely_reviewed_merged_head_is_preserved_and_can_be_accepted(self) -> None:
+        checkpoint, _ = self.discover_merged(state="READY")
+        self.assertEqual(checkpoint.state, "AWAIT_ACCEPTANCE")
+        self.assertEqual((checkpoint.clean_head, checkpoint.reviewed_head), (HEAD, HEAD))
+        self.assertFalse(any("merged_head_not_reviewed_clean" in n for n in checkpoint.notes))
+        report = self.accept()
+        self.assertEqual(report.decision, "closed")
+        self.assertEqual(self.gh.issues[f"repos/{PLANNING}/issues/7"]["state"], "closed")
+
+    def test_closed_tracking_issue_with_unreviewed_merge_records_no_clean_evidence(self) -> None:
+        seed_ledger(self.ledger)
+        self.gh.merge_prs()
+        self.gh.issues[f"repos/{PLANNING}/issues/7"]["state"] = "closed"
+        checkpoint, _ = self.adopt(apply_dispatch=False)
+        self.assertEqual(checkpoint.state, "DONE")
+        self.assertIsNone(checkpoint.clean_head)
+        self.assertIsNone(checkpoint.reviewed_head)
+
+    def test_same_repository_issue_still_records_the_merged_head(self) -> None:
+        self.gh.issues[f"repos/{PLANNING}/issues/7"]["labels"] = [
+            {"name": "ready-for-agent"}, {"name": "hermes-kanban-go"}
+        ]
+        issue = hi.load_issue(self.policy, TRACKING_URL, self.gh, gh="gh")
+        self.assertIsNone(issue.route)
+        checkpoint = hi.Checkpoint(version=1, issue_url=TRACKING_URL, state="WAIT_PR")
+        pull = hi.load_pull_request(PRODUCT, 31, self.gh, gh="gh")
+        hi._record_merged_discovery(checkpoint, issue, pull)
+        self.assertEqual((checkpoint.clean_head, checkpoint.reviewed_head), (HEAD, HEAD))
+
+
 class EpicDependencyAssumptionTests(unittest.TestCase):
     """Dependents wait on the tracking issue's closure, not on merged code."""
 
@@ -862,6 +943,121 @@ class TransferAdoptionTests(RoutedBase):
         self.assertEqual(moved.started_at, self.old_started)
         self.assertEqual(moved.notes.count("op:transfer_adopted"), 1)
         self.assertEqual(self.ledger_rows()[0], [(TRACKING_URL, "t_root")])
+
+    def alias_rows(self):
+        with sqlite3.connect(self.ledger) as connection:
+            return connection.execute("SELECT retired_url, current_url FROM issue_aliases").fetchall()
+
+    def snapshot(self):
+        old_file = hi.checkpoint_path(self.checkpoints, OLD_TRACKING_URL)
+        new_file = hi.checkpoint_path(self.checkpoints, TRACKING_URL)
+        return (
+            self.ledger_rows(),
+            self.alias_rows(),
+            old_file.read_bytes(),
+            new_file.read_bytes() if new_file.exists() else None,
+        )
+
+    def test_active_same_pr_repair_is_refused_without_changing_anything(self) -> None:
+        # The root is done (adoptable) but its latest repair is still in flight.
+        before = self.snapshot()
+        for status in ("in_progress", "running", "ready", "todo", "triage"):
+            with self.subTest(status=status):
+                self.gh.repair_status = status
+                with self.assertRaises(hi.HelmetIssueError) as raised:
+                    self.adopt_transfer()
+                self.assertIn("transfer_active_repair_unsupported", str(raised.exception))
+                self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.kanban_writes(), [])
+        self.assertEqual(self.gh.mutations, [])
+        # The repair task was actually inspected (not only the root).
+        shown = [c for c in self.gh.calls if Path(c[0]).name == "hermes" and "t_repair" in c]
+        self.assertTrue(shown)
+
+    def test_finished_or_held_repair_does_not_block_adoption(self) -> None:
+        for status in ("done", "archived", "blocked"):
+            with self.subTest(status=status):
+                self.setUp()
+                self.gh.repair_status = status
+                self.assertEqual(self.adopt_transfer().outcome, "adopted")
+
+    def test_unreadable_repair_status_is_refused_before_any_change(self) -> None:
+        before = self.snapshot()
+        self.gh.repair_status = ""
+        with self.assertRaises(hi.HelmetIssueError):
+            self.adopt_transfer()
+        self.assertEqual(self.snapshot(), before)
+
+    def seed_destination_checkpoint(self, **overrides) -> bytes:
+        from dataclasses import replace
+
+        old = hi.load_checkpoint(hi.checkpoint_path(self.checkpoints, OLD_TRACKING_URL))
+        assert old is not None
+        destination = replace(old, issue_url=TRACKING_URL, notes=[*old.notes], **overrides)
+        path = hi.checkpoint_path(self.checkpoints, TRACKING_URL)
+        hi.save_checkpoint(path, destination)
+        return path.read_bytes()
+
+    def test_conflicting_destination_checkpoint_is_refused_before_the_ledger_moves(self) -> None:
+        conflicts = {
+            "started_at": dict(started_at="2026-10-20T02:00:00+00:00"),
+            "root_task_id": dict(root_task_id="t_other"),
+            "merge hold": dict(
+                merge_mode="unattended_when_clean",
+                merge_mode_choice="unattended_when_clean",
+                merge_mode_source="policy",
+            ),
+            "review head": dict(reviewed_head="2" * 14, clean_head=None),
+            "state": dict(state="REVIEW_HEAD"),
+            "repair budget": dict(repair_rounds=0),
+        }
+        for name, overrides in conflicts.items():
+            with self.subTest(name):
+                self.setUp()
+                seeded = self.seed_destination_checkpoint(**overrides)
+                before = self.snapshot()
+                with self.assertRaises(hi.HelmetIssueError) as raised:
+                    self.adopt_transfer()
+                self.assertIn("transfer_conflicting_checkpoint", str(raised.exception))
+                # Nothing moved: no re-keyed rows, no alias, destination untouched.
+                self.assertEqual(self.snapshot(), before)
+                self.assertEqual(self.ledger_rows()[0], [(OLD_TRACKING_URL, "t_root")])
+                self.assertEqual(self.alias_rows(), [])
+                self.assertEqual(
+                    hi.checkpoint_path(self.checkpoints, TRACKING_URL).read_bytes(), seeded
+                )
+                self.assertEqual(self.kanban_writes(), [])
+        # The old URL keeps resolving to the old identity, not the conflict.
+        self.assertEqual(hi._current_tracking_url(self.ledger, OLD_TRACKING_URL), OLD_TRACKING_URL)
+
+    def test_unreadable_destination_checkpoint_is_refused_before_the_ledger_moves(self) -> None:
+        hi.checkpoint_path(self.checkpoints, TRACKING_URL).write_text("{not json", encoding="utf-8")
+        before = self.snapshot()
+        with self.assertRaises(hi.HelmetIssueError):
+            self.adopt_transfer()
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.alias_rows(), [])
+
+    def test_agreeing_preexisting_destination_checkpoint_is_accepted(self) -> None:
+        seeded = self.seed_destination_checkpoint()
+        report = self.adopt_transfer()
+        self.assertEqual((report.outcome, report.checkpoint), ("adopted", "present"))
+        self.assertEqual(hi.checkpoint_path(self.checkpoints, TRACKING_URL).read_bytes(), seeded)
+
+    def test_progressed_destination_after_adoption_is_not_a_conflict_on_retry(self) -> None:
+        self.adopt_transfer()
+        moved = hi.load_checkpoint(hi.checkpoint_path(self.checkpoints, TRACKING_URL))
+        assert moved is not None
+        moved.state = "REVIEW_HEAD"
+        moved.repair_rounds = 4
+        hi.save_checkpoint(hi.checkpoint_path(self.checkpoints, TRACKING_URL), moved)
+        again = self.adopt_transfer()
+        self.assertEqual((again.outcome, again.checkpoint), ("already_adopted", "present"))
+        # An identity mismatch is still refused on retry.
+        moved.started_at = "2026-10-20T05:00:00+00:00"
+        hi.save_checkpoint(hi.checkpoint_path(self.checkpoints, TRACKING_URL), moved)
+        with self.assertRaises(hi.HelmetIssueError):
+            self.adopt_transfer()
 
     def test_cli_adopt_transfer(self) -> None:
         config = self.root / "policy.json"

@@ -2315,6 +2315,31 @@ def _merged_state(issue: IssueRef | None) -> str:
     return "DONE"
 
 
+def _record_merged_discovery(
+    checkpoint: Checkpoint, issue: IssueRef | None, pull: PullRequestRef
+) -> None:
+    """Fold a merged pull request found by discovery into the checkpoint.
+
+    A same-repository issue completes with its pull request, so the merged head
+    is recorded as before. For a routed tracking issue the checkpoint's review
+    heads are the only evidence the explicit-acceptance gate has that the
+    Captain reviewed the exact merged head, and discovering that a pull request
+    merged (possibly outside this workflow) is not such a review. The recorded
+    heads are therefore left exactly as they were; acceptance then withholds a
+    head that was never reviewed clean.
+    """
+
+    if issue is None or issue.route is None:
+        checkpoint.clean_head = pull.head_sha
+        checkpoint.reviewed_head = pull.head_sha
+        return
+    clean = checkpoint.clean_head
+    if clean is None or clean.casefold() != pull.head_sha.casefold():
+        note = checkpoint_note("op", "merged_head_not_reviewed_clean", pull.head_sha[:12])
+        if note not in checkpoint.notes:
+            checkpoint.notes.append(note)
+
+
 def build_status(
     policy: Policy,
     issue_url: str,
@@ -2761,8 +2786,7 @@ def run_preflight_and_adopt(
                 checkpoint.root_task_id = root_task_id or checkpoint.root_task_id
                 checkpoint.pr_url = pull.url
                 checkpoint.pr_number = pull.number
-                checkpoint.clean_head = pull.head_sha
-                checkpoint.reviewed_head = pull.head_sha
+                _record_merged_discovery(checkpoint, issue, pull)
                 checkpoint.pending_repair = False
                 checkpoint.notes.append(checkpoint_note("op", "closed_issue_merged_pr"))
                 save_checkpoint(path, checkpoint)
@@ -2862,8 +2886,7 @@ def run_preflight_and_adopt(
             checkpoint.pr_number = pull.number
             if pull.merged:
                 checkpoint.state = _merged_state(issue)
-                checkpoint.clean_head = pull.head_sha
-                checkpoint.reviewed_head = pull.head_sha
+                _record_merged_discovery(checkpoint, issue, pull)
                 checkpoint.pending_repair = False
             elif head_changed(checkpoint, pull.head_sha):
                 # New head vs last clean *or* last reviewed → re-review even when
@@ -4523,12 +4546,36 @@ def _transfer_issue_payload(runner: Runner, gh: str, slug: str, number: int) -> 
     return payload
 
 
-def _migrate_checkpoint(checkpoint_dir: Path, old_url: str, new_url: str) -> str:
-    """Carry the Captain checkpoint to the new URL without resetting anything.
+# Checkpoint fields that carry budget, hold, review and repair authority. A
+# destination checkpoint that already exists before the ledger moves must agree
+# with the source on every one of them, or adoption would silently pick a side.
+_TRANSFER_CHECKPOINT_FIELDS = (
+    "started_at",
+    "root_task_id",
+    "state",
+    "pr_url",
+    "pr_number",
+    "reviewed_head",
+    "clean_head",
+    "pending_repair",
+    "repair_rounds",
+    "merge_mode",
+    "merge_mode_choice",
+    "merge_mode_source",
+)
 
-    Budgets, repair rounds, merge choice (including a manual acceptance hold),
-    review heads and notes are copied; ``started_at`` and ``updated_at`` are
-    preserved byte-for-byte. The old file is left in place.
+
+def _plan_checkpoint_migration(
+    checkpoint_dir: Path, old_url: str, new_url: str, *, already_adopted: bool
+) -> tuple[str, Checkpoint | None]:
+    """Decide the checkpoint outcome without writing anything.
+
+    Returns ``("migrated" | "present" | "absent", old_checkpoint)`` and raises
+    ``transfer_conflicting_checkpoint`` when a destination checkpoint exists and
+    disagrees with the source. Before the ledger moves, the two must agree on
+    every authority field. After it has moved (a retry), the destination may
+    legitimately have progressed, so only its identity (original start and
+    root task) must still match. Unreadable checkpoints also raise here.
     """
 
     old_path = checkpoint_path(checkpoint_dir, old_url)
@@ -4536,18 +4583,46 @@ def _migrate_checkpoint(checkpoint_dir: Path, old_url: str, new_url: str) -> str
     old = load_checkpoint(old_path, expected_issue_url=old_url)
     if new_path.is_file():
         existing = load_checkpoint(new_path, expected_issue_url=new_url)
-        if (
-            old is not None
-            and existing is not None
-            and (
-                existing.started_at != old.started_at
-                or existing.root_task_id != old.root_task_id
+        if old is not None and existing is not None:
+            fields = (
+                ("started_at", "root_task_id")
+                if already_adopted
+                else _TRANSFER_CHECKPOINT_FIELDS
             )
-        ):
-            raise HelmetIssueError(checkpoint_note("err", "transfer_conflicting_checkpoint"))
-        return "present"
+            if any(getattr(existing, name) != getattr(old, name) for name in fields):
+                raise HelmetIssueError(
+                    checkpoint_note("err", "transfer_conflicting_checkpoint")
+                )
+        return "present", old
     if old is None:
-        return "absent"
+        return "absent", None
+    return "migrated", old
+
+
+def _migrate_checkpoint(
+    checkpoint_dir: Path,
+    old_url: str,
+    new_url: str,
+    *,
+    already_adopted: bool = False,
+) -> str:
+    """Carry the Captain checkpoint to the new URL without resetting anything.
+
+    Budgets, repair rounds, merge choice (including a manual acceptance hold),
+    review heads and notes are copied; ``started_at`` and ``updated_at`` are
+    preserved byte-for-byte. The old file is left in place. Compatibility is
+    checked first (``_plan_checkpoint_migration``); adoption runs the same check
+    before the ledger moves, so this never discovers a conflict for the first
+    time after a mutation.
+    """
+
+    outcome, old = _plan_checkpoint_migration(
+        checkpoint_dir, old_url, new_url, already_adopted=already_adopted
+    )
+    if outcome != "migrated":
+        return outcome
+    assert old is not None
+    new_path = checkpoint_path(checkpoint_dir, new_url)
     migrated = replace(old, issue_url=new_url, notes=[*old.notes])
     note = checkpoint_note("op", "transfer_adopted")
     if note not in migrated.notes:
@@ -4653,13 +4728,36 @@ def adopt_transferred_issue(
         if match is None or match.group("slug").casefold() != target.slug.casefold():
             raise HelmetIssueError(checkpoint_note("err", "transfer_pr_outside_target"))
 
+    # A finished root routinely has a same-PR repair chain. The watch names the
+    # latest repair task; a queued or running one acts on instructions that
+    # name the old tracking issue, exactly like an active root, so it is
+    # refused (or must be held) before anything is changed. A retry of an
+    # adoption that already happened is not re-checked: repairs created since
+    # are cut from the adopted identity.
+    repair_id = watch.get("last_repair_task_id")
+    if not already and isinstance(repair_id, str) and repair_id.strip():
+        repair_status = resolve_repair_status(policy, repair_id.strip(), runner, hermes=hermes)
+        if repair_status not in _TRANSFER_FINISHED_STATUSES | _TRANSFER_HELD_STATUSES:
+            raise HelmetIssueError(
+                checkpoint_note(
+                    "err", "transfer_active_repair_unsupported", repair_status or "unknown"
+                )
+            )
+
+    # Prove the checkpoint move is possible before the ledger is touched, so a
+    # refusal never leaves the ledger re-keyed (and the alias live) over a
+    # conflicting or unreadable destination checkpoint.
+    _plan_checkpoint_migration(checkpoint_dir, old_url, new_url, already_adopted=already)
+
     try:
         changed = rekey_issue_ledger(
             ledger, old_url=old_url, new_url=new_url, task_id=root_task_id
         )
     except PollerError as exc:
         raise HelmetIssueError(checkpoint_note("err", "transfer_ledger_conflict")) from exc
-    checkpoint_result = _migrate_checkpoint(checkpoint_dir, old_url, new_url)
+    checkpoint_result = _migrate_checkpoint(
+        checkpoint_dir, old_url, new_url, already_adopted=not changed or already
+    )
     return TransferReport(
         old_issue_url=old_url,
         issue_url=new_url,

@@ -324,7 +324,9 @@ class RoutedDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
+        # Policy resolves worktree paths, so canonicalize the fixture root:
+        # macOS temporary directories live behind a /var -> /private/var link.
+        self.root = Path(self._tmp.name).resolve()
         for name in ("planning", "product"):
             (self.root / name).mkdir()
         self.policy = make_policy(root=self.root)
@@ -444,7 +446,7 @@ class RoutedReviewReconciliationTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
+        self.root = Path(self._tmp.name).resolve()
         for name in ("planning", "product"):
             (self.root / name).mkdir()
         self.policy = make_policy(root=self.root, trusted_review_bots=[])
