@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from chat_reader import read_chat
 from walkthrough import validate, fingerprint
+from walkthrough_contract import walkthrough_schema
 from preparation import new_request, check_request, prepared_walkthrough, settlement
 
 ROOT = Path(__file__).resolve().parent
@@ -33,8 +34,8 @@ READ = tool('read_chat_work', 'Read this chat’s work',
             {'thread_id': {'type': 'string'}, 'binding': {'type': 'string'}, 'offset': {'type': 'integer', 'minimum': 0},
              'limit': {'type': 'integer', 'minimum': 1, 'maximum': 40}, 'kind': {'type': 'string', 'enum': ['all', 'messages', 'operations']}})
 PRESENT = tool('present_chat_work', 'Captain’s Bridge',
-               'Present a source-grounded explanation of the bound chat. Use descriptive work titles. Each item, step, status comparison and before/after must cite record IDs returned by read_chat_work. Read the observe-chat skill for the walkthrough schema. This is an interpretation of records, not independent validation of delivery. No file is written.',
-               {'binding': {'type': 'string'}, 'walkthrough': {'type': 'object'}}, ('binding', 'walkthrough'), app=True)
+               'Present a source-grounded explanation of the bound chat. Use descriptive work titles. Each item, step, status comparison and before/after must cite record IDs returned by read_chat_work. The walkthrough property lists every nested limit and enum; the observe-chat skill points to a validated example. This is an interpretation of records, not independent validation of delivery. No file is written.',
+               {'binding': {'type': 'string'}, 'walkthrough': walkthrough_schema()}, ('binding', 'walkthrough'), app=True)
 REFRESH = tool('refresh_observation_deck', 'Refresh records', 'Reread the exact chat in this view. Preserve the explanation and flag changed records.', {'view': {'type': 'object'}}, ('view',))
 REFRESH['_meta'] = {'ui': {'visibility': ['app']}}
 VIEW = tool('get_chat_work_view', 'Load prepared walkthrough',
@@ -49,7 +50,7 @@ REQUEST = tool('request_walkthrough_update', 'Capture walkthrough request',
 REQUEST['_meta'] = {'ui': {'visibility': ['app']}}
 DELIVER = tool('deliver_walkthrough_update', 'Deliver prepared walkthrough',
                'For a read-only preparation agent: deliver the explanation for one captured request, or report failure. Pass the request unchanged. Cites record IDs from the request chat only. Delivery is discarded by the panel unless the request is still active. Never retry.',
-               {'request': {'type': 'object'}, 'walkthrough': {'type': 'object'},
+               {'request': {'type': 'object'}, 'walkthrough': walkthrough_schema(),
                 'failure': {'type': 'string', 'maxLength': 500}}, ('request',), app=True)
 
 

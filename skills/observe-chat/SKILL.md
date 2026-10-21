@@ -37,6 +37,13 @@ semantic truth: you must actually check each cited record.
 
 ## Walkthrough shape
 
+The `walkthrough` schema in `tools/list` for `present_chat_work` and
+`deliver_walkthrough_update` is the authority for every nested limit, count and
+enum. Use it instead of learning limits from errors. A synthetic example that
+the tests validate is `mcp/captains-bridge/example-walkthrough.json`; follow its
+shape with real record IDs, never its text. Errors name the exact field; repair
+that value without shortening it into validity, and keep the claim supported.
+
 `objective`: the Captain’s substantive work objective, excluding navigation
 requests such as “open the bridge”. `summary`: fluent account of what changed
 and what remains unresolved. `evidence`: record IDs supporting those statements.
