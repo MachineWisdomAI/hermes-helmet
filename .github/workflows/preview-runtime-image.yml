@@ -246,6 +246,7 @@ jobs:
           fi
 
       - name: Enforce clean ${{ matrix.platform }} wrapper delta
+        id: wrapper_delta
         run: |
           python3 scripts/compare_trivy_reports.py \
             --base "$OUT_DIR/base.json" \
@@ -255,6 +256,24 @@ jobs:
             --database-sha256-file "$OUT_DIR/trivy-db.sha256" \
             --java-database-sha256-file "$OUT_DIR/trivy-java-db.sha256" \
             --output "$OUT_DIR/delta.json"
+
+      # The tested-artifact upload below never runs after a failed gate. Keep
+      # only the sanitized summary and the database snapshot evidence so the
+      # failure can be assessed. Raw Trivy JSON and the image tarball are not
+      # retained, and nothing here can be published.
+      - name: Retain failed ${{ matrix.platform }} wrapper-delta diagnostics
+        if: failure() && steps.wrapper_delta.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-gate-diagnostics-linux-${{ matrix.arch }}
+          path: |
+            dist/preview/${{ matrix.arch }}/delta.json
+            dist/preview/${{ matrix.arch }}/trivy-db.sha256
+            dist/preview/${{ matrix.arch }}/trivy-db-metadata.json
+            dist/preview/${{ matrix.arch }}/trivy-java-db.sha256
+            dist/preview/${{ matrix.arch }}/trivy-java-db-metadata.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Generate ${{ matrix.platform }} SBOM from tested bytes
         env:
