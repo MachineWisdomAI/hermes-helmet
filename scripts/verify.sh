@@ -34,6 +34,7 @@ for required in \
     docs/public-preview.md \
     docs/helmet-issue.md \
     docs/helmet-epic.md \
+    docs/issue-routing.md \
     docs/task-artifacts.md \
     docs/fava-trails.md \
     docs/company-skills.md \

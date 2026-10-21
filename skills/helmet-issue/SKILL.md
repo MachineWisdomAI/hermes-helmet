@@ -48,6 +48,12 @@ PREFLIGHT → DISPATCH → WAIT_PR → REVIEW_HEAD → REQUEST_REPAIR → WAIT_R
 
 Terminal stop states: `DONE`, `BLOCKED`, `FAILED`.
 
+A **routed tracking issue** (policy `issue_routes`, issue carries the route
+label) has the same loop, but its code pull request lives in the configured
+implementation repository and merging does not complete it: after the merge the
+state is `AWAIT_ACCEPTANCE` (non-terminal) until the Captain records acceptance
+with `helmet accept`. See `docs/issue-routing.md`.
+
 ## Hard rules
 
 1. Active GitHub identity MUST be the configured **Captain**
@@ -272,6 +278,16 @@ Completion: new head appeared, or the precise blocker/recovery handoff is stated
    falls back to explicit Captain approval.
 4. On merge API failure: re-query PR; if merged, `DONE`; if not, `BLOCKED` with
    GitHub reason. Never loop blind retries.
+5. **Routed tracking issue:** review and merge in the implementation
+   repository named by the status `route` detail; discover the pull request by
+   the canonical branch, never by links or closing keywords; never put the
+   tracking issue's URL, title, body, or approval provenance in a public
+   review, comment, or pull-request edit. A merged routed pull request leaves
+   state `AWAIT_ACCEPTANCE` and the tracking issue open. Record acceptance
+   only when the Captain asks for it: `helmet accept ISSUE_URL --expected-head
+   MERGED_HEAD_SHA`. A transferred tracking issue is adopted with `helmet
+   adopt-transfer OLD_URL NEW_URL` only while its root task is finished or
+   blocked; never unblock, restart, or replace the task to make it fit.
 5. Worker never merges.
 
 ### 7. Status and closeout
