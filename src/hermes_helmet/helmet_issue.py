@@ -36,6 +36,7 @@ from hermes_helmet.authority import (
     LOCAL_ONLY_COMPLETION_CONTRACT,
     Policy,
     Repository,
+    ResolvedRoute,
     UNATTENDED_MERGE_MODE,
     budget_elapsed_exceeds,
     captain_budget_status_details,
@@ -43,6 +44,7 @@ from hermes_helmet.authority import (
     merge_authority_fingerprint,
     merge_authority_for,
     merge_mode_source_is_valid,
+    routed_branch,
     verify_captain_identity,
 )
 from hermes_helmet.github_issue_poller import (
@@ -50,8 +52,11 @@ from hermes_helmet.github_issue_poller import (
     PULL_REQUEST_URL_RE,
     PollerError,
     _pull_request_url,
+    _within,
     create_task_once,
+    current_issue_url,
     load_policy as load_poller_policy,
+    rekey_issue_ledger,
 )
 
 
@@ -136,6 +141,8 @@ STATES = (
     "MERGE_GATE",
     "MERGE",
     "VERIFY_MERGED",
+    # Routed tracking issue whose code PR merged; acceptance is explicit.
+    "AWAIT_ACCEPTANCE",
     "DONE",
     "BLOCKED",
     "FAILED",
@@ -280,10 +287,15 @@ def pull_associates_with_issue(issue: IssueRef, pull: PullRequestRef) -> bool:
       ``Fixes owner/repo#N``, ``Fixes https://github.com/owner/repo/issues/N``, …)
     """
 
-    if pull.repository_slug.casefold() != issue.repository.slug.casefold():
+    if pull.repository_slug.casefold() != issue.implementation_repository.slug.casefold():
         return False
     if pull.head_ref == issue.branch:
         return True
+    if issue.route is not None:
+        # A routed pull request is public: it carries no link to the tracking
+        # issue, so only the canonical branch (or ledger/Kanban adoption of
+        # the exact URL) associates it. Body keywords never do.
+        return False
     body = pull.body or ""
     return body_closes_issue(
         body, repository_slug=issue.repository.slug, number=issue.number
@@ -361,13 +373,23 @@ class IssueRef:
     # Empty for allowlisted repositories; otherwise "work" or "review" when
     # the repository is admitted through a named-request enrollment receipt.
     enrollment_purpose: str = ""
+    # Operator-configured route resolved from this tracking issue's labels.
+    route: ResolvedRoute | None = None
 
     @property
     def url(self) -> str:
         return self.html_url
 
     @property
+    def implementation_repository(self) -> Repository:
+        """Repository holding the code pull request (the tracking repo by default)."""
+
+        return self.route.implementation if self.route is not None else self.repository
+
+    @property
     def branch(self) -> str:
+        if self.route is not None:
+            return routed_branch(self.url)
         name = self.repository.slug.rsplit("/", 1)[1].lower()
         return f"automation/{name}-{self.number}"
 
@@ -868,6 +890,10 @@ def load_issue(
         for item in labels_raw:
             if isinstance(item, dict) and isinstance(item.get("name"), str):
                 labels.append(item["name"])
+    try:
+        route = policy.route_for_labels(repository.slug, labels)
+    except AuthorityError as exc:
+        raise HelmetIssueError(checkpoint_note("err", "route_ambiguous")) from exc
     return IssueRef(
         repository=repository,
         number=number,
@@ -877,7 +903,19 @@ def load_issue(
         labels=tuple(labels),
         html_url=html_url.strip(),
         enrollment_purpose=enrollment_purpose,
+        route=route,
     )
+
+
+def _current_tracking_url(ledger: Path, issue_url: str) -> str:
+    """Resolve a retired (transferred) tracking URL to the one current URL."""
+
+    try:
+        return current_issue_url(ledger, issue_url)
+    except sqlite3.Error:
+        # Alias resolution is additive. An unreadable ledger keeps the URL as
+        # given; the ordinary ledger reads then report their precise error.
+        return issue_url
 
 
 def ledger_root_task(ledger: Path, issue_url: str) -> str | None:
@@ -1169,6 +1207,27 @@ def discover_linked_pull_requests(
     """Discover PRs for an issue from GitHub (timeline + open PR scan)."""
 
     found: dict[int, PullRequestRef] = {}
+    if issue.route is not None:
+        # Routed: the pull request is public and unlinked. Look in the
+        # configured implementation repository for the canonical branch only
+        # (open or merged); the tracking timeline is never consulted.
+        target = issue.route.implementation
+        owner = target.slug.split("/", 1)[0]
+        query = urlencode(
+            {"state": "all", "head": f"{owner}:{issue.branch}", "per_page": "100"}
+        )
+        listing = _github_json(runner, gh, f"repos/{target.slug}/pulls?{query}")
+        numbers = sorted(
+            {
+                raw["number"]
+                for raw in (listing if isinstance(listing, list) else [])
+                if isinstance(raw, dict)
+                and isinstance(raw.get("number"), int)
+                and isinstance(raw.get("head"), dict)
+                and raw["head"].get("ref") == issue.branch
+            }
+        )
+        return [load_pull_request(target.slug, n, runner, gh=gh) for n in numbers]
 
     # 1) Issue timeline cross-references.
     timeline = _github_json(
@@ -1401,7 +1460,7 @@ def select_canonical_pull_request(
 
 
 def _validate_worker_pr(policy: Policy, issue: IssueRef, pull: PullRequestRef) -> None:
-    if pull.repository_slug.casefold() != issue.repository.slug.casefold():
+    if pull.repository_slug.casefold() != issue.implementation_repository.slug.casefold():
         raise HelmetIssueError("pull request repository does not match the issue")
     if pull.author_login.casefold() != policy.github_identity.casefold():
         raise HelmetIssueError("pull request author is not the configured worker")
@@ -1567,6 +1626,7 @@ def adopt_or_dispatch_root_task(
         number=issue.number,
         title=issue.title,
         body=issue.body,
+        route=issue.route,
     )
     # Temporarily point poller helpers at the same binaries if customized.
     import hermes_helmet.github_issue_poller as poller_mod
@@ -1618,13 +1678,12 @@ def discover_progress(
         match = PULL_REQUEST_URL_RE.fullmatch(url)
         if match is None:
             continue
-        if match.group("slug").casefold() != issue.repository.slug.casefold():
+        target_slug = issue.implementation_repository.slug
+        if match.group("slug").casefold() != target_slug.casefold():
             raise HelmetIssueError(checkpoint_note("err", "pr_outside_repository"))
         number = int(match.group("number"))
         if not any(item.number == number for item in candidates):
-            candidates.append(
-                load_pull_request(issue.repository.slug, number, runner, gh=gh)
-            )
+            candidates.append(load_pull_request(target_slug, number, runner, gh=gh))
 
     if ledger_pull and kanban_pull and ledger_pull != kanban_pull:
         raise HelmetIssueError(checkpoint_note("err", "ledger_kanban_pr_disagree"))
@@ -1992,6 +2051,12 @@ def evaluate_merge_gate(
 
     if issue.enrollment_purpose == repo_enroll.PURPOSE_REVIEW:
         return "not_ready", checkpoint_note("err", "review_enrollment_no_merge")
+    if (
+        issue.route is not None
+        and pull.repository_slug.casefold()
+        != issue.route.implementation.slug.casefold()
+    ):
+        return "not_ready", checkpoint_note("err", "pr_outside_repository")
     if checkpoint.merge_choice_required:
         return "stop_for_approval", checkpoint_note(
             "err", "merge_choice_required"
@@ -2176,7 +2241,7 @@ def set_blocker(checkpoint: Checkpoint, reason: str, *, fatal: bool = False) -> 
 
 
 def budget_exhausted(checkpoint: Checkpoint, policy: Policy) -> str | None:
-    if checkpoint.state == "DONE":
+    if checkpoint.state in {"DONE", "AWAIT_ACCEPTANCE"}:
         return None
     if checkpoint.repair_rounds > policy.budgets.max_repair_rounds:
         return checkpoint_note("err", "budget", "max_repair_rounds")
@@ -2223,6 +2288,58 @@ def associated_epic_budget_exhausted(
     return None
 
 
+def _route_details(issue: IssueRef | None, state: str) -> dict[str, object]:
+    if issue is None or issue.route is None:
+        return {}
+    return {
+        "route": {
+            "tracking_repository": issue.route.tracking.slug,
+            "implementation_repository": issue.route.implementation.slug,
+            "label": issue.route.label,
+        },
+        "acceptance": "pending_explicit" if state == "AWAIT_ACCEPTANCE" else (
+            "recorded" if state == "DONE" else "not_due"
+        ),
+    }
+
+
+def _merged_state(issue: IssueRef | None) -> str:
+    """State after the code PR merged.
+
+    A routed tracking issue stays open until the Captain records acceptance
+    explicitly; a same-repository issue completes with its pull request.
+    """
+
+    if issue is not None and issue.route is not None and issue.state == "open":
+        return "AWAIT_ACCEPTANCE"
+    return "DONE"
+
+
+def _record_merged_discovery(
+    checkpoint: Checkpoint, issue: IssueRef | None, pull: PullRequestRef
+) -> None:
+    """Fold a merged pull request found by discovery into the checkpoint.
+
+    A same-repository issue completes with its pull request, so the merged head
+    is recorded as before. For a routed tracking issue the checkpoint's review
+    heads are the only evidence the explicit-acceptance gate has that the
+    Captain reviewed the exact merged head, and discovering that a pull request
+    merged (possibly outside this workflow) is not such a review. The recorded
+    heads are therefore left exactly as they were; acceptance then withholds a
+    head that was never reviewed clean.
+    """
+
+    if issue is None or issue.route is None:
+        checkpoint.clean_head = pull.head_sha
+        checkpoint.reviewed_head = pull.head_sha
+        return
+    clean = checkpoint.clean_head
+    if clean is None or clean.casefold() != pull.head_sha.casefold():
+        note = checkpoint_note("op", "merged_head_not_reviewed_clean", pull.head_sha[:12])
+        if note not in checkpoint.notes:
+            checkpoint.notes.append(note)
+
+
 def build_status(
     policy: Policy,
     issue_url: str,
@@ -2233,6 +2350,7 @@ def build_status(
     repair_task_id: str | None = None,
     repair_status: str | None = None,
     live_error: str | None = None,
+    issue: IssueRef | None = None,
 ) -> StatusReport:
     state = checkpoint.state if checkpoint else "UNKNOWN"
     reviewed = checkpoint.reviewed_head if checkpoint else None
@@ -2248,7 +2366,7 @@ def build_status(
     if pull and pull.merged:
         repair_state = "n/a-merged"
         if state not in TERMINAL_STATES and live_error is None:
-            state = "DONE"
+            state = _merged_state(issue)
     elif repair_task_id and repair_status and repair_status in ACTIVE_REPAIR_STATUSES:
         repair_state = f"outstanding:{repair_task_id}:{repair_status}"
     elif checkpoint and checkpoint.pending_repair:
@@ -2294,6 +2412,8 @@ def build_status(
         merge_gate = f"{checkpoint.merge_mode}:ready"
     elif checkpoint and state == "DONE":
         merge_gate = f"{checkpoint.merge_mode}:done"
+    elif checkpoint and state == "AWAIT_ACCEPTANCE":
+        merge_gate = f"{checkpoint.merge_mode}:merged"
 
     if checkpoint is None:
         continuation = "unknown"
@@ -2338,6 +2458,7 @@ def build_status(
             "merge_mode_source": merge_source,
             "merge_authority_fingerprint": checkpoint.merge_authority_fingerprint if checkpoint else "",
             "merge_choice_required": checkpoint.merge_choice_required if checkpoint else False,
+            **_route_details(issue, state),
             **budget_details,
         },
     )
@@ -2361,6 +2482,7 @@ def status_issue(
         checkpoint_dir = DEFAULT_CHECKPOINT_DIR
     runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
+    issue_url = _current_tracking_url(ledger, issue_url)
     path = checkpoint_path(checkpoint_dir, issue_url)
     checkpoint = load_checkpoint(
         path,
@@ -2368,6 +2490,7 @@ def status_issue(
         default_merge_mode=policy.merge_default_mode,
     )
     # Best-effort live discovery; failures become report details, not writes.
+    issue = None
     root_task_id = None
     pull = None
     repair_id = None
@@ -2436,6 +2559,7 @@ def status_issue(
         repair_task_id=repair_id,
         repair_status=repair_status,
         live_error=live_error,
+        issue=issue,
     )
 
 
@@ -2462,6 +2586,7 @@ def run_preflight_and_adopt(
 
     runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
     runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
+    issue_url = _current_tracking_url(ledger, issue_url)
     path = checkpoint_path(checkpoint_dir, issue_url)
     checkpoint = load_checkpoint(
         path,
@@ -2661,8 +2786,7 @@ def run_preflight_and_adopt(
                 checkpoint.root_task_id = root_task_id or checkpoint.root_task_id
                 checkpoint.pr_url = pull.url
                 checkpoint.pr_number = pull.number
-                checkpoint.clean_head = pull.head_sha
-                checkpoint.reviewed_head = pull.head_sha
+                _record_merged_discovery(checkpoint, issue, pull)
                 checkpoint.pending_repair = False
                 checkpoint.notes.append(checkpoint_note("op", "closed_issue_merged_pr"))
                 save_checkpoint(path, checkpoint)
@@ -2761,9 +2885,8 @@ def run_preflight_and_adopt(
             checkpoint.pr_url = pull.url
             checkpoint.pr_number = pull.number
             if pull.merged:
-                checkpoint.state = "DONE"
-                checkpoint.clean_head = pull.head_sha
-                checkpoint.reviewed_head = pull.head_sha
+                checkpoint.state = _merged_state(issue)
+                _record_merged_discovery(checkpoint, issue, pull)
                 checkpoint.pending_repair = False
             elif head_changed(checkpoint, pull.head_sha):
                 # New head vs last clean *or* last reviewed → re-review even when
@@ -2859,6 +2982,7 @@ def run_preflight_and_adopt(
             pull=pull,
             repair_task_id=repair_id,
             repair_status=repair_status,
+            issue=issue,
         )
         return checkpoint, report
     except HelmetIssueError as exc:
@@ -3149,6 +3273,7 @@ def apply_review_outcome(
             raise HelmetIssueError(checkpoint_note("err", "policy_or_config_required"))
         policy = load_policy_for_issue(config)
 
+    issue_url = _current_tracking_url(ledger, issue_url)
     path = checkpoint_path(checkpoint_dir, issue_url)
     checkpoint = load_checkpoint(
         path,
@@ -3813,8 +3938,8 @@ def _save_merge_checkpoint(
     pull: PullRequestRef | None = None,
     clear_blocker: bool = False,
 ) -> None:
-    if state == "DONE":
-        checkpoint.state = "DONE"
+    if state in {"DONE", "AWAIT_ACCEPTANCE"}:
+        checkpoint.state = state
         checkpoint.pending_repair = False
     elif state and checkpoint.state not in {"BLOCKED", "FAILED", "DONE"}:
         checkpoint.state = state
@@ -3896,6 +4021,7 @@ def merge_issue(
             checkpoint_note("err", "worker_profile_on_captain_host")
         )
 
+    issue_url = _current_tracking_url(ledger, issue_url)
     issue = load_issue(
         policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
     )
@@ -3979,7 +4105,7 @@ def merge_issue(
         checkpoint = Checkpoint(
             version=CHECKPOINT_VERSION,
             issue_url=issue_url,
-            state="DONE",
+            state=_merged_state(issue),
             pr_url=pull.url,
             pr_number=pull.number,
             started_at=_utc_now(),
@@ -3989,7 +4115,7 @@ def merge_issue(
         _save_merge_checkpoint(
             path,
             checkpoint,
-            state="DONE",
+            state=_merged_state(issue),
             blocker=None,
             note=note,
             pull=pull,
@@ -4010,7 +4136,7 @@ def merge_issue(
         _save_merge_checkpoint(
             path,
             checkpoint,
-            state="DONE",
+            state=_merged_state(issue),
             blocker=None,
             note=note,
             pull=pull,
@@ -4045,7 +4171,7 @@ def merge_issue(
         return _withhold(str(exc))
 
     evidence = read_required_check_evidence(
-        issue.repository.slug,
+        issue.implementation_repository.slug,
         head_sha=pull.head_sha,
         base_ref=pull.base_ref,
         runner=runner,
@@ -4081,7 +4207,7 @@ def merge_issue(
         _save_merge_checkpoint(
             path,
             checkpoint,
-            state="DONE",
+            state=_merged_state(issue),
             blocker=None,
             note=note,
             pull=fresh,
@@ -4128,7 +4254,7 @@ def merge_issue(
         _save_merge_checkpoint(
             path,
             checkpoint,
-            state="DONE",
+            state=_merged_state(issue),
             blocker=None,
             note=note,
             pull=live,
@@ -4200,7 +4326,7 @@ def merge_issue(
     _save_merge_checkpoint(
         path,
         checkpoint,
-        state="DONE",
+        state=_merged_state(issue),
         blocker=None,
         note=note,
         pull=verified,
@@ -4214,4 +4340,431 @@ def merge_issue(
         merge_submitted=True,
         pull=verified,
         blocker=None,
+    )
+
+
+@dataclass(frozen=True)
+class AcceptanceReport:
+    """Secret-free result of one explicit tracking-issue acceptance."""
+
+    issue_url: str
+    decision: str  # closed | already_closed | withheld
+    closed: bool
+    head_sha: str | None
+    pr_url: str | None
+    blocker: str | None
+    checkpoint_state: str
+
+    def to_public_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def close_tracking_issue(
+    issue_url: str,
+    *,
+    expected_head: str,
+    policy: Policy,
+    ledger: Path = DEFAULT_LEDGER,
+    checkpoint_dir: Path | None = None,
+    runner: Runner | None = None,
+    gh: str = DEFAULT_GH,
+    hermes: str = DEFAULT_HERMES,
+    worker_runtime: Sequence[str] = (),
+    enrollment_store: repo_enroll.EnrollmentStore | None = None,
+) -> AcceptanceReport:
+    """Record internal acceptance of a routed tracking issue, explicitly.
+
+    A routed code pull request cannot close its private tracking issue by
+    keyword, and merging code is not acceptance. This is the one place the
+    tracking issue is closed: the Captain names the exact merged head, the
+    helper verifies that the canonical pull request in the configured target
+    merged at that head and that this head received the clean Captain review,
+    then comments and closes the tracking issue as completed. Dependents that
+    wait on the tracking issue therefore unblock only here. One close request
+    is submitted and re-read; it is never retried blindly.
+    """
+
+    expected = (expected_head or "").strip()
+    if not expected:
+        raise HelmetIssueError(checkpoint_note("err", "expected_head_required"))
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
+    runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
+    runtime = parse_worker_runtime(worker_runtime) or DEFAULT_WORKER_RUNTIME
+    observed = observed_github_login(runner, gh=gh)
+    try:
+        verify_captain_identity(policy, observed)
+    except AuthorityError as exc:
+        raise HelmetIssueError(checkpoint_note("err", "captain_identity_mismatch")) from exc
+    profiles = captain_github_profiles(runner, gh=gh)
+    if policy.github_identity.casefold() in profiles:
+        raise HelmetIssueError(checkpoint_note("err", "worker_profile_on_captain_host"))
+
+    issue_url = _current_tracking_url(ledger, issue_url)
+    issue = load_issue(
+        policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
+    if issue.route is None:
+        raise HelmetIssueError(checkpoint_note("err", "acceptance_not_routed"))
+    path = checkpoint_path(checkpoint_dir, issue_url)
+    checkpoint = load_checkpoint(
+        path,
+        expected_issue_url=issue_url,
+        default_merge_mode=policy.merge_default_mode,
+    )
+    if checkpoint is None:
+        raise HelmetIssueError(checkpoint_note("err", "no_checkpoint"))
+    _root, pull, _repair = discover_progress(
+        policy, issue, ledger, runner, gh=gh, hermes=hermes, worker_runtime=runtime
+    )
+    if pull is None:
+        raise HelmetIssueError(checkpoint_note("err", "no_canonical_pull_request"))
+
+    def _report(decision: str, closed: bool, blocker: str | None) -> AcceptanceReport:
+        return AcceptanceReport(
+            issue_url=issue_url,
+            decision=decision,
+            closed=closed,
+            head_sha=pull.head_sha,
+            pr_url=pull.url,
+            blocker=blocker,
+            checkpoint_state=checkpoint.state,
+        )
+
+    def _withhold(blocker: str) -> AcceptanceReport:
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state=None,
+            blocker=blocker,
+            note=checkpoint_note("op", "acceptance_withheld", blocker.split(":")[1]),
+        )
+        return _report("withheld", False, blocker)
+
+    if pull.head_sha.casefold() != expected.casefold():
+        return _withhold(checkpoint_note("err", "merge_head_mismatch"))
+    if not pull.merged:
+        return _withhold(checkpoint_note("err", "pr_not_merged"))
+    if (
+        checkpoint.clean_head is None
+        or checkpoint.clean_head.casefold() != pull.head_sha.casefold()
+    ):
+        return _withhold(checkpoint_note("err", "head_lacks_clean_captain_review"))
+
+    if issue.state != "open":
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state="DONE",
+            blocker=None,
+            note=checkpoint_note("op", "acceptance_recorded", pull.head_sha[:12]),
+            pull=pull,
+            clear_blocker=True,
+        )
+        return _report("already_closed", True, None)
+
+    tracking = issue.repository.slug
+    comment = (
+        f"Code merged: {pull.url} at {pull.head_sha[:12]}. "
+        "Internal acceptance recorded explicitly by the Captain."
+    )
+    runner.run(
+        [
+            gh, "api", "--method", "POST",
+            f"repos/{tracking}/issues/{issue.number}/comments",
+            "-f", f"body={comment}",
+        ]
+    )
+    close_error: HelmetIssueError | None = None
+    try:
+        runner.run(
+            [
+                gh, "api", "--method", "PATCH",
+                f"repos/{tracking}/issues/{issue.number}",
+                "-f", "state=closed",
+                "-f", "state_reason=completed",
+            ]
+        )
+    except HelmetIssueError as exc:
+        close_error = exc
+    after = load_issue(
+        policy, issue_url, runner, gh=gh, enrollment_store=enrollment_store
+    )
+    if after.state != "closed":
+        blocker = checkpoint_note(
+            "err", "tracking_close_failed" if close_error else "tracking_close_unconfirmed"
+        )
+        _save_merge_checkpoint(
+            path,
+            checkpoint,
+            state=None,
+            blocker=blocker,
+            note=checkpoint_note("op", "acceptance_withheld", "close_unconfirmed"),
+        )
+        return _report("withheld", False, blocker)
+    _save_merge_checkpoint(
+        path,
+        checkpoint,
+        state="DONE",
+        blocker=None,
+        note=checkpoint_note("op", "acceptance_recorded", pull.head_sha[:12]),
+        pull=pull,
+        clear_blocker=True,
+    )
+    return _report("closed", True, None)
+
+
+# Root-task statuses a transfer adoption accepts. Adoption never touches
+# Kanban, so a finished task stays finished and a held (blocked) task stays
+# blocked. Any other status means a worker may still be acting on instructions
+# that name the old tracking issue; see docs/issue-routing.md.
+_TRANSFER_FINISHED_STATUSES = frozenset({"done", "archived", "complete", "completed"})
+_TRANSFER_HELD_STATUSES = frozenset({"blocked"})
+
+
+@dataclass(frozen=True)
+class TransferReport:
+    """Secret-free result of one explicit tracking-issue transfer adoption."""
+
+    old_issue_url: str
+    issue_url: str
+    outcome: str  # adopted | already_adopted
+    root_task_id: str
+    root_status: str
+    implementation_repository: str
+    pr_url: str | None
+    checkpoint: str  # migrated | present | absent
+
+    def to_public_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def _transfer_issue_payload(runner: Runner, gh: str, slug: str, number: int) -> dict:
+    payload = _github_json(runner, gh, f"repos/{slug}/issues/{number}")
+    if not isinstance(payload, dict) or "pull_request" in payload:
+        raise HelmetIssueError(checkpoint_note("err", "transfer_identity_unproven"))
+    return payload
+
+
+# Checkpoint fields that carry budget, hold, review and repair authority. A
+# destination checkpoint that already exists before the ledger moves must agree
+# with the source on every one of them, or adoption would silently pick a side.
+_TRANSFER_CHECKPOINT_FIELDS = (
+    "started_at",
+    "root_task_id",
+    "state",
+    "pr_url",
+    "pr_number",
+    "reviewed_head",
+    "clean_head",
+    "pending_repair",
+    "repair_rounds",
+    "merge_mode",
+    "merge_mode_choice",
+    "merge_mode_source",
+)
+
+
+def _plan_checkpoint_migration(
+    checkpoint_dir: Path, old_url: str, new_url: str, *, already_adopted: bool
+) -> tuple[str, Checkpoint | None]:
+    """Decide the checkpoint outcome without writing anything.
+
+    Returns ``("migrated" | "present" | "absent", old_checkpoint)`` and raises
+    ``transfer_conflicting_checkpoint`` when a destination checkpoint exists and
+    disagrees with the source. Before the ledger moves, the two must agree on
+    every authority field. After it has moved (a retry), the destination may
+    legitimately have progressed, so only its identity (original start and
+    root task) must still match. Unreadable checkpoints also raise here.
+    """
+
+    old_path = checkpoint_path(checkpoint_dir, old_url)
+    new_path = checkpoint_path(checkpoint_dir, new_url)
+    old = load_checkpoint(old_path, expected_issue_url=old_url)
+    if new_path.is_file():
+        existing = load_checkpoint(new_path, expected_issue_url=new_url)
+        if old is not None and existing is not None:
+            fields = (
+                ("started_at", "root_task_id")
+                if already_adopted
+                else _TRANSFER_CHECKPOINT_FIELDS
+            )
+            if any(getattr(existing, name) != getattr(old, name) for name in fields):
+                raise HelmetIssueError(
+                    checkpoint_note("err", "transfer_conflicting_checkpoint")
+                )
+        return "present", old
+    if old is None:
+        return "absent", None
+    return "migrated", old
+
+
+def _migrate_checkpoint(
+    checkpoint_dir: Path,
+    old_url: str,
+    new_url: str,
+    *,
+    already_adopted: bool = False,
+) -> str:
+    """Carry the Captain checkpoint to the new URL without resetting anything.
+
+    Budgets, repair rounds, merge choice (including a manual acceptance hold),
+    review heads and notes are copied; ``started_at`` and ``updated_at`` are
+    preserved byte-for-byte. The old file is left in place. Compatibility is
+    checked first (``_plan_checkpoint_migration``); adoption runs the same check
+    before the ledger moves, so this never discovers a conflict for the first
+    time after a mutation.
+    """
+
+    outcome, old = _plan_checkpoint_migration(
+        checkpoint_dir, old_url, new_url, already_adopted=already_adopted
+    )
+    if outcome != "migrated":
+        return outcome
+    assert old is not None
+    new_path = checkpoint_path(checkpoint_dir, new_url)
+    migrated = replace(old, issue_url=new_url, notes=[*old.notes])
+    note = checkpoint_note("op", "transfer_adopted")
+    if note not in migrated.notes:
+        migrated.notes.append(note)
+    new_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    text = json.dumps(migrated.to_public_dict(), indent=2, sort_keys=True) + "\n"
+    tmp = new_path.with_suffix(new_path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(new_path)
+    return "migrated"
+
+
+def adopt_transferred_issue(
+    old_issue_url: str,
+    new_issue_url: str,
+    *,
+    policy: Policy,
+    ledger: Path = DEFAULT_LEDGER,
+    checkpoint_dir: Path | None = None,
+    runner: Runner | None = None,
+    gh: str = DEFAULT_GH,
+    hermes: str = DEFAULT_HERMES,
+) -> TransferReport:
+    """Adopt an existing root under a tracking issue's new (transferred) URL.
+
+    Validates before changing anything: both repositories are allowlisted; GitHub
+    resolves the old URL to the new issue with the same stable ``node_id``; the
+    ledger has exactly one root for the old URL and none for the new one; the
+    root task is finished or held (never running or queued); its checkout and
+    pull request belong to a configured target of the new tracking repository.
+    Then it re-keys the existing ledger rows (root, watch, creation order) and
+    carries the Captain checkpoint, so the root, PR, branch, workspace, owner,
+    repair history, original budget and acceptance hold are all preserved and
+    the poller cannot dispatch a second root. Kanban is only read: nothing is
+    unblocked, restarted, reclaimed, replaced or rewritten. Re-running is safe.
+    """
+
+    runner = runner or SubprocessRunner(gh=gh, hermes=hermes)
+    if checkpoint_dir is None:
+        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
+    old_slug, old_number = parse_issue_url(old_issue_url)
+    new_slug, new_number = parse_issue_url(new_issue_url)
+    old_url = f"https://github.com/{old_slug}/issues/{old_number}"
+    new_url = f"https://github.com/{new_slug}/issues/{new_number}"
+    if old_url.casefold() == new_url.casefold():
+        raise HelmetIssueError(checkpoint_note("err", "transfer_urls_identical"))
+    new_repo = policy.repository_for(new_slug)
+    if policy.repository_for(old_slug) is None or new_repo is None:
+        raise HelmetIssueError(checkpoint_note("err", "transfer_not_allowlisted"))
+    if not ledger.is_file():
+        # The ledger is owned by the poller's host. A Captain without that
+        # ledger needs a worker-runtime verb that re-keys it; none exists yet.
+        raise HelmetIssueError(checkpoint_note("err", "transfer_ledger_unavailable"))
+
+    already = _current_tracking_url(ledger, old_url) == new_url
+    root_task_id = ledger_root_task(ledger, new_url if already else old_url)
+    if not root_task_id:
+        raise HelmetIssueError(checkpoint_note("err", "transfer_no_root"))
+    if not already and ledger_root_task(ledger, new_url):
+        raise HelmetIssueError(checkpoint_note("err", "transfer_conflicting_root"))
+
+    # Stable GitHub identity: the old URL must resolve to the new issue.
+    new_payload = _transfer_issue_payload(runner, gh, new_slug, new_number)
+    old_payload = _transfer_issue_payload(runner, gh, old_slug, old_number)
+    new_node = new_payload.get("node_id")
+    if (
+        not isinstance(new_node, str)
+        or not new_node.strip()
+        or new_payload.get("html_url", "").casefold() != new_url.casefold()
+        or old_payload.get("html_url", "").casefold() != new_url.casefold()
+        or old_payload.get("node_id") != new_node
+    ):
+        raise HelmetIssueError(checkpoint_note("err", "transfer_identity_unproven"))
+
+    payload = _kanban_show(policy, root_task_id, runner, hermes=hermes)
+    task = payload["task"]
+    assert isinstance(task, dict)
+    status = str(task.get("status") or "").strip().casefold()
+    if status not in _TRANSFER_FINISHED_STATUSES | _TRANSFER_HELD_STATUSES:
+        raise HelmetIssueError(
+            checkpoint_note("err", "transfer_active_task_unsupported", status or "unknown")
+        )
+    workspace = task.get("workspace_path")
+    target = None
+    if isinstance(workspace, str) and Path(workspace).is_absolute():
+        target = next(
+            (r for r in policy.repositories if _within(Path(workspace), r.worktree)), None
+        )
+    if target is None:
+        raise HelmetIssueError(checkpoint_note("err", "transfer_workspace_unknown"))
+    if target.slug.casefold() != new_slug.casefold() and (
+        policy.route_for_target(new_slug, target.slug) is None
+    ):
+        raise HelmetIssueError(checkpoint_note("err", "transfer_route_unconfigured"))
+    watch = ledger_watch(ledger, new_url if already else old_url) or {}
+    ledger_pull = watch.get("pull_url") if isinstance(watch.get("pull_url"), str) else None
+    kanban_pull = _pr_url_from_kanban(payload, task_id=root_task_id)
+    if ledger_pull and kanban_pull and ledger_pull != kanban_pull:
+        raise HelmetIssueError(checkpoint_note("err", "ledger_kanban_pr_disagree"))
+    pr_url = ledger_pull or kanban_pull
+    if pr_url:
+        match = PULL_REQUEST_URL_RE.fullmatch(pr_url)
+        if match is None or match.group("slug").casefold() != target.slug.casefold():
+            raise HelmetIssueError(checkpoint_note("err", "transfer_pr_outside_target"))
+
+    # A finished root routinely has a same-PR repair chain. The watch names the
+    # latest repair task; a queued or running one acts on instructions that
+    # name the old tracking issue, exactly like an active root, so it is
+    # refused (or must be held) before anything is changed. A retry of an
+    # adoption that already happened is not re-checked: repairs created since
+    # are cut from the adopted identity.
+    repair_id = watch.get("last_repair_task_id")
+    if not already and isinstance(repair_id, str) and repair_id.strip():
+        repair_status = resolve_repair_status(policy, repair_id.strip(), runner, hermes=hermes)
+        if repair_status not in _TRANSFER_FINISHED_STATUSES | _TRANSFER_HELD_STATUSES:
+            raise HelmetIssueError(
+                checkpoint_note(
+                    "err", "transfer_active_repair_unsupported", repair_status or "unknown"
+                )
+            )
+
+    # Prove the checkpoint move is possible before the ledger is touched, so a
+    # refusal never leaves the ledger re-keyed (and the alias live) over a
+    # conflicting or unreadable destination checkpoint.
+    _plan_checkpoint_migration(checkpoint_dir, old_url, new_url, already_adopted=already)
+
+    try:
+        changed = rekey_issue_ledger(
+            ledger, old_url=old_url, new_url=new_url, task_id=root_task_id
+        )
+    except PollerError as exc:
+        raise HelmetIssueError(checkpoint_note("err", "transfer_ledger_conflict")) from exc
+    checkpoint_result = _migrate_checkpoint(
+        checkpoint_dir, old_url, new_url, already_adopted=not changed or already
+    )
+    return TransferReport(
+        old_issue_url=old_url,
+        issue_url=new_url,
+        outcome="adopted" if changed else "already_adopted",
+        root_task_id=root_task_id,
+        root_status=status,
+        implementation_repository=target.slug,
+        pr_url=pr_url,
+        checkpoint=checkpoint_result,
     )

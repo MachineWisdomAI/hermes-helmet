@@ -93,7 +93,9 @@ until `--accept-graph`.
 - ready
 - blocked
 - failed
-- awaiting_human
+- awaiting_human (includes human-only children and routed children whose code
+  merged but whose tracking issue is not yet accepted; see
+  [issue-routing.md](issue-routing.md))
 
 plus root_open, fingerprint, max_parallelism, blocker, terminal flag, and
 effective budgets (`started_at`, `deadline`, epic/child windows, worker quota).
