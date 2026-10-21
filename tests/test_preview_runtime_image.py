@@ -226,7 +226,7 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
             "docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83",
             "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25",
             "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-            "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
+            "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
             "docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
         ):
             self.assertIn(action, self.workflow)
@@ -236,6 +236,13 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
             self.assertRegex(digest, PINNED_SHA_RE.pattern)
         self.assertIn("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", verify)
         self.assertIn("aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25", verify)
+
+    def test_download_artifact_keeps_strict_digest_and_archive_handling(self) -> None:
+        # download-artifact v8 errors on digest mismatch by default and skips
+        # unzip only for non-zipped uploads. Keep both defaults: no override
+        # may weaken the digest check or leave archives undecompressed.
+        for override in ("digest-mismatch", "skip-decompress", "merge-multiple"):
+            self.assertNotIn(override, self.workflow)
 
     def test_run_instructions_cover_owner_visibility_and_inherited_findings(self) -> None:
         combined = self.jobs["publish"] + self.jobs["summarize"]
