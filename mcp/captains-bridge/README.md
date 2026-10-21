@@ -53,7 +53,13 @@ learn them by failing a request. Text limits count characters of the submitted
 string before trimming, and invalid text is rejected, never shortened. Item,
 evidence and entry counts and the enums are in the schema. Only the leading
 `steps`, `relations` and `links` listed there are processed; later entries are
-ignored rather than rejected. Extra properties are ignored. Separately,
+ignored rather than rejected, so the schema constrains exactly those leading
+positions (`prefixItems`) and leaves the rest unconstrained. An optional
+`reported`, `disposition` or `change` may also be `null`, `false`, `0`, `""`, `[]`
+or `{}`, which count as absent, and a link URL may carry surrounding whitespace
+that is trimmed. The schema never excludes a payload the runtime accepts; the
+runtime additionally checks record IDs, that a URL occurs in a cited record, and
+the size guard below. Extra properties are ignored. Separately,
 `len(json.dumps(walkthrough))` must be at most 100000 before normalization:
 that counts serialized characters with ASCII escaping, not UTF-8 bytes, so
 non-ASCII text counts for more than its length.

@@ -59,55 +59,135 @@ def locate(root, path):
     return root, tokens[-1]
 
 
-def schema_at(schema, template):
-    for token in re.findall(r'[A-Za-z]+|\[\]', template):
-        schema = schema['items'] if token == '[]' else schema['properties'][token]
+def resolve(schema, root):
+    """Follow `$ref` (only `#/$defs/<name>` inside the current schema resource)."""
+    while '$ref' in schema:
+        prefix = '#/$defs/'
+        assert schema['$ref'].startswith(prefix), schema['$ref']
+        schema = root['$defs'][schema['$ref'][len(prefix):]]
     return schema
 
 
-def schema_leaves(schema, prefix=''):
+def object_form(schema, root):
+    """The object schema of a property, looking through an optional-object `anyOf`."""
+    schema = resolve(schema, root)
+    if 'anyOf' in schema:
+        forms = [resolve(s, root) for s in schema['anyOf'] if resolve(s, root).get('type') == 'object']
+        assert len(forms) == 1, schema
+        return forms[0]
+    return schema
+
+
+def schema_at(schema, template):
+    node = schema
+    for token in re.findall(r'[A-Za-z]+|\[\]', template):
+        node = object_form(node, schema)
+        node = resolve(node['prefixItems'][0] if 'prefixItems' in node else node['items'], schema) \
+            if token == '[]' else node['properties'][token]
+    return object_form(node, schema)
+
+
+def subschemas(schema, root=None):
+    """Every distinct schema node reachable from `schema`, with references followed."""
+    root = root or schema
+    yield schema
+    children = list(schema.get('properties', {}).values()) + list(schema.get('anyOf', []))
+    children += list(schema.get('prefixItems', [])) + ([schema['items']] if 'items' in schema else [])
+    children += list(schema.get('$defs', {}).values()) if schema is root else []
+    for child in children:
+        if '$ref' not in child:
+            yield from subschemas(child, root)
+
+
+def schema_leaves(schema, prefix='', root=None):
+    """maxLength of every text leaf, keyed by the contract's schema path."""
+    root = root or schema
+    schema = resolve(schema, root)
     found = {}
     if 'maxLength' in schema:
         found[prefix] = schema['maxLength']
     for name, child in schema.get('properties', {}).items():
-        found.update(schema_leaves(child, f'{prefix}.{name}' if prefix else name))
-    if 'items' in schema:
-        found.update(schema_leaves(schema['items'], prefix + '[]'))
+        found.update(schema_leaves(child, f'{prefix}.{name}' if prefix else name, root))
+    for child in schema.get('anyOf', []):
+        found.update(schema_leaves(child, prefix, root))
+    if 'prefixItems' in schema:
+        found.update(schema_leaves(schema['prefixItems'][0], prefix + '[]', root))
+    elif 'items' in schema:
+        found.update(schema_leaves(schema['items'], prefix + '[]', root))
     return found
 
 
-def schema_problems(schema, value, path='walkthrough'):
-    """The JSON Schema keywords the published schema uses, checked without a dependency."""
-    kind = schema.get('type')
-    if kind == 'object':
-        if not isinstance(value, dict):
-            return [f'{path}: not an object']
-        problems = [f'{path}.{key}: required' for key in schema.get('required', []) if key not in value]
-        for key, child in schema.get('properties', {}).items():
-            if key in value:
-                problems += schema_problems(child, value[key], f'{path}.{key}')
-        return problems
-    if kind == 'array':
-        if not isinstance(value, list):
-            return [f'{path}: not an array']
-        problems = []
-        if len(value) < schema.get('minItems', 0) or len(value) > schema.get('maxItems', len(value)):
-            problems.append(f'{path}: item count')
-        for index, child in enumerate(value[:schema.get('x-processedPrefix', len(value))]):
-            problems += schema_problems(schema['items'], child, f'{path}[{index}]')
-        return problems
-    if kind == 'string':
-        if not isinstance(value, str):
-            return [f'{path}: not text']
-        problems = []
-        if not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', len(value)):
-            problems.append(f'{path}: length')
-        if 'enum' in schema and value not in schema['enum']:
-            problems.append(f'{path}: enum')
-        if 'pattern' in schema and not re.search(schema['pattern'], value):
-            problems.append(f'{path}: pattern')
-        return problems
-    raise AssertionError(f'Unchecked schema type at {path}')
+class StandardSchema:
+    """A test-only JSON Schema (2020-12) checker for the keywords the walkthrough schema uses.
+
+    It follows the standard semantics, so it cannot hide a schema that rejects what the runtime
+    accepts: `items` validates every entry that `prefixItems` does not cover, an annotation never
+    changes the outcome, and a keyword it does not implement is an error instead of being skipped.
+    `tests` below check it against the standard rules; no runtime dependency is involved.
+    """
+    VALIDATING = {'type', 'enum', 'required', 'properties', 'items', 'prefixItems', 'minItems', 'maxItems',
+                  'minLength', 'maxLength', 'pattern', 'anyOf', '$ref', 'additionalProperties'}
+    ANNOTATIONS = {'description', '$id', '$defs', 'title'}
+
+    @staticmethod
+    def same(left, right):
+        """JSON equality: booleans are not numbers, 0 equals 0.0, containers compare deeply."""
+        if isinstance(left, bool) or isinstance(right, bool):
+            return isinstance(left, bool) and isinstance(right, bool) and left == right
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return left == right
+        if isinstance(left, list) and isinstance(right, list):
+            return len(left) == len(right) and all(StandardSchema.same(a, b) for a, b in zip(left, right))
+        if isinstance(left, dict) and isinstance(right, dict):
+            return left.keys() == right.keys() and all(StandardSchema.same(left[k], right[k]) for k in left)
+        return type(left) is type(right) and left == right
+
+    TYPES = {'object': lambda v: isinstance(v, dict), 'array': lambda v: isinstance(v, list),
+             'string': lambda v: isinstance(v, str), 'null': lambda v: v is None,
+             'boolean': lambda v: isinstance(v, bool),
+             'integer': lambda v: isinstance(v, int) and not isinstance(v, bool),
+             'number': lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)}
+
+    def problems(self, schema, value, path='walkthrough', root=None):
+        root = schema if '$id' in schema else root or schema
+        unknown = [k for k in schema if k not in self.VALIDATING | self.ANNOTATIONS and not k.startswith('x-')]
+        assert not unknown, f'{path}: schema keyword not implemented by the test checker: {unknown}'
+        found = []
+        if '$ref' in schema:
+            found += self.problems(resolve(schema, root), value, path, root)
+        if 'anyOf' in schema and not any(not self.problems(s, value, path, root) for s in schema['anyOf']):
+            found.append(f'{path}: matches no anyOf alternative')
+        if 'type' in schema and not self.TYPES[schema['type']](value):
+            return found + [f'{path}: type']
+        if 'enum' in schema and not any(self.same(value, option) for option in schema['enum']):
+            found.append(f'{path}: enum')
+        if isinstance(value, dict):
+            found += [f'{path}.{key}: required' for key in schema.get('required', []) if key not in value]
+            assert schema.get('additionalProperties', True) in (True, False), 'only boolean additionalProperties'
+            if schema.get('additionalProperties', True) is False:
+                found += [f'{path}.{key}: additional' for key in value if key not in schema.get('properties', {})]
+            for key, child in schema.get('properties', {}).items():
+                if key in value:
+                    found += self.problems(child, value[key], f'{path}.{key}', root)
+        if isinstance(value, list):
+            if not schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', len(value)):
+                found.append(f'{path}: item count')
+            covered = schema.get('prefixItems', [])
+            for index, child in enumerate(value):
+                if index < len(covered):
+                    found += self.problems(covered[index], child, f'{path}[{index}]', root)
+                elif 'items' in schema:
+                    found += self.problems(schema['items'], child, f'{path}[{index}]', root)
+        if isinstance(value, str):
+            if not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', len(value)):
+                found.append(f'{path}: length')
+            if 'pattern' in schema and not re.search(schema['pattern'], value):
+                found.append(f'{path}: pattern')
+        return found
+
+
+def schema_problems(schema, value):
+    return StandardSchema().problems(schema, value)
 
 
 class ContractCase(unittest.TestCase):
@@ -140,6 +220,7 @@ class PublishedConstraintTests(ContractCase):
         deliver = tools['deliver_walkthrough_update']['inputSchema']['properties']['walkthrough']
         self.assertEqual(present, deliver)
         self.assertEqual(present, contract.walkthrough_schema())
+        self.assertEqual(present['$id'], contract.SCHEMA_ID)
         self.assertEqual(json.loads(json.dumps(present)), present)
 
     def test_numerical_limits_are_unchanged(self):
@@ -161,17 +242,21 @@ class PublishedConstraintTests(ContractCase):
     def test_counts_enums_and_prefixes_are_exposed(self):
         schema = contract.walkthrough_schema()
         item = schema_at(schema, 'items[]')['properties']
-        for owner in (schema['properties']['evidence'], item['evidence'], item['change']['properties']['evidence'],
-                      item['steps']['items']['properties']['evidence']):
+        for owner in (schema['properties']['evidence'], item['evidence'],
+                      schema_at(schema, 'items[].change')['properties']['evidence'],
+                      schema_at(schema, 'items[].steps[]')['properties']['evidence']):
             self.assertEqual((owner['minItems'], owner['maxItems']), (1, 30))
         self.assertEqual((schema['properties']['items']['minItems'], schema['properties']['items']['maxItems']), (1, 24))
         self.assertEqual(item['group']['enum'], ['changed', 'unresolved', 'activity'])
-        self.assertEqual(item['steps']['items']['properties']['actor']['enum'],
+        self.assertEqual(schema_at(schema, 'items[].steps[]')['properties']['actor']['enum'],
                          ['Captain', 'First officer', 'Hermes', 'Other agent'])
-        self.assertEqual(item['relations']['items']['properties']['kind']['enum'], ['Handoff', 'Wakeup', 'Follow-up'])
-        # Processed prefixes are not rejection rules, so they are not maxItems.
+        self.assertEqual(schema_at(schema, 'items[].relations[]')['properties']['kind']['enum'],
+                         ['Handoff', 'Wakeup', 'Follow-up'])
+        # Processed prefixes are not rejection rules: the schema constrains exactly the leading entries
+        # with standard `prefixItems` and leaves later entries unconstrained (no `items`, no `maxItems`).
         for field, count in (('steps', 16), ('relations', 8), ('links', 8)):
-            self.assertEqual(item[field]['x-processedPrefix'], count)
+            self.assertEqual(len(item[field]['prefixItems']), count)
+            self.assertNotIn('items', item[field])
             self.assertNotIn('maxItems', item[field])
             self.assertIn('ignored, not rejected', item[field]['description'])
 
@@ -182,19 +267,49 @@ class PublishedConstraintTests(ContractCase):
         self.assertIn('not a UTF-8 byte budget', text)
 
     def test_extra_properties_stay_allowed(self):
-        def walk(node):
+        nodes = list(subschemas(contract.walkthrough_schema()))
+        self.assertGreater(len(nodes), 50)
+        for node in nodes:
             self.assertNotIn('additionalProperties', node)
-            for child in node.get('properties', {}).values():
-                walk(child)
-            if 'items' in node:
-                walk(node['items'])
-        walk(contract.walkthrough_schema())
         extra = copy.deepcopy(self.account)
         extra['note'] = 1
         extra['items'][0]['note'] = 1
         extra['items'][0]['change']['note'] = 1
         extra['items'][0]['steps'][0]['note'] = 1
         self.assertEqual(self.check(extra), self.check())
+
+
+class StandardSchemaCheckerTests(unittest.TestCase):
+    """The test checker must follow the standard rules the schema relies on, or parity tests prove nothing."""
+    def problems(self, schema, value):
+        return StandardSchema().problems(schema, value, 'v')
+
+    def test_items_validates_every_entry_but_prefix_items_only_the_prefix(self):
+        every = {'type': 'array', 'items': {'type': 'string'}}
+        prefix = {'type': 'array', 'prefixItems': [{'type': 'string'}] * 2}
+        self.assertEqual(self.problems(every, ['a', 'b', None]), ['v[2]: type'])
+        self.assertEqual(self.problems(prefix, ['a', 'b', None, 7]), [])
+        self.assertEqual(self.problems(prefix, ['a', None, 'c']), ['v[1]: type'])
+
+    def test_annotations_never_change_the_outcome(self):
+        schema = {'type': 'array', 'items': {'type': 'string'}, 'x-processedPrefix': 1, 'description': 'ignored'}
+        self.assertEqual(self.problems(schema, ['a', 3]), ['v[1]: type'])
+        with self.assertRaises(AssertionError):
+            self.problems({'type': 'string', 'format': 'uri'}, 'a')
+
+    def test_required_pattern_and_enum_follow_the_standard(self):
+        self.assertEqual(self.problems({'type': 'object', 'required': ['a']}, {}), ['v.a: required'])
+        self.assertEqual(self.problems({'type': 'string', 'pattern': r'^a$'}, ' a'), ['v: pattern'])
+        enum = {'enum': [None, False, 0, '', [], {}]}
+        for accepted in (None, False, 0, 0.0, '', [], {}):
+            self.assertEqual(self.problems(enum, accepted), [], accepted)
+        for rejected in (True, 1, 'x', [1], {'a': 1}):
+            self.assertEqual(self.problems(enum, rejected), ['v: enum'], rejected)
+
+    def test_any_of_needs_one_matching_alternative(self):
+        schema = {'anyOf': [{'type': 'string'}, {'type': 'null'}]}
+        self.assertEqual(self.problems(schema, None), [])
+        self.assertEqual(self.problems(schema, 7), ['v: matches no anyOf alternative'])
 
 
 class ExampleTests(ContractCase):
@@ -208,13 +323,22 @@ class ExampleTests(ContractCase):
     def test_example_passes_schema_and_runtime_with_unchanged_normalization(self):
         raw = EXAMPLE.read_bytes()
         self.assertEqual(schema_problems(contract.walkthrough_schema(), json.loads(raw)), [])
+        for name in ('present_chat_work', 'deliver_walkthrough_update'):
+            whole = server.handle('tools/list', {})['tools']
+            tool = next(t for t in whole if t['name'] == name)['inputSchema']
+            arguments = {'walkthrough': json.loads(raw)}
+            arguments.update({'binding': 'b'} if name == 'present_chat_work' else {'request': {}})
+            self.assertEqual(StandardSchema().problems(tool, arguments, name), [], name)
         result = validate(json.loads(raw), self.data)
         self.assertEqual({k: v for k, v in result.items() if k not in ('explainedAt', 'fingerprint')}, self.normalized())
 
     def test_schema_checker_rejects_a_violation(self):
         schema = contract.walkthrough_schema()
         broken = self.with_value('items[0].change.before', 'a' * 121)
-        self.assertEqual(schema_problems(schema, broken), ['walkthrough.items[0].change.before: length'])
+        # An optional object is anyOf [object, absent], so its violation is reported on the object.
+        self.assertEqual(schema_problems(schema, broken), ['walkthrough.items[0].change: matches no anyOf alternative'])
+        self.assertEqual(schema_problems(schema, self.with_value('items[0].summary', 'a' * 601)),
+                         ['walkthrough.items[0].summary: length'])
 
     def test_example_is_accepted_by_both_tools(self):
         call = lambda name, args: server.handle('tools/call', {'name': name, 'arguments': args})
@@ -381,6 +505,87 @@ class StructureErrorTests(ContractCase):
             self.assertEqual(len(self.check(self.with_value(path, valid + ['ignored', None]))['items'][0][field]), count)
             invalid = valid[:-1] + ['broken']
             self.assertEqual(self.rejected(self.with_value(path, invalid)), f'{path}[{count - 1}] must be an object; got text.')
+
+
+class AcceptanceParityTests(ContractCase):
+    """Whatever the runtime accepts, the published standard schema accepts too (#111)."""
+    def both(self, account, data=None):
+        """(runtime accepted, schema accepted) for one candidate walkthrough."""
+        try:
+            self.check(account, data)
+            runtime = True
+        except ValueError:
+            runtime = False
+        return runtime, not schema_problems(contract.walkthrough_schema(), account)
+
+    def assertParity(self, account, accepted, data=None, label=''):
+        runtime, schema = self.both(account, data)
+        self.assertEqual((runtime, schema), (accepted, accepted), label)
+
+    def test_entries_beyond_the_processed_prefix_are_accepted_by_both(self):
+        samples = {field: self.account['items'][0][field][0] for field in ('steps', 'relations', 'links')}
+        for field, count in (('steps', 16), ('relations', 8), ('links', 8)):
+            valid = [samples[field]] * count
+            path = f'items[0].{field}'
+            for tail in (None, 'ignored', 7, True, {}, [], {'actor': 'Robot'}, [None]):
+                for entries in ([tail], [tail, tail]):
+                    with self.subTest(field=field, tail=tail, extra=len(entries)):
+                        self.assertParity(self.with_value(path, valid + entries), True)
+            with self.subTest(field=field, case='bad entry inside the prefix'):
+                self.assertParity(self.with_value(path, valid[:-1] + [None]), False)
+
+    def test_falsy_optional_objects_are_accepted_by_both(self):
+        for field in contract.OPTIONAL_OBJECTS:
+            for value in contract.ABSENT_VALUES + [0.0]:
+                with self.subTest(field=field, value=value):
+                    account = self.with_value(f'items[0].{field}', value)
+                    self.assertParity(account, True)
+                    self.assertNotIn(field, self.check(account)['items'][0])
+            for value in ('text', 7, True, ['x'], {'note': 1}, {'label': 'x'}):
+                with self.subTest(field=field, rejected=value):
+                    self.assertParity(self.with_value(f'items[0].{field}', value), False)
+        gone = self.account
+        for field in contract.OPTIONAL_OBJECTS:
+            gone['items'][0].pop(field, None)
+        self.assertParity(gone, True)
+
+    def test_enum_of_absent_values_keeps_booleans_and_numbers_apart(self):
+        self.assertParity(self.with_value('items[0].change', True), False)
+        self.assertParity(self.with_value('items[0].change', 1), False)
+
+    def test_surrounding_whitespace_on_a_url_is_accepted_by_both(self):
+        url = self.account['items'][0]['links'][0]['url']
+        for pad in (' ', '  ', '\t', '\n', ' \r\n ', '\x1c', '\x85', '\u00a0', '\u3000'):
+            for submitted in (pad + url, url + pad, pad + url + pad):
+                with self.subTest(submitted=submitted):
+                    account = self.with_value('items[0].links[0].url', submitted)
+                    self.assertParity(account, True)
+                    self.assertEqual(self.check(account)['items'][0]['links'][0]['url'], url)
+        for rejected in ('http://example.com/example/repo/pull/1', url[:8] + ' ' + url[8:], 'javascript:alert(1)',
+                         url + '<', ' ', ''):
+            with self.subTest(rejected=rejected):
+                self.assertParity(self.with_value('items[0].links[0].url', rejected), False)
+
+    def test_url_length_is_measured_before_trimming_by_both(self):
+        url = 'https://example.com/' + 'a' * (2000 - len('https://example.com/'))
+        data = copy.deepcopy(self.data)
+        data['records'][3]['text'] += ' ' + url
+        self.assertParity(self.with_value('items[0].links[0].url', url), True, data)
+        self.assertParity(self.with_value('items[0].links[0].url', url + ' '), False, data)
+
+    def test_single_field_variants_never_exclude_a_runtime_accepted_payload(self):
+        values = [None, False, True, 0, 1, 0.0, '', ' ', 'x', 'null', 7, [], {}, ['x'], {'a': 1}]
+        fields = ['reported', 'disposition', 'change', 'steps', 'relations', 'links', 'group', 'status', 'summary']
+        paths = [f'items[0].{field}' for field in fields] + ['objective', 'summary', 'items[0].steps[0]',
+                                                              'items[0].steps[0].actor', 'items[0].change.before']
+        accepted = 0
+        for path in paths:
+            for value in values:
+                runtime, schema = self.both(self.with_value(path, value))
+                accepted += runtime
+                with self.subTest(path=path, value=value):
+                    self.assertTrue(schema or not runtime, 'schema rejects a payload the runtime accepts')
+        self.assertGreater(accepted, 10)
 
 
 class SerializedGuardTests(ContractCase):

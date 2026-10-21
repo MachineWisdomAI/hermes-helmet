@@ -20,6 +20,12 @@ All notable changes to Hermes Helmet are recorded here. The project follows
   `mcp/captains-bridge/example-walkthrough.json`, is validated by the tests; the README
   and the observe-chat skill point to it. A non-array `steps`, `relations` or `links`
   value (previously an empty string slipped through, other values crashed) is now rejected.
+  The published schema is standard JSON Schema and never excludes a payload the runtime
+  accepts: only the processed leading steps, relations and links are constrained
+  (`prefixItems`), the empty or null optional `reported`, `disposition` and `change`
+  values the runtime treats as absent are allowed, and a link URL may carry the
+  surrounding whitespace the runtime trims. The tests check the schema with a
+  standard-semantics checker and assert acceptance parity with the runtime.
 
 - Require version bumps only for product changes, while preserving versioning
   for shipped writing guidance and notices. Refresh the image's checksum-pinned
