@@ -27,5 +27,11 @@
         }
       ]
     }
+  ],
+  "release_paths": [
+    "skills/**",
+    "src/hermes_helmet/**",
+    "deploy/writing/**",
+    "examples/writing/guidance/**"
   ]
 }

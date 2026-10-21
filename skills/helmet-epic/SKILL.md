@@ -257,6 +257,14 @@ or one native schedule covering its entire frontier. Child invocations belong
 to this epic's continuation and do not create separate schedules. Reconcile the
 whole graph once on each wake, then yield while work remains pending.
 
+## Routed children
+
+A child whose tracking issue is routed to another repository (policy
+`issue_routes`) keeps its tracking URL as the graph identity. After its code
+merges it is `awaiting_human` until `helmet accept` closes the tracking issue;
+dependents stay blocked on that closure, not on the merged code. See
+`docs/issue-routing.md`.
+
 ## Common pitfalls
 
 1. **Dispatching the epic root** — orchestration only; never add dispatch_label.

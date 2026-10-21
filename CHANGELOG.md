@@ -5,6 +5,22 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Require version bumps only for product changes, while preserving versioning
+  for shipped writing guidance and notices. Refresh the image's checksum-pinned
+  GitHub CLI to 2.103.0, built with Go 1.27.3 and x/net 0.60.0, to resolve
+  CVE-2026-111943 and retire the earlier CLI vulnerability exceptions.
+
+- Route a tracking issue to a different allowlisted implementation repository
+  with operator-configured `issue_routes`. The tracking issue stays the delivery
+  and acceptance identity; the checkout, opaque canonical branch, pull request,
+  required checks, repair, and SHA-bound merge use the implementation
+  repository, and the public pull request carries no link to the tracking
+  issue. Merged routed code waits in `AWAIT_ACCEPTANCE`; `helmet accept`
+  records acceptance explicitly. `helmet adopt-transfer` re-keys a finished or
+  blocked root, watch, and checkpoint when a tracking issue moves to another
+  allowlisted repository, without a second root or a reset budget. See
+  [issue-routing.md](docs/issue-routing.md). Same-repository behavior is
+  unchanged.
 - Clarify review supervision and truthful continuation in the bundled skills. The shared
   host continuation reference gains one "Supervise pending work" section: pending work
   yields on host delivery or one native schedule; drift (a loop, repeated use of an

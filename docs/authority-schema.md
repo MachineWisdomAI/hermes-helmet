@@ -170,6 +170,14 @@ Optional executor company pack (omit for minimum startup):
   `repositories` allowlist. Enrollment still requires the configured Captain
   identity and an allowed owner, and never adds owners. See
   [helmet-issue.md](helmet-issue.md#named-request-repository-enrollment).
+- Optional `issue_routes` routes a tracking issue to a different implementation
+  repository: a list of `{label, tracking_repository, implementation_repository}`.
+  Both repositories must be in `repositories`, must differ, and `label` must
+  differ from `dispatch_label` and `ready_label`; a tracking repository and
+  label pair is unique. A route applies only to labeled issues in the tracking
+  repository, so that repository keeps implementing its own other issues.
+  Issue text cannot add or widen a route. Omitted means every issue is
+  implemented in its own repository. See [issue-routing.md](issue-routing.md).
 - Repository slugs are unique case-insensitively. Repository `worktree` paths
   must be absolute, unique after normalization, and free of unsafe elements
   (`..`, null bytes, OS-sensitive roots).

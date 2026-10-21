@@ -65,7 +65,9 @@ from hermes_helmet.helmet_issue import (
     DEFAULT_WORKER_RUNTIME,
     HelmetIssueError,
     SubprocessRunner,
+    adopt_transferred_issue,
     apply_review_outcome,
+    close_tracking_issue,
     load_policy_for_issue,
     merge_issue,
     observed_github_login,
@@ -241,6 +243,68 @@ def cmd_merge(args: argparse.Namespace) -> int:
         print(f"blocker:        {report.blocker or '-'}")
         print(f"state:          {report.checkpoint_state}")
     return 0 if report.merged else 1
+
+
+def cmd_accept(args: argparse.Namespace) -> int:
+    try:
+        policy = load_policy_for_issue(args.config)
+        runner = SubprocessRunner(gh=args.gh, hermes=args.hermes)
+        report = close_tracking_issue(
+            args.issue_url,
+            expected_head=args.expected_head,
+            policy=policy,
+            ledger=args.ledger,
+            checkpoint_dir=args.checkpoint_dir,
+            runner=runner,
+            gh=args.gh,
+            hermes=args.hermes,
+            worker_runtime=args.worker_runtime,
+            enrollment_store=_enrollment_store(args),
+        )
+    except HelmetIssueError as exc:
+        print(f"helmet accept failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(report.to_public_dict(), indent=2, sort_keys=True))
+    else:
+        print(f"issue:          {report.issue_url}")
+        print(f"decision:       {report.decision}")
+        print(f"closed:         {report.closed}")
+        print(f"head:           {report.head_sha or '-'}")
+        print(f"pr:             {report.pr_url or '-'}")
+        print(f"blocker:        {report.blocker or '-'}")
+        print(f"state:          {report.checkpoint_state}")
+    return 0 if report.closed else 1
+
+
+def cmd_adopt_transfer(args: argparse.Namespace) -> int:
+    try:
+        policy = load_policy_for_issue(args.config)
+        runner = SubprocessRunner(gh=args.gh, hermes=args.hermes)
+        report = adopt_transferred_issue(
+            args.old_issue_url,
+            args.new_issue_url,
+            policy=policy,
+            ledger=args.ledger,
+            checkpoint_dir=args.checkpoint_dir,
+            runner=runner,
+            gh=args.gh,
+            hermes=args.hermes,
+        )
+    except HelmetIssueError as exc:
+        print(f"helmet adopt-transfer failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(report.to_public_dict(), indent=2, sort_keys=True))
+    else:
+        print(f"old issue:      {report.old_issue_url}")
+        print(f"issue:          {report.issue_url}")
+        print(f"outcome:        {report.outcome}")
+        print(f"root_task:      {report.root_task_id} ({report.root_status})")
+        print(f"implementation: {report.implementation_repository}")
+        print(f"pr:             {report.pr_url or '-'}")
+        print(f"checkpoint:     {report.checkpoint}")
+    return 0
 
 
 def cmd_wait(args: argparse.Namespace) -> int:
@@ -1460,6 +1524,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     merge_p.add_argument("--json", action="store_true")
     merge_p.set_defaults(func=cmd_merge)
+
+    accept_p = sub.add_parser(
+        "accept",
+        help=(
+            "Explicitly accept a routed tracking issue after its code pull "
+            "request merged at the named head, and close the tracking issue"
+        ),
+    )
+    _add_common(accept_p)
+    accept_p.add_argument("issue_url")
+    accept_p.add_argument(
+        "--expected-head",
+        required=True,
+        help="Exact merged pull-request head SHA being accepted",
+    )
+    accept_p.add_argument("--json", action="store_true")
+    accept_p.set_defaults(func=cmd_accept)
+
+    transfer_p = sub.add_parser(
+        "adopt-transfer",
+        help=(
+            "Re-key an existing root, watch, and checkpoint to a tracking "
+            "issue's new URL after a GitHub transfer (finished or blocked "
+            "roots only; never touches Kanban)"
+        ),
+    )
+    _add_common(transfer_p)
+    transfer_p.add_argument("old_issue_url")
+    transfer_p.add_argument("new_issue_url")
+    transfer_p.add_argument("--json", action="store_true")
+    transfer_p.set_defaults(func=cmd_adopt_transfer)
 
     epic_p = sub.add_parser(
         "epic",
