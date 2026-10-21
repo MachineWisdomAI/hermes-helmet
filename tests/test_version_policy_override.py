@@ -140,5 +140,41 @@ class VersionOverrideTests(unittest.TestCase):
         self.assertIn("Version-Override", err)
 
 
+class ShippedMarkdownVersionTests(unittest.TestCase):
+    def test_image_guidance_and_notices_require_a_version_bump(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+
+            def git(*args):
+                subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-C", str(repo), *args],
+                               check=True, capture_output=True)
+
+            git("init", "-q", "-b", "main")
+            git("config", "user.name", "Version test")
+            git("config", "user.email", "test@example.invalid")
+            config = {
+                "schema_version": 1,
+                "units": [{"name": "repo", "paths": ["**"],
+                           "files": [{"path": "VERSION", "kind": "text"}]}],
+                "release_paths": json.loads((ROOT / ".version-policy.json").read_text())["release_paths"],
+            }
+            (repo / ".version-policy.json").write_text(json.dumps(config))
+            (repo / "VERSION").write_text("1.2.3\n")
+            git("add", "--", ".version-policy.json", "VERSION")
+            git("commit", "-q", "-m", "chore: baseline")
+            git("checkout", "-q", "-b", "change")
+            for relative in ["examples/writing/guidance/example-writing-guidance/SKILL.md",
+                             "deploy/writing/notices/diagram-bundle.md"]:
+                path = repo / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("synthetic shipped content\n")
+                code, _, error = run_policy(repo, "check", "--base", "main", "--title", "docs: update shipped content")
+                self.assertEqual(code, 1, error)
+                self.assertIn("expected 1.2.4", error)
+            code, _, error = run_policy(repo, "update", "--base", "main", "--title", "docs: update shipped content")
+            self.assertEqual(code, 0, error)
+            self.assertEqual((repo / "VERSION").read_text(), "1.2.4\n")
+
+
 if __name__ == "__main__":
     unittest.main()
