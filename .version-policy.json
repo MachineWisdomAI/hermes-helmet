@@ -30,7 +30,8 @@
   ],
   "release_paths": [
     "skills/**",
-    "deploy/writing/skills/**",
-    "src/hermes_helmet/**"
+    "src/hermes_helmet/**",
+    "deploy/writing/**",
+    "examples/writing/guidance/**"
   ]
 }
