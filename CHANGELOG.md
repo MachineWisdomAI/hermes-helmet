@@ -5,6 +5,22 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Expose Captain's Bridge walkthrough limits and report precise nested errors.
+  `present_chat_work` and `deliver_walkthrough_update` now publish every nested text
+  limit (including the 120-character change text and 80-character disposition labels),
+  the evidence and item counts, the enums, and which leading steps, relations and links
+  are processed (later entries are ignored, not rejected). The schema and the runtime
+  validator read one shared source, `mcp/captains-bridge/walkthrough_contract.py`, so
+  numerical limits, normalization, evidence grounding and extra-property handling are
+  unchanged. Errors name the exact field with zero-based indices, the expected
+  constraint and the actual length, never echo source text, and a wrongly typed item,
+  change, disposition or entry is a normal tool error. The overall guard remains
+  `len(json.dumps(account)) <= 100000`, now described as serialized characters rather
+  than UTF-8 bytes. One checked-in synthetic example,
+  `mcp/captains-bridge/example-walkthrough.json`, is validated by the tests; the README
+  and the observe-chat skill point to it. A non-array `steps`, `relations` or `links`
+  value (previously an empty string slipped through, other values crashed) is now rejected.
+
 - Require version bumps only for product changes, while preserving versioning
   for shipped writing guidance and notices. Refresh the image's checksum-pinned
   GitHub CLI to 2.103.0, built with Go 1.27.3 and x/net 0.60.0, to resolve

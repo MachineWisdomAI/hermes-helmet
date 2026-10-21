@@ -13,7 +13,10 @@ not load it.
   existing local records, read-only, excluding reasoning. The adapter depends on
   Codex’s private storage format and rejects unsupported records explicitly.
 - Explanation contract: `walkthrough.py` validates structure and source
-  references and computes the source fingerprint.
+  references and computes the source fingerprint. `walkthrough_contract.py` is
+  the one source of its limits, counts and enums: validation enforces them and
+  `tools/list` publishes them as the `walkthrough` schema of `present_chat_work`
+  and `deliver_walkthrough_update`.
 - Server: `server.py` exposes read, presentation and app-only refresh tools. A
   portable view carries chat identity, evidence identifiers, fingerprint and read
   time across the separate model and UI server processes.
@@ -42,6 +45,27 @@ not load it.
   action implements or resumes project work. Walkthrough excerpts sent with a
   selected item are reference data to verify against the original records.
   Generated explanations belong outside tracked project files.
+
+## Walkthrough limits and errors
+
+Read the nested limits from the `walkthrough` property in `tools/list`; do not
+learn them by failing a request. Text limits count characters of the submitted
+string before trimming, and invalid text is rejected, never shortened. Item,
+evidence and entry counts and the enums are in the schema. Only the leading
+`steps`, `relations` and `links` listed there are processed; later entries are
+ignored rather than rejected. Extra properties are ignored. Separately,
+`len(json.dumps(walkthrough))` must be at most 100000 before normalization:
+that counts serialized characters with ASCII escaping, not UTF-8 bytes, so
+non-ASCII text counts for more than its length.
+
+An invalid payload returns a tool error naming the exact field with zero-based
+array indices (for example `items[0].change.before`), the expected constraint
+and, for text, the actual length. An evidence error names the owning field and
+index without echoing source text.
+
+`mcp/captains-bridge/example-walkthrough.json` is the one synthetic example. The
+tests validate those exact bytes against the schema and the runtime; copy
+nothing from this page instead of it.
 
 ## Background preparation lifecycle
 

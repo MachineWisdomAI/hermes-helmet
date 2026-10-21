@@ -1,0 +1,62 @@
+{
+  "objective": "Shorten the polling interval and confirm the change was reviewed.",
+  "summary": "The polling interval was changed from 30 to 10 seconds and reported complete. Review of the change is still open.",
+  "evidence": ["record-request", "record-report"],
+  "items": [
+    {
+      "id": "polling-interval",
+      "group": "changed",
+      "title": "Shorter polling interval",
+      "summary": "The interval between polls was shortened.",
+      "detail": "The Captain asked for a shorter interval, a worker applied the change, and the worker reported it complete.",
+      "status": "Reported complete",
+      "evidence": ["record-request", "record-command", "record-report"],
+      "steps": [
+        {
+          "actor": "Captain",
+          "label": "Requested a shorter interval",
+          "detail": "The Captain asked for the polling interval to be made shorter.",
+          "evidence": ["record-request"]
+        },
+        {
+          "actor": "Hermes",
+          "label": "Applied the change",
+          "detail": "A Hermes worker changed the interval and reported the result.",
+          "evidence": ["record-report"]
+        }
+      ],
+      "relations": [
+        {
+          "kind": "Handoff",
+          "label": "Work passed to a worker",
+          "detail": "The chat records the request being handed to a Hermes worker.",
+          "evidence": ["record-handoff"]
+        }
+      ],
+      "reported": {"label": "Reported complete", "actor": "Hermes", "evidence": ["record-report"]},
+      "disposition": {"label": "Not yet accepted", "actor": "Captain", "evidence": ["record-open"]},
+      "change": {
+        "before": "30 seconds",
+        "after": "10 seconds",
+        "explanation": "The command output records the interval going from 30 to 10 seconds.",
+        "evidence": ["record-command"]
+      },
+      "links": [
+        {
+          "label": "Related pull request",
+          "url": "https://example.com/example/repo/pull/1",
+          "evidence": ["record-report"]
+        }
+      ]
+    },
+    {
+      "id": "interval-review",
+      "group": "unresolved",
+      "title": "Review of the interval change",
+      "summary": "The review has not finished.",
+      "detail": "No record shows the review completing, so the outcome is unknown.",
+      "status": "Open",
+      "evidence": ["record-open"]
+    }
+  ]
+}

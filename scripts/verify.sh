@@ -68,6 +68,9 @@ for required in \
     src/hermes_helmet/claude_mod_toolchain.py \
     tests/test_claude_mod_toolchain.py \
     mcp/captains-bridge/server.py \
+    mcp/captains-bridge/walkthrough_contract.py \
+    mcp/captains-bridge/example-walkthrough.json \
+    mcp/captains-bridge/test_walkthrough_contract.py \
     src/hermes_helmet/helmet_issue.py \
     src/hermes_helmet/helmet_epic.py \
     src/hermes_helmet/repo_enroll.py \
