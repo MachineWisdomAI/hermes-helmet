@@ -199,6 +199,25 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
         self.assertLess(scan_index, smoke_index)
         self.assertLess(smoke_index, upload_index)
 
+    def test_failed_gate_retains_only_sanitized_diagnostics(self) -> None:
+        build = self.jobs["build"]
+        enforce_index = build.index("Enforce clean ${{ matrix.platform }} wrapper delta")
+        retain_index = build.index("Retain failed ${{ matrix.platform }} wrapper-delta diagnostics")
+        sbom_index = build.index("Generate ${{ matrix.platform }} SBOM from tested bytes")
+        self.assertLess(enforce_index, retain_index)
+        self.assertLess(retain_index, sbom_index)
+        step = build[retain_index:sbom_index]
+        self.assertIn("id: wrapper_delta", build[enforce_index:retain_index])
+        self.assertIn("failure() && steps.wrapper_delta.outcome == 'failure'", step)
+        self.assertIn("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9", step)
+        for retained in ("delta.json", "trivy-db.sha256", "trivy-db-metadata.json"):
+            self.assertIn(f"dist/preview/${{{{ matrix.arch }}}}/{retained}", step)
+        # Raw Trivy JSON and the image tarball are never retained on failure,
+        # and the diagnostic artifact cannot be mistaken for a tested artifact.
+        for forbidden in ("base.json", "derived.json", ".tar", "sbom"):
+            self.assertNotIn(forbidden, step)
+        self.assertNotIn("name: preview-runtime-linux-", step)
+
     def test_actions_are_pinned_consistently_with_verify(self) -> None:
         verify = VERIFY.read_text(encoding="utf-8")
         for action in (
