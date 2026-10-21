@@ -337,8 +337,20 @@ class WrapperExceptionTests(unittest.TestCase):
                 self.assertEqual(len(summary["delta"]["added_high_or_critical"]), 1)
                 self.assertTrue(any("wrapper adds 1" in failure for failure in failures))
 
+    def test_pre_fix_github_cli_findings_are_rejected_by_default(self) -> None:
+        derived = gh_stdlib_report()
+        derived["Results"][-1]["Vulnerabilities"][0]["VulnerabilityID"] = "CVE-2026-78667"
+        summary, failures = MODULE.compare(
+            report(), derived,
+            expected_platform="linux/amd64", expected_base_ref=BASE_REF,
+            database_sha256=DATABASE_SHA256,
+            java_database_sha256="absent",
+            today=MODULE.datetime.date(2026, 10, 21),
+        )
+        self.assertEqual(summary["delta"]["excepted_high_or_critical"], [])
+        self.assertTrue(any("wrapper adds 1" in failure for failure in failures))
+
     def test_shipped_exceptions_are_narrow_and_dated(self) -> None:
-        self.assertTrue(MODULE.WRAPPER_EXCEPTIONS)
         for exception in MODULE.WRAPPER_EXCEPTIONS:
             with self.subTest(exception=exception["id"]):
                 self.assertEqual(
@@ -352,7 +364,7 @@ class WrapperExceptionTests(unittest.TestCase):
 
 
 class RetainedReportTests(unittest.TestCase):
-    """Run the shipped exceptions against actual retained arm64 Trivy reports.
+    """Reject pre-fix findings in actual retained arm64 Trivy reports.
 
     Skipped unless the diagnostic reports are supplied through
     HERMES_HELMET_TRIVY_REPORTS (a directory with base.json, derived.json and
@@ -379,26 +391,15 @@ class RetainedReportTests(unittest.TestCase):
             today=MODULE.datetime.date.fromisoformat(today),
         )
 
-    def test_vendor_client_records_are_excepted_and_nothing_else(self) -> None:
-        summary, failures = self.run_gate("2026-10-10")
-        self.assertEqual(failures, [])
-        excepted = summary["delta"]["excepted_high_or_critical"]
-        self.assertEqual(
-            sorted((i["id"], i["package"]) for i in excepted),
-            [
-                ("CVE-2026-78667", "stdlib"),
-                ("CVE-2026-78669", "golang.org/x/net"),
-                ("CVE-2026-78669", "stdlib"),
-                ("CVE-2026-97031", "stdlib"),
-            ],
-        )
-        self.assertEqual(len(summary["delta"]["inherited_high_or_critical"]), 250)
-        self.assertEqual(summary["derived"]["secret_findings"], 0)
-
-    def test_records_fail_again_after_expiry(self) -> None:
-        summary, failures = self.run_gate("2026-11-09")
-        self.assertEqual(len(summary["delta"]["added_high_or_critical"]), 4)
-        self.assertTrue(any("wrapper adds 4" in f for f in failures))
+    def test_pre_fix_vendor_client_records_are_rejected(self) -> None:
+        for today in ("2026-10-10", "2026-11-09"):
+            with self.subTest(today=today):
+                summary, failures = self.run_gate(today)
+                self.assertEqual(summary["delta"]["excepted_high_or_critical"], [])
+                self.assertEqual(len(summary["delta"]["added_high_or_critical"]), 4)
+                self.assertTrue(any("wrapper adds 4" in f for f in failures))
+                self.assertEqual(len(summary["delta"]["inherited_high_or_critical"]), 250)
+                self.assertEqual(summary["derived"]["secret_findings"], 0)
 
 
 if __name__ == "__main__":

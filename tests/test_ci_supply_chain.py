@@ -157,7 +157,7 @@ class WorkflowSupplyChainTests(unittest.TestCase):
     def test_github_cli_uses_checksummed_architecture_pin(self) -> None:
         dockerfile = _read("deploy/Dockerfile")
         wrapper = _read("deploy/hermes/gh-runtime-wrapper.sh")
-        self.assertIn("ARG GH_CLI_VERSION=2.101.0", dockerfile)
+        self.assertIn("ARG GH_CLI_VERSION=2.103.0", dockerfile)
         self.assertIn("sha256sum -c -", dockerfile)
         self.assertIn('case "${TARGETARCH}" in', dockerfile)
         self.assertIn("install -m 0755", dockerfile)

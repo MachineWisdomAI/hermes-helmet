@@ -5,6 +5,11 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Require version bumps only for product changes, while preserving versioning
+  for shipped writing guidance and notices. Refresh the image's checksum-pinned
+  GitHub CLI to 2.103.0, built with Go 1.27.3 and x/net 0.60.0, to resolve
+  CVE-2026-111943 and retire the earlier CLI vulnerability exceptions.
+
 - Route a tracking issue to a different allowlisted implementation repository
   with operator-configured `issue_routes`. The tracking issue stays the delivery
   and acceptance identity; the checkout, opaque canonical branch, pull request,
