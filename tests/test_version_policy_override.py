@@ -132,6 +132,28 @@ class VersionOverrideTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("promotion", err)
 
+    def test_graduate_zero_major_to_one_with_version_values_only(self):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-q", "-b", "graduate")
+        title = "chore(release): graduate to 1.0.0"
+        code, _, err = self.policy("update", title=title)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.version(), "1.0.0")
+        self.assertEqual(self.policy("check", title=title)[0], 0)
+        (self.repo / "change.txt").write_text("product change\n")
+        code, _, err = self.policy("check", title=title)
+        self.assertEqual(code, 1)
+        self.assertIn("configured version values only", err)
+
+    def test_graduation_rejects_already_stable_major(self):
+        (self.repo / "VERSION").write_text("1.2.3\n")
+        self.git("add", "VERSION")
+        self.git("commit", "-q", "-m", "chore: stable baseline")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        code, _, err = self.policy("update", title="chore(release): graduate to 1.0.0")
+        self.assertEqual(code, 1)
+        self.assertIn("zero-major baseline", err)
+
     def test_override_with_no_affected_unit_is_refused(self):
         self.git("checkout", "-q", "main")
         self.git("checkout", "-q", "-b", "empty")

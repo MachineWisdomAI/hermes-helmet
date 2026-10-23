@@ -386,7 +386,8 @@ def evaluate(root: Path, args) -> list[tuple[Path, str]]:
     body = Path(args.body_file).read_text() if args.body_file else pr.get("body") or ""
     commits = git(root, "log", "--format=%B%x00", base + "..HEAD").split("\0")
     level = intent(title, body, [c.strip() for c in commits if c.strip()])
-    promote = title == "chore(release): promote version"
+    graduate = title == "chore(release): graduate to 1.0.0"
+    promote = title == "chore(release): promote version" or graduate
     override = override_request(body)
     if override and promote:
         raise PolicyError("Version-Override cannot be used with release promotion")
@@ -437,12 +438,17 @@ def evaluate(root: Path, args) -> list[tuple[Path, str]]:
             baseline = parse_version(read_values(result.stdout, first)[0], first.get("format", "semver"), legacy=True)
             target = baseline
             if promote and not raw_changes:
-                affected = bool(baseline[3])
+                affected = graduate or bool(baseline[3])
             if affected:
                 if promote:
-                    if not baseline[3]:
-                        raise PolicyError("promotion requires a prerelease baseline")
-                    target = (*baseline[:3], None, None)
+                    if graduate:
+                        if baseline[0] != 0:
+                            raise PolicyError("graduation requires a zero-major baseline")
+                        target = (1, 0, 0, None, None)
+                    else:
+                        if not baseline[3]:
+                            raise PolicyError("promotion requires a prerelease baseline")
+                        target = (*baseline[:3], None, None)
                     promoted = True
                 else:
                     bump_date = selected_date
