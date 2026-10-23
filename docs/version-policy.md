@@ -62,3 +62,8 @@ For a new versioned component, run the toolkit bootstrap again or run
 `python3 scripts/mw-version.py enroll --repo PATH --unit COMPONENT_PATH` from an
 installed copy. Review the generated configuration and add any runtime/plugin
 mirrors. Captured templates and vendored packages are not owned version units.
+
+The exact title `chore(release): graduate to 1.0.0` selects `1.0.0` from a
+zero-major baseline. Like prerelease promotion, it permits only configured
+version-value changes and requires explicit owner release authorization. It
+does not create a tag, publish artifacts, or deploy anything.
