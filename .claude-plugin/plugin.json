@@ -1,7 +1,7 @@
 {
   "name": "hermes-helmet",
   "displayName": "Hermes Helmet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "First-officer skills for Hermes Helmet: setup, single-issue delivery, dependent-issue coordination, and multi-part writing (Helmet Write), plus the Captain's Bridge mod, which opens a pane bound to the current conversation with /captains-bridge and prepares a source-bound explanation in the background.",
   "author": {
     "name": "Machine Wisdom",
