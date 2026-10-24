@@ -13,10 +13,9 @@
   </a>
 </p>
 
-Hermes Helmet is an open-source software factory that gives
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) the ability to
-keep going: to take on a body of work, carry it through review
-and repairs, and finish within the authority you grant it. Named after the
+Hermes Helmet is an open-source software factory from [Machine Wisdom AI](https://machine-wisdom.ai/) for builders who already work with coding agents and have a project they cannot avoid finishing. It carries an accepted GitHub plan through implementation, review, repair, and authorized merge, with controlled autonomy and Hermes working under its own identity. You keep the plan that holds your intent, one accountable first officer you can question about what was built, and a record on GitHub that you can inspect and correct.
+
+Named after the
 winged helmet of the Greek god Hermes, it adds a process for long-running
 autonomy, with connected tasks, review, and guardrails.
 
@@ -26,6 +25,8 @@ implements under its own identity. Your coding agent coordinates the work,
 reviews the result, directs repairs, and handles authorized merges. You can
 follow progress through the Hermes Kanban board and GitHub without relaying
 every handoff yourself.
+
+[Why adopt Hermes Helmet](docs/why-hermes-helmet.md)
 
 Read [Hermes Helmet: giving your software factory wings](https://machine-wisdom.ai/writing/hermes-helmet-software-factory/)
 for the story behind the project and examples of delivered work.
