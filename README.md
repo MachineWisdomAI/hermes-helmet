@@ -113,10 +113,7 @@ for the handoff.
 
 ## Start with one issue
 
-Use the [quickstart](docs/quickstart.md), or point your coding agent at the
-[`setup-helmet` skill](skills/setup-helmet/SKILL.md). You need Docker Compose,
-Python 3.11+, a separate worker GitHub account and token, and access to your
-chosen model provider.
+New to Hermes Helmet? Read [Becoming Captain](docs/becoming-captain.md) first for who does what and how your first issue moves from delegation to acceptance, then follow the [quickstart](docs/quickstart.md), or point your coding agent at the [`setup-helmet` skill](skills/setup-helmet/SKILL.md). You need Docker Compose, Python 3.11+, a separate worker GitHub account and token, and access to your chosen model provider.
 
 The host CLI and the worker image are separate installations. Installing the
 CLI does not pull GHCR or start the worker.
@@ -132,11 +129,13 @@ python -m pip install .
 helmet --help
 ```
 
-Start the worker from the published preview digest
-`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122`
-(source `80726d21f11d3856e32d30c440123101c94f8664`). The quickstart pulls that
+Start the worker from the Hermes Helmet 1.0.0 runtime image, pinned by digest
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:04f772b48151813aec165ec81ee7323e316cababa686963fbc4064a40b283c2b`
+(source `24876c7583f5dd3219e94e27b72a8952ba9752aa`). The quickstart pulls that
 image and runs Compose with `--no-build`, then completes provider login and
-enables issue intake. Building from `deploy/Dockerfile` remains a development
+enables issue intake. Publishing a release does not install or restart a
+worker; confirm `/opt/hermes-helmet/SOURCE_COMMIT` in your own running
+container. Building from `deploy/Dockerfile` remains a development
 option. See the [runtime image notes](docs/runtime-image.md). Keep
 company-specific mounts in a [private overlay](docs/private-overlay.md).
 
@@ -148,10 +147,14 @@ setup:
 > Follow the issue through review, necessary repairs, and acceptance under the
 > agreed merge authority.
 
-The [September 29, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-29)
-provides packaged artifacts. Its CLI command is `hermes-helmet`; current source
-also installs the shorter `helmet` command used here. See the
-[preview notes](docs/public-preview.md) for that release's details.
+[Hermes Helmet 1.0.0](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/v1.0.0)
+is a stable GitHub release, not a PyPI publication. Its assets are the wheel,
+source distribution, Claude/Codex plugin archive, `release-identity.json`,
+`runtime-image-identity.json` and `SHA256SUMS`. Current source installs the
+`helmet` command used here and the compatible alias `hermes-helmet`. The
+[September 29, 2026 public preview](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/preview-2026-09-29)
+is historical; its CLI command is `hermes-helmet`, and its details are in the
+[preview notes](docs/public-preview.md).
 
 ## How the work moves
 
