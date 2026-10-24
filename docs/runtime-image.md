@@ -4,28 +4,33 @@ The Hermes Helmet worker runs from a Docker image. The host `helmet` CLI and
 Captain skills are a separate installation: `pip install` does not pull GHCR
 and does not start or restart the worker.
 
-## Current preview pin
+## Current stable pin
 
 Use the digest, not a mutable tag:
 
 ```text
-ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122
+ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:04f772b48151813aec165ec81ee7323e316cababa686963fbc4064a40b283c2b
 ```
 
 | Field | Value |
 | --- | --- |
-| Tag | `preview-80726d21f11d3856e32d30c440123101c94f8664` |
-| Source commit | `80726d21f11d3856e32d30c440123101c94f8664` |
+| Tag | `1.0.0` (the tag preserves the tested index digest; use the digest) |
+| Source commit | `24876c7583f5dd3219e94e27b72a8952ba9752aa` |
 | Platforms | `linux/amd64`, `linux/arm64` |
-| Build record | [GitHub Actions run 37939434059](https://github.com/MachineWisdomAI/hermes-helmet/actions/runs/37939434059) |
+| Publication workflow | [GitHub Actions run 39936683445](https://github.com/MachineWisdomAI/hermes-helmet/actions/runs/39936683445) |
+| Release | [Hermes Helmet 1.0.0](https://github.com/MachineWisdomAI/hermes-helmet/releases/tag/v1.0.0) |
 
-This image is a preview with package version `0.2.0`, built from the source
-commit above. It is separate from the dated Python wheel releases.
+This image is the runtime image of the Hermes Helmet 1.0.0 stable release,
+built from the source commit above. It is separate from the release's wheel,
+source distribution and plugin archive, which are GitHub release assets (the
+release is not a PyPI publication). Publication does not install or restart
+any worker. The release's differential scan passed the maintained policy; that
+does not claim the upstream base has zero known vulnerabilities.
 
 The digest identifies the image built from that recorded source SHA.
 `/opt/hermes-helmet/SOURCE_COMMIT` inside the container is that SHA.
 
-This preview bundles Claude Code 2.1.286 and the Claude subscription
+This image bundles Claude Code 2.1.286 and the Claude subscription
 model-provider plugin on Hermes Agent 0.21.6. It supports the published-image
 route for [Claude subscription workers](claude-subscription.md).
 
@@ -137,7 +142,12 @@ Reconcile active work before changing `repositories[].slug` or
 and existing assignments; moving them under a running intake can attach new
 work to the wrong tree.
 
-Publication of a new preview is a manual workflow on protected `main`. It tags
+The 1.0.0 image was published by the workflow run linked above and is tagged
+`ghcr.io/machinewisdomai/hermes-helmet/runtime:1.0.0`. The repository's
+`preview-runtime-image.yml` workflow still exists: it builds and scans both
+platforms, and its manual `workflow_dispatch` publication, run from protected
+`main` with a full commit SHA, tags
 `ghcr.io/machinewisdomai/hermes-helmet/runtime:preview-<full-sha>` and does not
-promote `latest` or `stable`. See [SECURITY.md](../SECURITY.md) for scan and
-visibility notes.
+promote `latest` or `stable`. Earlier preview images were published that way.
+Pin by digest in every case. See
+[SECURITY.md](../SECURITY.md) for scan and visibility notes.

@@ -21,15 +21,15 @@ workflow.
 - Python 3.11+ for the host CLI and tests
 - Model-provider access for the Hermes worker
 - For first-officer orchestration: the Captain GitHub identity and the
-  portable `helmet-issue` / `helmet-epic` skills. The preview has been
-  exercised through Codex; Claude Code and Hermes have installation and
-  static validation.
+  portable `helmet-issue` / `helmet-epic` skills. The documented workflow
+  has been exercised through Codex; Claude Code and Hermes have installation
+  and static validation.
 
 The published worker image is a separate installation from this CLI.
-Installing `helmet` does not pull GHCR or start Docker. The current preview
-digest is
-`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:c2f006c7ceb59d0adf1a80d69c69069c42ec8b8d6cf31ecb51f76101009e3122`,
-built from `80726d21f11d3856e32d30c440123101c94f8664`. See
+Installing `helmet` does not pull GHCR or start Docker. The current stable
+digest, from the Hermes Helmet 1.0.0 release, is
+`ghcr.io/machinewisdomai/hermes-helmet/runtime@sha256:04f772b48151813aec165ec81ee7323e316cababa686963fbc4064a40b283c2b`,
+built from `24876c7583f5dd3219e94e27b72a8952ba9752aa`. See
 [runtime-image.md](runtime-image.md). Development builds still pin the official
 Hermes Agent base
 `nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909`
@@ -64,7 +64,8 @@ does not write these files and does not mount them into the container.
 cp deploy/.env.example deploy/.env
 chmod 600 deploy/.env
 # set HERMES_GITHUB_TOKEN= to the worker PAT
-# uncomment HERMES_HELMET_IMAGE and keep the published digest
+# set HERMES_HELMET_IMAGE to the published digest named in Prerequisites;
+# do not copy the older digest from the deploy/.env.example comment
 
 cp config/policy.example.json config/policy.json
 # edit company, captain_github_login, worker_github_login, assignee,
@@ -118,8 +119,10 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml pull hermes
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --no-build
 ```
 
-The image was built from `80726d21f11d3856e32d30c440123101c94f8664`. Confirm
-the running container recorded that commit:
+The image was built from `24876c7583f5dd3219e94e27b72a8952ba9752aa`. Confirm
+the running container recorded that commit. Publishing a release does not
+install or restart a worker, so this check is how you learn what your
+container runs:
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
@@ -127,8 +130,9 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
 ```
 
 The digest identifies the image built from that recorded source SHA.
-`SOURCE_COMMIT` inside the container is that SHA. The `0.2.0` package label
-on the image is not a stable release and is not the September 23 wheel.
+`SOURCE_COMMIT` inside the container is that SHA. The image is the 1.0.0
+stable release image; it is distributed beside, and separate from, the
+release's wheel and other assets.
 
 The image entrypoint writes the worker token to its owner-only runtime file,
 copies the mounted policy into `/opt/data/github-issue-poller/policy.json`,
