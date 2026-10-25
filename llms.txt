@@ -1,42 +1,69 @@
 # Hermes Helmet
 
-> Hermes Helmet is an open-source software factory that gives Hermes Agent the ability to keep going, carrying accepted GitHub work through implementation, review, repair and authorized merge.
+> Give Hermes the wings to carry your plan through, under its own identity
 
-The product name in prose is Hermes Helmet. The CLI is `helmet`. You are the Captain; your coding agent is the first officer on the Captain host; Hermes is the crew and implements under a separate worker identity. This file is an index into the public repository, not a second manual. Digest and tag values live in the runtime image guide.
+Hermes Helmet is an open-source software factory from Machine Wisdom AI. It carries an accepted GitHub plan through implementation, review, repair and authorized merge, with controlled autonomy and Hermes working under its own identity. The product name in prose is Hermes Helmet; the command-line tool is `helmet`.
 
-## Start here
+Three actors take part. You are the Captain: you set the goal, the identities and the authority. Your coding agent, such as Codex or Claude Code, becomes the first officer on your machine: it coordinates the work, reviews pull requests and merges when you have authorized it. Hermes Agent, supplied by Nous Research, is the crew: it runs in Docker under its own GitHub account, implements and repairs pull requests, and never merges. Optional integrations (FAVA Trails for governed records, OpenViking for working context) are separate from this core and not needed to start.
 
-- [README](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/README.md): Product overview, roles, planning boundary, and documentation map.
-- [Quickstart](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/quickstart.md): Install the host CLI and start the published worker image. The CLI install does not pull or restart the worker.
-- [Published runtime](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/runtime-image.md): Canonical image pin, Compose selection, development builds, and upgrades.
-- [Claude subscription workers](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/claude-subscription.md): Run the Hermes worker on Claude Sonnet through a Claude Pro or Max subscription token.
+This file routes a task to the document that owns it. It is an index, not a manual. Commands, image pins and policy fields live only in the linked documents, and a published release or source revision does not show what any installed worker or deployment is running.
 
-## First-officer delivery
+## Decide whether to adopt
 
-Use these when you are the coding-agent first officer on the Captain host. The implementing worker does not run these orchestration skills.
+- Why this fits a project you have to finish, and what you keep: [Why adopt Hermes Helmet](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/why-hermes-helmet.md)
+- What the product is, its roles, and where it begins and ends: [README](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/README.md)
+- A guided account of what to prepare and how a first issue moves from delegation to an accepted result: [Becoming Captain](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/becoming-captain.md)
+- A retrospective account of the whole design: [Architecture overview](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/blueprints/architecture-overview.md)
 
-- Installing first-officer skills into Claude Code or Codex: [First-officer plugin](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/first-officer-plugins.md).
-- Configuring or reusing a first-officer session: [Starting a first-officer session](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/first-officer-plugins.md#starting-a-first-officer-session).
-- Coordinating delivery and review of one issue: [helmet-issue](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-issue/SKILL.md).
-- Coordinating dependent issues: [helmet-epic](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-epic/SKILL.md).
-- Requesting a worker pull-request review: [helmet-review](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-review/SKILL.md).
-- Coordinating multi-part writing with section writers and an editor: [helmet-write](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-write/SKILL.md).
-- Configuring identities and the worker: [setup-helmet](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/setup-helmet/SKILL.md).
+## Set up and run the first issue
 
-## Changing this repository
+- Installing the host CLI and starting the published worker: [Quickstart](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/quickstart.md). Installing the CLI does not pull or restart the worker.
+- Configuring identities, policy and host checks on the Captain machine: [setup-helmet](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/setup-helmet.md)
+- Which worker image is current, how to change it, and how to roll back: [Published worker image](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/runtime-image.md). This is the only owner of the runtime pin.
+- Choosing the worker's provider and model: [Model lanes](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/model-lanes.md), or [Claude subscription workers](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/claude-subscription.md) for a Claude Pro or Max token.
+- Roles and merge authority: [Captain, first officer, and crew](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/captain-and-crew.md). Policy fields: [Authority schema](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/authority-schema.md).
 
-- Contributor instructions: [AGENTS.md](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/AGENTS.md) and [Contributing](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/CONTRIBUTING.md). Run `scripts/verify.sh`.
-- Reporting a vulnerability: [Security policy](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/SECURITY.md). Do not open a public issue with an exploit or a secret.
-- Publishing material about Hermes Helmet: [Brand attribution and logos](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/brand.md).
+## Act as the first officer
 
-## Operating model
+Use these only when you are the coding agent on the Captain host. An implementing worker never runs these orchestration skills.
 
-- [Captain, first officer, and crew](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/captain-and-crew.md): Roles, delivery contract, and merge authority. The worker never merges.
-- [Authority schema](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/authority-schema.md): Policy fields for identities, allowlists, labels, budgets, and merge rules.
-- [Control loop](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/control-loop.md): Issue intake, trusted review, same-PR repair, and the merge gate.
-- [setup-helmet reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/setup-helmet.md): Setup commands and diagnostics.
-- [helmet-issue reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-issue.md): First-officer single-issue orchestration.
-- [Issue routing](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/issue-routing.md): Track an issue in one repository, implement it in another, accept it explicitly, and adopt a transferred issue.
-- [helmet-epic reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-epic.md): First-officer dependent-issue orchestration.
-- [Task artifacts](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/task-artifacts.md): Upload inputs to, list, and retrieve deliverables from a native Kanban task; the narrow worker-transport adapter contract.
-- [Private overlay](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/private-overlay.md): Company policy, mounts, and state outside this repository. Optional; not a product prerequisite.
+- Installing the first-officer skills into Claude Code or Codex, and starting or reusing a session: [First-officer plugin](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/first-officer-plugins.md)
+- Carrying one issue through delivery, review, repair and merge: skill [helmet-issue](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-issue/SKILL.md), operating reference [helmet-issue reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-issue.md)
+- Coordinating a parent issue with dependent children: skill [helmet-epic](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-epic/SKILL.md), operating reference [helmet-epic reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-epic.md)
+- Reviewing a worker pull request and requesting same-PR repair: the review and repair sections of the [helmet-issue reference](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-issue.md), and the intake, trusted-review and merge-gate rules in the [Control loop](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/control-loop.md)
+- Asking the worker to review a pull request: [helmet-review](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-review/SKILL.md)
+
+The skills and operating references say what to do. The Blueprints explain why the design works that way, and are for understanding rather than for running a task:
+
+- [Issue delivery and repair](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/blueprints/issue-delivery-and-repair.md)
+- [Epic coordination](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/blueprints/epic-coordination.md)
+
+## Accept routed work
+
+- An issue tracked in one repository but implemented in another, explicit acceptance of the merged head, and adopting a transferred issue: [Issue routing](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/issue-routing.md)
+- Merge alone is not release or deployment. Acceptance, release and deployment are separate claims; the first officer checks the merged change against the issue under the authority you delegated.
+
+## Write with section writers and an editor
+
+- Coordinating a document in parts, each written by a Hermes worker and assembled by a separate editor: skill [helmet-write](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/skills/helmet-write/SKILL.md), operating reference [Iterative writing with revision-bound review](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/helmet-write.md)
+- Preparing a writing worker: [Fresh writing worker](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/writing-setup.md)
+- Uploading inputs, listing and retrieving deliverables on a task: [Task artifacts](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/task-artifacts.md)
+- Why the writing flow and artifact layer are built as they are: [Coordinated writing](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/blueprints/coordinated-writing.md) and [Task artifacts Blueprint](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/blueprints/task-artifacts.md)
+
+## Interpret a chat or diagnose a problem
+
+- Reading a cited account of what a chat amounted to: [The Captain's Bridge](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/blueprints/captains-bridge.md). The Bridge reports what was recorded and checks that citations name real records; it does not confirm that a pull request merged or work was delivered. Installing it is covered in the First-officer plugin.
+- Setup or host problems: the diagnostics in [setup-helmet](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/setup-helmet.md).
+- Stuck or unexpected work: GitHub holds the authoritative record of issues, reviews, heads and merges, and the [Control loop](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/control-loop.md) explains what the first officer does next.
+
+## Optional integrations and company configuration
+
+- Governed decisions and observations: [FAVA Trails](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/fava-trails.md)
+- Working context across sessions and clients: [OpenViking](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/openviking.md)
+- Keeping company policy and deployment configuration in your own repository while using the published worker image: [Private overlay](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/private-overlay.md)
+
+## Contribute, report, or publish
+
+- Changing this repository: [AGENTS.md](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/AGENTS.md) and [Contributing](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/CONTRIBUTING.md)
+- Reporting a vulnerability, without posting an exploit or secret in a public issue: [Security policy](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/SECURITY.md)
+- Publishing material about Hermes Helmet: [Brand attribution and logos](https://raw.githubusercontent.com/MachineWisdomAI/hermes-helmet/main/docs/brand.md)
