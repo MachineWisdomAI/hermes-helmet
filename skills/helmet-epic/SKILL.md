@@ -43,17 +43,16 @@ Do not use for:
 
 ## Accepted delivery outcome
 
-Start from the accepted outcome and current evidence. Use actual Captain/worker
-capacity and owner availability; a default parallelism limit does not imply two
-available humans. Identify release-critical children, optional work, and final
+Start from the accepted outcome and current evidence. Plan capacity with
+[Capacity and model plan](#capacity-and-model-plan); a default parallelism limit
+does not imply two available humans. Identify release-critical children, optional work, and final
 owner-only actions. Do not add acceptance gates because a reviewer suggested
 polish, a higher score, or stronger proof. Adopt explicit user scope changes
 with their effect on timing visible.
 
 Probe risky access, identity, topology, and API assumptions through the smallest
 real authorized path before dispatching dependent machinery. A synthetic
-validator is not a substitute for executing the system. Keep a short current
-frontier: outcome, active child/PR, next event, wait handle/cursor, and blocker.
+validator is not a substitute for executing the system.
 Optional work does not become a release prerequisite; required acceptance
 remains required. Any proposed graph change still follows graph acceptance.
 
@@ -200,9 +199,57 @@ helmet install-skills --target hermes
    announcement while waiting. When a pass reaches pending work, register
    continuation using the shared procedure below and announce its confirmed
    mechanism and effective cadence once.
-4. Verify observed GitHub login is Captain and differs from worker.
-5. Load epic root: must be open; must **not** carry `dispatch_label`.
-6. Stop on authority mismatch, closed root, missing label config, or bad budgets.
+4. Apply the [capacity and model plan](#capacity-and-model-plan).
+5. Verify observed GitHub login is Captain and differs from worker.
+6. Load epic root: must be open; must **not** carry `dispatch_label`.
+7. Stop on authority mismatch, closed root, missing label config, or bad budgets.
+
+### Capacity and model plan
+
+The orchestrator schedules, reconciles state, and keeps evidence. It delegates
+implementation and independent review rather than repeating them.
+
+1. **Models.** Once at startup, tell the user: for a long epic, select a
+   low-cost, tool-capable model for this orchestration chat. You cannot change
+   it yourself; continue either way. Select every delegated model explicitly by
+   role: the configured builder for implementation, a capable review model at
+   medium effort for standards and security/spec review, and a bounded
+   escalation for one hard question. Run deterministic tools before model
+   judgment. Helmet model lanes (`docs/model-lanes.md`) configure Hermes and its
+   services, not this chat.
+2. **Two pools.** Helmet worker slots are `max_parallelism`. Host collaboration
+   slots are the subagents this host allows besides the parent. Neither limit
+   sets the other.
+3. **Fill slots.** On startup and on each completion, failure, repair, or
+   released slot, reconcile the graph, adopt active work, then fill free slots
+   with eligible, non-duplicate work. `--max-parallelism` persists for the epic
+   until a later explicit value replaces it (`details.parallelism_source`).
+   Record each pass compactly:
+
+   ```text
+   Worker pool: authorized=10 active=8 eligible-ready=2 -> dispatch 2
+   Review pool: usable=3 active=2 eligible-ready=1 -> dispatch 1
+   Idle slots: none
+   ```
+
+   An idle slot with eligible work needs a reason: dependency, ownership, or a
+   security gate. Duplicate work does not count as utilization.
+4. **Review assignments.** State the repository, exact head and base, review
+   axis and standard/spec, model and effort, changed scope, evidence that may be
+   reused, and the required verdict and evidence artifact. Give self-contained
+   context, not the full chat. Key reviews by repository + PR + head + axis and
+   adopt an active review before spawning another. After a repair or base
+   update, reuse earlier evidence only for proven-unchanged blobs; exact-head
+   approval stays required.
+5. **Audits.** Split large audits into disjoint packets that fit one worker
+   context, with exact files, exclusions, expected output, and a coverage
+   contract. The parent reconciles coverage and findings; it does not re-read
+   every packet.
+6. **Continuation record.** Each wake carries only: accepted authority, graph
+   fingerprint, deadline, the capacity record, active handles, changed heads,
+   new results, open gates, the next action, and evidence pointers. Replace the
+   previous record; do not append history. Keep receipts in artifacts and read
+   them only when a pending decision needs them.
 
 ### 2. LOAD + VALIDATE GRAPH
 
@@ -231,7 +278,8 @@ Buckets (always re-read GitHub + child checkpoints before acting):
 
 ### 4. DISPATCH FRONTIER
 
-1. Ready frontier = ready children, capped by `max_parallelism - active`.
+1. Ready frontier = ready children, capped by `max_parallelism - active`
+   (persisted override or policy default).
 2. Default: continue independent branches when another fails/blocks.
 3. For each frontier URL invoke `helmet-issue` helpers (`helmet issue` /
    `run_preflight_and_adopt`) with epic body for merge inheritance.
@@ -283,7 +331,7 @@ dependents stay blocked on that closure, not on the merged code. See
 - [ ] Root never receives dispatch_label
 - [ ] Body fallback Parent / Blocked-by links validate; cycles rejected
 - [ ] Linear graphs invoke helmet-issue in dependency order
-- [ ] Parallel graphs run at most `max_epic_parallelism` (default 2)
+- [ ] Parallel graphs run at most the persisted override or `max_epic_parallelism` (default 2)
 - [ ] Blocked branch does not stop unrelated ready children (default)
 - [ ] Graph change → GRAPH_CHANGED until `--accept-graph`
 - [ ] Reinvocation resumes without duplicate roots
