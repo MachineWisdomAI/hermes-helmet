@@ -5,6 +5,16 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Consume review-only enrollments in native requested-review intake. A repository
+  accepted through `prepare-repo --purpose review` now has its pending reviewer
+  request queued as the ordinary managed review task, without becoming eligible
+  for issue dispatch, repair, routes, or the implementation allowlist. The grant
+  lives in a separate policy `review_repositories` list (or is projected from
+  still-authorized review receipts via `--enrollment-dir` /
+  `HERMES_HELMET_ENROLLMENT_DIR`), is re-validated against the enrollment
+  ceilings and owners, carries a distinct `review-only` scope through task
+  creation and the task body, and survives policy serialization.
+
 - Expose Captain's Bridge walkthrough limits and report precise nested errors.
   `present_chat_work` and `deliver_walkthrough_update` now publish every nested text
   limit (including the 120-character change text and 80-character disposition labels),

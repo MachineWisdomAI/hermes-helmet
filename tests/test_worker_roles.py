@@ -333,9 +333,10 @@ class RoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = replace(POLICY.repositories[0], worktree=Path(tmp))
             request = poller.ReviewRequest(repo, 2, 'a' * 40, 'request-1')
+            policy = replace(POLICY, repositories=(repo, *POLICY.repositories[1:]))
             runner = Mock()
             runner.run.side_effect = ['true', '{"id":"review-task"}']
-            poller.create_review_task(request, POLICY, runner, parents=['old-review'])
+            poller.create_review_task(request, policy, runner, parents=['old-review'])
             command = runner.run.call_args.args[0]
             self.assertEqual(command[command.index('--assignee') + 1], 'reviewer')
             self.assertEqual(command[command.index('--parent') + 1], 'old-review')
