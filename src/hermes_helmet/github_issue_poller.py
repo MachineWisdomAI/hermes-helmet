@@ -1341,14 +1341,25 @@ def create_review_task(
     # the exact scope it claims, so a review-only repository can never ride
     # in as implementation authority (or the reverse) after discovery.
     if request.review_only:
-        in_scope = policy.review_repository_for(repository.slug) is not None
+        configured = policy.review_repository_for(repository.slug)
     elif request.scope == REVIEW_SCOPE_WORK:
-        in_scope = policy.repository_for(repository.slug) is not None
+        configured = policy.repository_for(repository.slug)
     else:
-        in_scope = False
-    if not in_scope:
+        configured = None
+    if configured is None:
         raise PollerError(
             f"review request repository is outside the configured {request.scope} scope"
+        )
+    # Bind the request to the configured checkout too, not only the slug: a
+    # request carrying a different existing checkout (including a path that
+    # changed in policy between discovery and creation) must not be queued.
+    if (
+        configured.slug.casefold() != repository.slug.casefold()
+        or configured.worktree.resolve(strict=False) != repository.worktree.resolve(strict=False)
+    ):
+        raise PollerError(
+            f"review request checkout does not match the configured {request.scope} "
+            f"scope checkout for {configured.slug}"
         )
     if not repository.worktree.is_dir():
         raise PollerError(f"allowlisted worktree is unavailable: {repository.worktree}")

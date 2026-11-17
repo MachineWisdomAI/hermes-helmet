@@ -133,7 +133,7 @@ class Runner:
 class ReviewOnlyIntakeTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self._tmp.name)
+        self.root = Path(self._tmp.name).resolve()
         self.ledger = self.root / "ledger.sqlite3"
 
     def tearDown(self) -> None:
@@ -304,6 +304,51 @@ class ReviewOnlyIntakeTests(unittest.TestCase):
             )
         self.assertEqual(runner.creates, [])
 
+    def test_task_creation_binds_the_configured_checkout(self) -> None:
+        policy = self.policy()
+        runner = self.runner()
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        cases = (
+            (policy.review_repository_for(REVIEW_SLUG), poller.REVIEW_SCOPE_REVIEW_ONLY, 7, 11),
+            (policy.repository_for(WORK_SLUG), poller.REVIEW_SCOPE_WORK, 3, 21),
+        )
+        for configured, scope, number, request_id in cases:
+            assert configured is not None
+            # An authorized slug with a different existing checkout is refused.
+            swapped = authority.Repository(configured.slug, elsewhere)
+            with self.assertRaisesRegex(poller.PollerError, "does not match the configured"):
+                poller.create_review_task(
+                    poller.ReviewRequest(swapped, number, HEAD, request_id, scope),
+                    policy,
+                    runner,
+                )
+            # The exact configured repository is still accepted.
+            poller.create_review_task(
+                poller.ReviewRequest(configured, number, HEAD, request_id, scope),
+                policy,
+                runner,
+            )
+        self.assertEqual(len(runner.creates), 2)
+
+    def test_task_creation_rejects_policy_path_change_after_discovery(self) -> None:
+        policy = self.policy()
+        runner = self.runner()
+        requests, _warnings, errors = poller.list_review_requests(policy, runner)
+        self.assertEqual(errors, [])
+        self.assertEqual({r.scope for r in requests}, {poller.REVIEW_SCOPE_WORK, poller.REVIEW_SCOPE_REVIEW_ONLY})
+        moved = self.root / "moved"
+        moved.mkdir()
+        changed = make_policy(
+            self.root,
+            repositories=[{"slug": WORK_SLUG, "worktree": str(moved)}],
+            review_repositories=[review_entry(self.root / "moved", REVIEW_SLUG)],
+        )
+        for request in requests:
+            with self.assertRaisesRegex(poller.PollerError, "does not match the configured"):
+                poller.create_review_task(request, changed, runner)
+        self.assertEqual(runner.creates, [])
+
     def test_allowlisted_review_body_is_unchanged(self) -> None:
         policy = self.policy()
         plain = authority.render_review_task_body(
@@ -414,7 +459,7 @@ class ReviewOnlyIntakeTests(unittest.TestCase):
 class EnrollmentProjectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self._tmp.name)
+        self.root = Path(self._tmp.name).resolve()
         self.store = re_mod.EnrollmentStore(self.root / "enrollments")
         self.policy = make_policy(self.root)
         self.ledger = self.root / "ledger.sqlite3"
