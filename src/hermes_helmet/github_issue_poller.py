@@ -1170,12 +1170,24 @@ def create_task_once(issue: Issue, policy: Policy, ledger: Path, runner: Runner)
         connection.close()
 
 
+REVIEW_SCOPE_WORK = "work"
+REVIEW_SCOPE_REVIEW_ONLY = "review"
+
+
 @dataclass(frozen=True)
 class ReviewRequest:
     repository: Repository
     pull_number: int
     head_sha: str
     request_id: int
+    # ``work`` for an implementation-allowlist repository; ``review`` for a
+    # repository admitted for requested-review intake only. Carried so the
+    # distinction survives from discovery through task creation.
+    scope: str = REVIEW_SCOPE_WORK
+
+    @property
+    def review_only(self) -> bool:
+        return self.scope == REVIEW_SCOPE_REVIEW_ONLY
 
     @property
     def pull_url(self) -> str:
@@ -1246,15 +1258,37 @@ def _latest_request_id(
     return latest
 
 
+def _review_intake_repositories(policy: Policy) -> list[tuple[Repository, str]]:
+    """(repository, scope) pairs scanned for native requested reviews.
+
+    The implementation allowlist keeps its ``work`` scope. Review-only
+    repositories follow, never duplicating an allowlisted slug.
+    """
+
+    pairs: list[tuple[Repository, str]] = [
+        (repository, REVIEW_SCOPE_WORK) for repository in policy.repositories
+    ]
+    seen = {repository.slug.casefold() for repository in policy.repositories}
+    for repository in getattr(policy, "review_scope", ()):
+        if repository.slug.casefold() in seen:
+            continue
+        seen.add(repository.slug.casefold())
+        pairs.append((repository, REVIEW_SCOPE_REVIEW_ONLY))
+    return pairs
+
+
 def list_review_requests(
     policy: Policy, runner: Runner
 ) -> tuple[list[ReviewRequest], list[str], list[str]]:
-    """Find open allowlisted PRs with a pending request for the worker."""
+    """Find open PRs with a pending request for the worker.
+
+    Scans the implementation allowlist plus any review-only scope.
+    """
 
     requests: list[ReviewRequest] = []
     warnings: list[str] = []
     errors: list[str] = []
-    for repository in policy.repositories:
+    for repository, scope in _review_intake_repositories(policy):
         query = urlencode({"state": "open", "per_page": "100"})
         try:
             records = _github_api(runner, f"repos/{repository.slug}/pulls?{query}")
@@ -1288,7 +1322,7 @@ def list_review_requests(
                 errors.append(f"Failed to read review request for {repository.slug}#{number}: {exc}")
                 continue
             requests.append(
-                ReviewRequest(repository, number, sha.lower(), request_id)
+                ReviewRequest(repository, number, sha.lower(), request_id, scope)
             )
     return requests, warnings, errors
 
@@ -1303,6 +1337,19 @@ def create_review_task(
 
     policy = for_role(policy, "reviewer")
     repository = request.repository
+    # Re-validate scope at task creation: the request must still be inside
+    # the exact scope it claims, so a review-only repository can never ride
+    # in as implementation authority (or the reverse) after discovery.
+    if request.review_only:
+        in_scope = policy.review_repository_for(repository.slug) is not None
+    elif request.scope == REVIEW_SCOPE_WORK:
+        in_scope = policy.repository_for(repository.slug) is not None
+    else:
+        in_scope = False
+    if not in_scope:
+        raise PollerError(
+            f"review request repository is outside the configured {request.scope} scope"
+        )
     if not repository.worktree.is_dir():
         raise PollerError(f"allowlisted worktree is unavailable: {repository.worktree}")
     git_state = runner.run(
@@ -1325,6 +1372,7 @@ def create_review_task(
                 head_sha=request.head_sha,
                 request_url=request.request_url,
                 policy=policy,
+                review_only_repository=repository.slug if request.review_only else "",
             ),
             "--assignee",
             policy.assignee,
@@ -1484,13 +1532,50 @@ def run_once(policy: Policy, ledger: Path, runner: Runner) -> PollResult:
     )
 
 
+def _with_enrollment_review_scope(policy: Policy, directory: Path | None) -> Policy:
+    """Overlay review-only enrollment receipts when a directory is configured.
+
+    The poller reads no default home directory: only an explicit flag or the
+    ``HERMES_HELMET_ENROLLMENT_DIR`` variable opts in, so existing
+    installations behave exactly as before.
+    """
+
+    import os
+
+    if directory is None:
+        value = os.environ.get("HERMES_HELMET_ENROLLMENT_DIR")
+        if not value:
+            return policy
+        directory = Path(value)
+    # Imported here: repo_enroll imports this module for its URL patterns.
+    from hermes_helmet import repo_enroll
+
+    try:
+        return repo_enroll.with_review_scope(policy, repo_enroll.EnrollmentStore(directory))
+    except OSError as exc:
+        raise PollerError(f"enrollment receipts are unreadable: {directory}") from exc
+
+
 def main(argv: Sequence[str] | None = None, *, policy_loader=None, poll=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--ledger", type=Path, default=DEFAULT_LEDGER)
+    parser.add_argument(
+        "--enrollment-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory of named-request enrollment receipts. When given (or "
+            "when HERMES_HELMET_ENROLLMENT_DIR is set), review-only receipts "
+            "that the policy still authorizes join review-request intake. "
+            "They never join issue implementation or repair dispatch."
+        ),
+    )
     args = parser.parse_args(argv)
     try:
-        result = (poll or run_once)((policy_loader or load_policy)(args.config), args.ledger, SubprocessRunner())
+        policy = (policy_loader or load_policy)(args.config)
+        policy = _with_enrollment_review_scope(policy, args.enrollment_dir)
+        result = (poll or run_once)(policy, args.ledger, SubprocessRunner())
     except PollerError as exc:
         print(f"GitHub issue poller failed: {exc}", file=sys.stderr)
         return 1

@@ -169,7 +169,7 @@ for key, value in expected.items():
 
 
 def _verify_worktrees(policy: poller.Policy) -> None:
-    for repository in policy.repositories:
+    for repository in (*policy.repositories, *policy.review_scope):
         if not repository.worktree.is_dir():
             raise InstallError(
                 f"allowlisted worktree is unavailable: {repository.worktree}"
