@@ -167,6 +167,36 @@ consultation is non-blocking here because the explicit named-repo request
 already grants authority for that exact repository — not because silence is
 consent.
 
+### Review-only repositories and native review intake
+
+A repository enrolled with `--purpose review` is admitted to the poller's
+native requested-review intake and nowhere else. When GitHub shows a pending
+reviewer request for the configured worker on an open pull request there, the
+poller queues the same ordinary managed review task it queues for an
+allowlisted repository (same task identity, `review/` branch, reviewer role,
+packaged review contract, request-keyed idempotency, and formal exact-head
+verdict). The review task body states `Repository scope: review-only` and that
+the grant covers reading and reviewing that pull request only.
+
+The grant is kept apart from implementation authority end to end. The policy
+carries it in a separate `review_repositories` list (see
+[authority-schema.md](authority-schema.md)); `repositories` is never widened.
+Issue discovery, repair dispatch, routes, and the crew allowlist read only
+`repositories`, so the repository stays denied there, and a review request is
+re-checked against its claimed scope when the task is created. Unknown
+repositories, owner-ceiling violations, and narrowed or disabled `enrollment`
+still resolve to no scope. Text in a pull request body or URL grants nothing.
+
+Integration contract for a deployment that projects policy and receipts into
+the poller's runtime: either (a) write the accepted review-only repositories
+into the projected policy's `review_repositories` (same `{slug, worktree}`
+shape as `repositories`, worktree being the worker checkout the
+`prepare-repo` transport provisioned), or (b) expose the receipt directory to
+the poller with `--enrollment-dir DIR` or `HERMES_HELMET_ENROLLMENT_DIR`; the
+poller then adds receipts whose effective purpose is still `review` under the
+current policy (`repo_enroll.with_review_scope`). With neither, behavior is
+unchanged. The poller never reads a default home directory.
+
 ## Non-goals
 
 - No second watcher, webhook, repair relay, queue, or worker checkout

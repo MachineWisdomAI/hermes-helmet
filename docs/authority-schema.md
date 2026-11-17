@@ -170,6 +170,15 @@ Optional executor company pack (omit for minimum startup):
   `repositories` allowlist. Enrollment still requires the configured Captain
   identity and an allowed owner, and never adds owners. See
   [helmet-issue.md](helmet-issue.md#named-request-repository-enrollment).
+- Optional `review_repositories` lists repositories admitted for native
+  requested-review intake only, as `{slug, worktree}` entries like
+  `repositories`. It is a separate list so it never confers implementation
+  authority: such a repository is not eligible for issue dispatch, repair,
+  routes, or the crew allowlist. Entries must not repeat a `repositories` slug
+  or worktree, must be unique, and their owner must already be in
+  `github_owners` (it never adds owners). An entry is honored only while
+  `enrollment` is enabled and allows `review`. See
+  [helmet-issue.md](helmet-issue.md#review-only-repositories-and-native-review-intake).
 - Optional `issue_routes` routes a tracking issue to a different implementation
   repository: a list of `{label, tracking_repository, implementation_repository}`.
   Both repositories must be in `repositories`, must differ, and `label` must
