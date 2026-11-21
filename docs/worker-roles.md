@@ -12,6 +12,9 @@ and per-role reasoning policy are available from 0.18.0:
 {
   "assignee": "builder",
   "worker_roles": {
+    "inference_overrides": {
+      "writing": {"provider": "example-provider", "model": "example-writing-model"}
+    },
     "profiles": {
       "builder": "builder",
       "reviewer": "reviewer",
@@ -32,8 +35,14 @@ Merge these fields into a complete authority policy. All configured profiles mus
 unique safe names; builder must equal `assignee`. Both limits must be positive
 integers, with per-profile capacity no greater than global capacity. Omitting
 `worker_roles` retains single-profile behavior. These are shared capacity caps,
-not reserved slots or a fairness guarantee. Model lanes select inference
-providers; worker roles select assignments and are independent of them.
+not reserved slots or a fairness guarantee.
+
+Optional `inference_overrides` selects a provider and model for a configured
+specialist role. Builder and specialists without an override inherit shared
+inference. When the specialist uses a different model and shared fallbacks
+are configured, its fallback list starts with the shared primary and keeps
+the other routes in order, omitting duplicates of either primary. Preflight
+checks the expected provider and model for each role.
 
 Issues default to builder. A standalone `Worker role: writing` outside fenced
 code selects writing, covering documentation, specifications, media, marketing,
@@ -49,7 +58,7 @@ Existing queued tasks are not reassigned.
 
 Optional `reasoning_effort` must specify `low`, `medium`, `high`, `xhigh`, or `max`
 for every configured role. Provisioning writes each level as
-`agent.reasoning_overrides[policy.inference_model]` after inheriting approved
+`agent.reasoning_overrides` for the role’s effective model after inheriting approved
 builder settings, and verification checks it against policy. Reinstallation
 therefore restores the role's accepted effort; other model overrides remain
 intact. Omitting the field leaves effort unmanaged. The selected provider/model

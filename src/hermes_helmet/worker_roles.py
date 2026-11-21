@@ -19,6 +19,11 @@ class WorkerRoles:
     reasoning_effort: tuple[tuple[str, str], ...] = ()
     sonnet_55_effort: tuple[tuple[str, str], ...] = ()
 
+    inference_overrides: tuple[tuple[str, tuple[str, str]], ...] = ()
+
+    def inference(self, role: str, provider: str, model: str) -> tuple[str, str]:
+        return dict(self.inference_overrides).get(role, (provider, model))
+
     def profile(self, role: str) -> str:
         profiles = dict(self.profiles)
         if "writing" in profiles and role in ("documentation", "media"):
@@ -32,7 +37,7 @@ def parse_roles(raw: Mapping[str, Any]) -> WorkerRoles | None:
         return None
     required = {"profiles", "max_in_progress", "max_in_progress_per_profile"}
     if (not isinstance(value, dict) or not required <= set(value)
-            or set(value) - required - {"reasoning_effort", "sonnet_55_effort"}):
+            or set(value) - required - {"reasoning_effort", "sonnet_55_effort", "inference_overrides"}):
         raise ValueError("worker_roles requires profiles and both concurrency limits")
     profiles = value["profiles"]
     if not isinstance(profiles, dict) or set(profiles) not in (set(ROLES), set(LEGACY_ROLES)):
@@ -59,9 +64,20 @@ def parse_roles(raw: Mapping[str, Any]) -> WorkerRoles | None:
             raise ValueError("worker_roles.sonnet_55_effort requires every configured role")
         if any(e not in ("medium", "high") for e in sonnet.values()):
             raise ValueError("Sonnet 5.5 standing effort must be medium or high")
+    inference = value.get("inference_overrides", {})
+    if not isinstance(inference, dict) or set(inference) - (set(roles) - {"builder"}):
+        raise ValueError("worker_roles.inference_overrides accepts configured specialist roles")
+    overrides = []
+    for role, route in inference.items():
+        if not isinstance(route, dict) or set(route) != {"provider", "model"}:
+            raise ValueError("each inference override requires a provider and model")
+        if any(not isinstance(part, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,199}", part)
+               for part in route.values()):
+            raise ValueError("inference override provider and model must be valid identifiers")
+        overrides.append((role, (route["provider"], route["model"])))
     return WorkerRoles(tuple((r, profiles[r]) for r in roles), *limits,
                        tuple((r, efforts[r]) for r in roles if r in efforts),
-                       tuple((r, sonnet[r]) for r in roles if r in sonnet))
+                       tuple((r, sonnet[r]) for r in roles if r in sonnet), tuple(sorted(overrides)))
 
 
 class AssignedPolicy:
