@@ -1823,5 +1823,9 @@ def authority_public_dict(policy: Policy) -> dict[str, object]:
             "max_in_progress_per_profile": roles.max_in_progress_per_profile,
             **({"reasoning_effort": dict(roles.reasoning_effort)} if roles.reasoning_effort else {}),
             **({"sonnet_55_effort": dict(roles.sonnet_55_effort)} if roles.sonnet_55_effort else {}),
+            **({"inference_overrides": {
+                role: {"provider": provider, "model": model}
+                for role, (provider, model) in roles.inference_overrides
+            }} if roles.inference_overrides else {}),
         }
     return result
