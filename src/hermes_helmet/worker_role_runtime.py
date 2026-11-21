@@ -353,24 +353,24 @@ def _read_config(path: Path) -> dict:
 
 
 def verify(root: Path, roles: WorkerRoles, *, provider: str, model: str, turns: int) -> None:
-    paths = [root] + [root / "profiles" / name for _, name in roles.profiles]
-    for home in paths:
+    paths = [(None, root)] + [(role, root / "profiles" / name) for role, name in roles.profiles]
+    for role, home in paths:
         config = _read_config(home / "config.yaml")
         kanban = config.get("kanban", {})
         if (kanban.get("max_in_progress"), kanban.get("max_in_progress_per_profile")) != (
             roles.max_in_progress, roles.max_in_progress_per_profile
         ):
             raise RuntimeError(f"worker capacity drift: {home.name}")
-        if home == root:
+        if role is None:
             continue
-        if config.get("model", {}).get("provider") != provider or config.get("model", {}).get("default") != model:
+        role_provider, role_model = roles.inference(role, provider, model)
+        if (config.get("model", {}).get("provider"), config.get("model", {}).get("default")) != (role_provider, role_model):
             raise RuntimeError(f"worker model drift: {home.name}")
         if config.get("agent", {}).get("max_turns") != turns:
             raise RuntimeError(f"worker budget drift: {home.name}")
-        role = next(role for role, name in roles.profiles if name == home.name)
-        effort = (dict(roles.sonnet_55_effort).get(role) if roles.sonnet_55_effort and is_sonnet_55(model)
+        effort = (dict(roles.sonnet_55_effort).get(role) if roles.sonnet_55_effort and is_sonnet_55(role_model)
                   else None if roles.sonnet_55_effort else dict(roles.reasoning_effort).get(role))
-        if effort is not None and config.get("agent", {}).get("reasoning_overrides", {}).get(model) != effort:
+        if effort is not None and config.get("agent", {}).get("reasoning_overrides", {}).get(role_model) != effort:
             raise RuntimeError(f"worker reasoning effort drift: {home.name}")
         if kanban.get("decompose") is not False or kanban.get("dispatch_in_gateway") is not False:
             raise RuntimeError(f"worker dispatcher/decomposition drift: {home.name}")
@@ -478,11 +478,28 @@ def provision(root: Path, roles: WorkerRoles, *, provider: str, model: str, turn
                                 link(tool.resolve(), home / relative / tool.name)
             else:
                 _route_stock_builder_contract(root, home, link, snapshots)
-            config.setdefault("model", {}).update(provider=provider, default=model)
+            role_provider, role_model = roles.inference(role, provider, model)
+            if (role_provider, role_model) != (provider, model):
+                model_config = config.get("model", {})
+                if any(model_config.get(key) for key in ("base_url", "api_key", "api_key_env", "api_mode", "transport")):
+                    raise RuntimeError(f"worker inference override conflicts with model settings: {name}")
+                primary = {"provider": role_provider, "model": role_model}
+                fallbacks = config.get("fallback_providers", [])
+                if fallbacks:
+                    shared = {"provider": provider, "model": model}
+                    config["fallback_providers"] = [shared, *(
+                        backup for backup in fallbacks
+                        if not isinstance(backup, dict)
+                        or (backup.get("provider"), backup.get("model"))
+                        not in ((role_provider, role_model), (provider, model))
+                    )]
+                if config.get("fallback_model") == primary:
+                    config.pop("fallback_model")
+            config.setdefault("model", {}).update(provider=role_provider, default=role_model)
             config.setdefault("agent", {})["max_turns"] = turns
             effort = dict(roles.reasoning_effort).get(role)
             if effort is not None and not roles.sonnet_55_effort:
-                config["agent"].setdefault("reasoning_overrides", {})[model] = effort
+                config["agent"].setdefault("reasoning_overrides", {})[role_model] = effort
                 for backup in config.get("fallback_providers", []):
                     if isinstance(backup, dict) and isinstance(backup.get("model"), str):
                         config["agent"]["reasoning_overrides"][backup["model"]] = effort
@@ -567,7 +584,7 @@ def verification_program(policy, *, state_root: str, gh_bin: str = "gh",
         "from pathlib import Path; "
         "from hermes_helmet.worker_roles import WorkerRoles; "
         "from hermes_helmet.worker_role_runtime import verify, verify_identity; "
-        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}, {roles.reasoning_effort!r}, {roles.sonnet_55_effort!r}); "
+        f"roles = WorkerRoles({roles.profiles!r}, {roles.max_in_progress!r}, {roles.max_in_progress_per_profile!r}, {roles.reasoning_effort!r}, {roles.sonnet_55_effort!r}, {roles.inference_overrides!r}); "
         f"verify(Path({state_root!r}), roles, provider={policy.inference_provider!r}, "
         f"model={policy.inference_model!r}, turns={policy.worker_max_turns!r}); "
         f"verify_identity(Path({state_root!r}), roles, {policy.worker_github_login!r}, "

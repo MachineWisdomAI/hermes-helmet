@@ -79,6 +79,43 @@ class ProvisionTests(unittest.TestCase):
             self.assertNotIn('fallback_model', config)
         self.assertEqual(history.read_bytes(), b'retained sessions')
 
+    def test_specialist_model_survives_reprovision_and_preflight(self):
+        raw = json.loads(json.dumps(WRITING_RAW))
+        raw['worker_roles']['inference_overrides'] = {
+            'writing': {'provider': 'provider-two', 'model': 'grok-test'},
+        }
+        raw.update(inference_provider='anthropic', inference_model='sonnet-test', worker_max_turns=2000)
+        from hermes_helmet import provider_selection as selection
+        chain = selection.configure([
+            'sonnet=anthropic:sonnet-test',
+            'grok=provider-two:grok-test',
+            'rescue=openrouter:rescue-test',
+        ])
+        selection.configure_profile(self.builder / 'config.yaml', chain)
+        policy = authority.policy_from_mapping(raw)
+        for _ in range(2):
+            runtime.provision(self.root, policy.worker_roles, provider='anthropic',
+                              model='sonnet-test', turns=2000, create=self.create, guard=lambda: None)
+        writing = self.root / 'profiles/writing/config.yaml'
+        config = runtime._read_config(writing)
+        self.assertEqual(config['model'], {'provider': 'provider-two', 'default': 'grok-test'})
+        self.assertEqual(config['fallback_providers'], [
+            {'provider': 'anthropic', 'model': 'sonnet-test'},
+            {'provider': 'openrouter', 'model': 'rescue-test'},
+        ])
+        for role in ('builder', 'reviewer'):
+            other = runtime._read_config(self.root / 'profiles' / role / 'config.yaml')
+            self.assertEqual(other['model'], {'provider': 'anthropic', 'default': 'sonnet-test'})
+            self.assertEqual(other['fallback_providers'][0], {'provider': 'provider-two', 'model': 'grok-test'})
+
+        program = runtime.verification_program(policy, state_root=str(self.root))
+        with patch.object(runtime, 'verify_identity'):
+            exec(program, {})
+            config['model'] = {'provider': 'anthropic', 'default': 'sonnet-test'}
+            writing.write_text(runtime._yaml_dump(config))
+            with self.assertRaisesRegex(RuntimeError, 'worker model drift: writing'):
+                exec(program, {})
+
     def test_writing_reprovision_restores_efforts_and_preserves_retired_histories(self):
         # Start from four profiles with work history, then consolidate future routing.
         self.provision()

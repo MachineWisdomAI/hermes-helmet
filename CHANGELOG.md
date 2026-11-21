@@ -5,6 +5,9 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Update the runtime image to GitHub CLI 2.105.0 (Go 1.27.4 and x/net 0.62.0)
+  for CVE-2026-78661 and CVE-2026-97054.
+
 - Expose Captain's Bridge walkthrough limits and report precise nested errors.
   `present_chat_work` and `deliver_walkthrough_update` now publish every nested text
   limit (including the 120-character change text and 80-character disposition labels),
