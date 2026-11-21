@@ -496,8 +496,14 @@ jobs:
           docker tag hermes-helmet:preview-linux-arm64 "$arm_ref"
           docker push "$amd_ref"
           docker push "$arm_ref"
-          amd_digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$amd_ref")"
-          arm_digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$arm_ref")"
+          # Local RepoDigests can include the archive's original repository.
+          # Resolve both pushed manifests in GHCR before constructing the index.
+          amd_manifest="$(docker buildx imagetools inspect "$amd_ref" --format '{{.Manifest.Digest}}')"
+          arm_manifest="$(docker buildx imagetools inspect "$arm_ref" --format '{{.Manifest.Digest}}')"
+          printf '%s\n' "$amd_manifest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          printf '%s\n' "$arm_manifest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+          amd_digest="${IMAGE_REPOSITORY}@${amd_manifest}"
+          arm_digest="${IMAGE_REPOSITORY}@${arm_manifest}"
           docker buildx imagetools create \
             --tag "$index_ref" \
             --annotation "index:org.opencontainers.image.source=https://github.com/MachineWisdomAI/hermes-helmet" \
