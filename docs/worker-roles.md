@@ -13,7 +13,7 @@ and per-role reasoning policy are available from 0.18.0:
   "assignee": "builder",
   "worker_roles": {
     "inference_overrides": {
-      "writing": {"provider": "xai-oauth", "model": "grok-4.7"}
+      "writing": {"provider": "example-provider", "model": "example-writing-model"}
     },
     "profiles": {
       "builder": "builder",
