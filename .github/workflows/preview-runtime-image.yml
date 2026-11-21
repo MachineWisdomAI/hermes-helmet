@@ -420,8 +420,10 @@ jobs:
             test -d "$dir"
             (cd "$dir" && sha256sum --check SHA256SUMS)
             python3 - "$dir" "$SOURCE_COMMIT" "$PACKAGE_VERSION" "$PREVIEW_TAG" "$arch" <<'PY'
+          import hashlib
           import json
           import sys
+          import tarfile
           from pathlib import Path
 
           directory = Path(sys.argv[1])
@@ -434,6 +436,25 @@ jobs:
           assert identity["image_repository"] == "ghcr.io/machinewisdomai/hermes-helmet/runtime", identity
           assert identity["tar_file"] == f"hermes-helmet-linux-{arch}.tar", identity
           assert identity["pushed"] is False, identity
+          # Docker's classic store reports the config digest as the image ID.
+          # Its containerd store can report the manifest digest for the same archive.
+          # Accept only these two identities, both bound to the checksummed bytes.
+          with tarfile.open(directory / identity["tar_file"]) as archive:
+              record, = json.load(archive.extractfile("manifest.json"))
+              assert record["RepoTags"] == [f"hermes-helmet:preview-linux-{arch}"], record["RepoTags"]
+              config = archive.extractfile(record["Config"]).read()
+              config_id = "sha256:" + hashlib.sha256(config).hexdigest()
+              descriptor, = json.load(archive.extractfile("index.json"))["manifests"]
+              platform = descriptor["platform"]
+              assert (platform["os"], platform["architecture"]) == ("linux", arch), descriptor
+              manifest_id = descriptor["digest"]
+              algorithm, digest = manifest_id.split(":", 1)
+              assert algorithm == "sha256" and len(digest) == 64
+              manifest = archive.extractfile(f"blobs/sha256/{digest}").read()
+              assert hashlib.sha256(manifest).hexdigest() == digest, manifest_id
+              assert json.loads(manifest)["config"]["digest"] == config_id, manifest_id
+          assert identity["image_id"] in (config_id, manifest_id), identity["image_id"]
+          (directory / "archive-image-ids.txt").write_text(f"{config_id}\n{manifest_id}\n", encoding="utf-8")
           print(f"{arch}: tar={identity['tar_sha256']} image_id={identity['image_id']}")
           PY
           done
@@ -445,14 +466,14 @@ jobs:
           docker load -i dist/preview/preview-runtime-linux-arm64/hermes-helmet-linux-arm64.tar
           for arch in amd64 arm64; do
             tag="hermes-helmet:preview-linux-${arch}"
-            revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$tag")"
-            version="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$tag")"
+            dir="dist/preview/preview-runtime-linux-${arch}"
+            loaded="$(docker image inspect --platform "linux/$arch" --format '{{.Id}} {{.Os}}/{{.Architecture}} {{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "org.opencontainers.image.version"}}' "$tag")"
+            read -r image_id platform revision version <<< "$loaded"
+            printf '%s: loaded image ID %s, platform %s, source %s, version %s\n' "$arch" "$image_id" "$platform" "$revision" "$version"
+            test "$platform" = "linux/$arch"
             test "$revision" = "$SOURCE_COMMIT"
             test "$version" = "$PACKAGE_VERSION"
-            test "$(docker inspect --format '{{.Id}}' "$tag")" = "$(
-              python3 -c 'import json,pathlib,sys; print(json.loads(pathlib.Path(sys.argv[1]).read_text())["image_id"])' \
-                "dist/preview/preview-runtime-linux-${arch}/identity.json"
-            )"
+            grep -Fxq "$image_id" "$dir/archive-image-ids.txt"
           done
 
       - name: Log in to GHCR for trusted publication
