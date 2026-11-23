@@ -116,6 +116,16 @@ class ProvisionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'worker model drift: writing'):
                 exec(program, {})
 
+    def test_openrouter_alias_survives_specialist_provisioning(self):
+        raw = json.loads(json.dumps(WRITING_RAW))
+        raw["worker_roles"]["inference_overrides"] = {
+            "writing": {"provider": "openrouter", "model": "~moonshotai/kimi-latest"},
+        }
+        roles = authority.policy_from_mapping(raw).worker_roles
+        self.provision(roles)
+        config = runtime._read_config(self.root / "profiles/writing/config.yaml")
+        self.assertEqual(config["model"], {"provider": "openrouter", "default": "~moonshotai/kimi-latest"})
+
     def test_writing_reprovision_restores_efforts_and_preserves_retired_histories(self):
         # Start from four profiles with work history, then consolidate future routing.
         self.provision()
