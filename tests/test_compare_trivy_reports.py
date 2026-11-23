@@ -19,8 +19,8 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 BASE_REF = (
-    "nousresearch/hermes-agent:v0.21.6@"
-    "sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909"
+    "nousresearch/hermes-agent:v0.23.3@"
+    "sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355"
 )
 DATABASE_SHA256 = "a" * 64
 

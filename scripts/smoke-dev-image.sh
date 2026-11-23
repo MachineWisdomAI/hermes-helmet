@@ -102,9 +102,9 @@ version_out="$(
 )"
 printf '%s\n' "$version_out"
 case "$version_out" in
-    *0.21.6*) ;;
+    *"Hermes Agent v0.23.3 "*) ;;
     *)
-        echo "smoke: expected Hermes Agent 0.21.6 in version output" >&2
+        echo "smoke: expected Hermes Agent 0.23.3 in version output" >&2
         exit 1
         ;;
 esac
