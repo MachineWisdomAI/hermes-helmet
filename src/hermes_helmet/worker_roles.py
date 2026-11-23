@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import re
 from typing import Any, Mapping
 
+from .provider_selection import ProviderSelectionError, validate_route_identifiers
+
 ROLES = ("builder", "reviewer", "writing")
 LEGACY_ROLES = ("builder", "reviewer", "documentation", "media")
 REASONING_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
@@ -71,10 +73,11 @@ def parse_roles(raw: Mapping[str, Any]) -> WorkerRoles | None:
     for role, route in inference.items():
         if not isinstance(route, dict) or set(route) != {"provider", "model"}:
             raise ValueError("each inference override requires a provider and model")
-        if any(not isinstance(part, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/+-]{0,199}", part)
-               for part in route.values()):
-            raise ValueError("inference override provider and model must be valid identifiers")
-        overrides.append((role, (route["provider"], route["model"])))
+        try:
+            identifiers = validate_route_identifiers(route["provider"], route["model"])
+        except ProviderSelectionError as exc:
+            raise ValueError("inference override provider and model must be valid identifiers") from exc
+        overrides.append((role, identifiers))
     return WorkerRoles(tuple((r, profiles[r]) for r in roles), *limits,
                        tuple((r, efforts[r]) for r in roles if r in efforts),
                        tuple((r, sonnet[r]) for r in roles if r in sonnet), tuple(sorted(overrides)))

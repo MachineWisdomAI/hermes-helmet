@@ -27,6 +27,14 @@ def _identifier(value: object, field: str) -> str:
     return value
 
 
+def validate_route_identifiers(provider: object, model: object) -> tuple[str, str]:
+    provider_id = _identifier(provider, "provider")
+    if (provider_id == "openrouter" and isinstance(model, str) and len(model) <= 200
+            and re.fullmatch(r"~[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.:/+-]*", model)):
+        return provider_id, model
+    return provider_id, _identifier(model, "model")
+
+
 def validate(selection: object) -> dict:
     if not isinstance(selection, dict) or set(selection) != {"version", "routes", "selected"}:
         raise ProviderSelectionError("selection requires version, routes and selected only")
@@ -41,8 +49,7 @@ def validate(selection: object) -> dict:
         if not isinstance(route, dict) or set(route) != {"name", "provider", "model"}:
             raise ProviderSelectionError("each route requires name, provider and model only; no credentials")
         name = _identifier(route["name"], "route name")
-        provider = _identifier(route["provider"], "provider")
-        model = _identifier(route["model"], "model")
+        provider, model = validate_route_identifiers(route["provider"], route["model"])
         if name == "auto" or name in names or (provider, model) in identities:
             raise ProviderSelectionError("route names and provider/model pairs must be unique; auto is reserved")
         names.add(name)

@@ -83,9 +83,20 @@ class SelectionTests(unittest.TestCase):
             with self.assertRaises(p.ProviderSelectionError):
                 p.read_selection(link)
 
+    def test_openrouter_alias_survives_persistence_and_config_projection(self):
+        selection = p.configure(["openrouter=openrouter:~z-ai/glm-latest"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "providers.json"
+            p.write_selection(path, selection)
+            config = p.project_config({}, p.read_selection(path))
+        self.assertEqual(config["model"], {"provider": "openrouter", "default": "~z-ai/glm-latest"})
+
     def test_invalid_or_secret_bearing_routes_fail_closed(self):
         for specs in (["broken"], ["a=provider:model", "a=other:model"],
-                      ["a=provider:model", "b=provider:model"], ["auto=p:m"], ["a=p:$(secret)"]):
+                      ["a=provider:model", "b=provider:model"], ["auto=p:m"], ["a=p:$(secret)"],
+                      ["a=other:~vendor/model"], ["~a=openrouter:vendor/model"],
+                      ["a=~openrouter:vendor/model"], ["a=openrouter:~vendor"],
+                      ["a=openrouter:~vendor/$(secret)"]):
             with self.subTest(specs=specs), self.assertRaises(p.ProviderSelectionError):
                 p.configure(specs)
         for selected in ([], {}, "missing"):
