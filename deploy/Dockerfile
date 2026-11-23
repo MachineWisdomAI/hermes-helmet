@@ -34,6 +34,13 @@ ENV DISABLE_AUTOUPDATER=1
 
 USER root
 
+# Trivy matches an illustrative service-account header in an upstream comment.
+# Reword just that comment. Fail if the pinned source changes.
+RUN set -eux; \
+    redactor=/opt/hermes/agent/redact_secret_sources.py; \
+    printf '%s  %s\n' dacee6fe3409a1a5b947aa7aa833e6f848503a1f31a091d73599777bbf3908c3 "$redactor" | sha256sum -c -; \
+    sed -i 's/service-account JSON (``"type": "service_account",``) or/service-account JSON header or/' "$redactor"
+
 RUN set -eux; \
     case "${TARGETARCH}" in \
       amd64) gh_sha256="${GH_CLI_SHA256_AMD64}" ;; \
