@@ -39,7 +39,7 @@ USER root
 RUN set -eux; \
     redactor=/opt/hermes/agent/redact_secret_sources.py; \
     printf '%s  %s\n' dacee6fe3409a1a5b947aa7aa833e6f848503a1f31a091d73599777bbf3908c3 "$redactor" | sha256sum -c -; \
-    sed -i 's/service-account JSON (``"type": "service_account",``) or/service-account JSON header or/' "$redactor"
+    sed -i 's/^# service-account JSON (.*) or a short trailer/# service-account JSON header or a short trailer/' "$redactor"
 
 RUN set -eux; \
     case "${TARGETARCH}" in \
