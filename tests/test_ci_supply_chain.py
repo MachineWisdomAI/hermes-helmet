@@ -151,8 +151,13 @@ class JjPinTests(unittest.TestCase):
 class WorkflowSupplyChainTests(unittest.TestCase):
     def test_smoke_check_matches_the_pinned_hermes_release(self) -> None:
         smoke = _read("scripts/smoke-dev-image.sh")
-        self.assertIn("expected Hermes Agent 0.21.6", smoke)
-        self.assertIn("*0.21.6*", smoke)
+        dockerfile = _read("deploy/Dockerfile")
+        pin = re.search(r"^ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent:v([0-9.]+)@",
+                        dockerfile, re.MULTILINE)
+        self.assertIsNotNone(pin)
+        version = pin.group(1)
+        self.assertIn(f"expected Hermes Agent {version}", smoke)
+        self.assertIn(f'*"Hermes Agent v{version} "*', smoke)
 
     def test_github_cli_uses_checksummed_architecture_pin(self) -> None:
         dockerfile = _read("deploy/Dockerfile")

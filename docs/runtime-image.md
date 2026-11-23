@@ -31,7 +31,7 @@ The digest identifies the image built from that recorded source SHA.
 `/opt/hermes-helmet/SOURCE_COMMIT` inside the container is that SHA.
 
 This image bundles Claude Code 2.1.286 and the Claude subscription
-model-provider plugin on Hermes Agent 0.21.6. It supports the published-image
+model-provider plugin on Hermes Agent 0.23.3. It supports the published-image
 route for [Claude subscription workers](claude-subscription.md).
 
 ## Run the published image
