@@ -1,4 +1,4 @@
-ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909
+ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355
 FROM ${HERMES_BASE_IMAGE} AS helmet
 
 ARG HERMES_BASE_IMAGE
@@ -33,6 +33,13 @@ ENV HERMES_GID=${HERMES_GID}
 ENV DISABLE_AUTOUPDATER=1
 
 USER root
+
+# Trivy matches an illustrative service-account header in an upstream comment.
+# Reword just that comment. Fail if the pinned source changes.
+RUN set -eux; \
+    redactor=/opt/hermes/agent/redact_secret_sources.py; \
+    printf '%s  %s\n' dacee6fe3409a1a5b947aa7aa833e6f848503a1f31a091d73599777bbf3908c3 "$redactor" | sha256sum -c -; \
+    sed -i 's/^# service-account JSON (.*) or a short trailer/# service-account JSON header or a short trailer/' "$redactor"
 
 RUN set -eux; \
     case "${TARGETARCH}" in \

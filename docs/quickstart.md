@@ -32,8 +32,8 @@ digest, from the Hermes Helmet 1.0.0 release, is
 built from `24876c7583f5dd3219e94e27b72a8952ba9752aa`. See
 [runtime-image.md](runtime-image.md). Development builds still pin the official
 Hermes Agent base
-`nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909`
-(Hermes Agent 0.21.6). Override only with another immutable tag+digest; do not
+`nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355`
+(Hermes Agent 0.23.3). Override only with another immutable tag+digest; do not
 use `latest` or `main`.
 
 ## Install the CLI

@@ -21,7 +21,7 @@ services:
       dockerfile: deploy/Dockerfile
       target: writing
       args:
-        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909}
+        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355}
         HERMES_HELMET_SOURCE_COMMIT: ${HERMES_HELMET_SOURCE_COMMIT:-unknown}
         HERMES_HELMET_VERSION: ${HERMES_HELMET_VERSION:-0.0.0-dev}
     # No explicit image name: Compose names it from the project, so a project

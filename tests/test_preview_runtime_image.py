@@ -23,16 +23,16 @@ VERIFY = ROOT / ".github" / "workflows" / "verify.yml"
 PINNED_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 USES_RE = re.compile(r"^\s+uses:\s+(\S+)", re.MULTILINE)
 BASE_IMAGE = (
-    "nousresearch/hermes-agent:v0.21.6@"
-    "sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909"
+    "nousresearch/hermes-agent:v0.23.3@"
+    "sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355"
 )
 BASE_AMD64 = (
     "nousresearch/hermes-agent@"
-    "sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22"
+    "sha256:41468459379a943cf0a25a55589e230d244bd9f95b83cff5eca789470c892fac"
 )
 BASE_ARM64 = (
     "nousresearch/hermes-agent@"
-    "sha256:93b295a42bdb6003e06fb9ce316bd6d4f4c09a93a7a89d263701ec6b1a79b208"
+    "sha256:2b8806377f7ad0b56176a79800515fe6b4a6e545c26b45f4ef402afd4155d00c"
 )
 RUNTIME = "ghcr.io/machinewisdomai/hermes-helmet/runtime"
 
@@ -201,6 +201,8 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
         scan_index = build.index("Scan ${{ matrix.platform }} image")
         smoke_index = build.index("Smoke-test tested ${{ matrix.platform }} bytes")
         upload_index = build.index("Upload tested ${{ matrix.platform }} artifacts")
+        snapshot_check = build.index("Verify unchanged Trivy database")
+        self.assertIn("TRIVY_CACHE_BACKEND: memory", build[scan_index:snapshot_check])
         self.assertLess(build_index, scan_index)
         self.assertLess(scan_index, smoke_index)
         self.assertLess(smoke_index, upload_index)

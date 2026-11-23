@@ -5,6 +5,8 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Update the pinned Docker runtime base to Hermes Agent v0.23.3.
+
 - Update the runtime image to GitHub CLI 2.105.0 (Go 1.27.4 and x/net 0.62.0)
   for CVE-2026-78661 and CVE-2026-97054.
 

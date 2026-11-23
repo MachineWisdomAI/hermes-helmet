@@ -25,9 +25,9 @@ permissions:
 
 env:
   IMAGE_REPOSITORY: ghcr.io/machinewisdomai/hermes-helmet/runtime
-  HERMES_BASE_IMAGE: nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909
-  HERMES_BASE_AMD64_IMAGE: nousresearch/hermes-agent@sha256:32d095e84190ae7266afbb361579e6921f2c633e899f5eacfb88111b9c851a22
-  HERMES_BASE_ARM64_IMAGE: nousresearch/hermes-agent@sha256:93b295a42bdb6003e06fb9ce316bd6d4f4c09a93a7a89d263701ec6b1a79b208
+  HERMES_BASE_IMAGE: nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355
+  HERMES_BASE_AMD64_IMAGE: nousresearch/hermes-agent@sha256:41468459379a943cf0a25a55589e230d244bd9f95b83cff5eca789470c892fac
+  HERMES_BASE_ARM64_IMAGE: nousresearch/hermes-agent@sha256:2b8806377f7ad0b56176a79800515fe6b4a6e545c26b45f4ef402afd4155d00c
 
 jobs:
   resolve-source:
@@ -221,6 +221,10 @@ jobs:
 
       - name: Scan ${{ matrix.platform }} image
         env:
+          # A warm base analysis cache can report findings from files replaced
+          # by the wrapper. Scan its bytes with a fresh analysis cache and the
+          # same on-disk vulnerability databases.
+          TRIVY_CACHE_BACKEND: memory
           TRIVY_SKIP_DB_UPDATE: "true"
           TRIVY_SKIP_JAVA_DB_UPDATE: "true"
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
