@@ -11,7 +11,7 @@ SHORT_COMMIT="$(printf '%s' "$SOURCE_COMMIT" | cut -c1-12)"
 VERSION="${HERMES_HELMET_VERSION:-0.0.0-dev}"
 TAG="${HERMES_HELMET_IMAGE_TAG:-dev-${SHORT_COMMIT}}"
 FULL_REF="${IMAGE_REPO}:${TAG}"
-BASE_IMAGE="${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909}"
+BASE_IMAGE="${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355}"
 OUT_DIR="${HERMES_HELMET_DIST_DIR:-$ROOT/dist}"
 IDENTITY_FILE="${OUT_DIR}/image-identity.json"
 

@@ -1,4 +1,4 @@
-ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909
+ARG HERMES_BASE_IMAGE=nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355
 FROM ${HERMES_BASE_IMAGE} AS helmet
 
 ARG HERMES_BASE_IMAGE

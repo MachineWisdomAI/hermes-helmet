@@ -85,7 +85,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec hermes \
 development path without Compose.
 
 The Dockerfile still pins the upstream Hermes Agent base
-`nousresearch/hermes-agent:v0.21.6@sha256:55e192fba0cd4fde61142abbff5adeacff40efdb482ccd0ff877924bd274f909`.
+`nousresearch/hermes-agent:v0.23.3@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355`.
 Override only with another immutable tag+digest.
 
 ## Change the pin or roll back
