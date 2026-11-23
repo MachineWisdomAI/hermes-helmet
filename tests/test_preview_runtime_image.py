@@ -201,6 +201,8 @@ class PreviewRuntimeImageWorkflowTests(unittest.TestCase):
         scan_index = build.index("Scan ${{ matrix.platform }} image")
         smoke_index = build.index("Smoke-test tested ${{ matrix.platform }} bytes")
         upload_index = build.index("Upload tested ${{ matrix.platform }} artifacts")
+        snapshot_check = build.index("Verify unchanged Trivy database")
+        self.assertIn("TRIVY_CACHE_BACKEND: memory", build[scan_index:snapshot_check])
         self.assertLess(build_index, scan_index)
         self.assertLess(scan_index, smoke_index)
         self.assertLess(smoke_index, upload_index)
