@@ -5,6 +5,16 @@ All notable changes to Hermes Helmet are recorded here. The project follows
 
 ## Unreleased
 
+- Consume review-only enrollments in native requested-review intake. A repository
+  accepted through `prepare-repo --purpose review` now has its pending reviewer
+  request queued as the ordinary managed review task, without becoming eligible
+  for issue dispatch, repair, routes, or the implementation allowlist. The grant
+  lives in a separate policy `review_repositories` list (or is projected from
+  still-authorized review receipts via `--enrollment-dir` /
+  `HERMES_HELMET_ENROLLMENT_DIR`), is re-validated against the enrollment
+  ceilings and owners, carries a distinct `review-only` scope through task
+  creation and the task body, and survives policy serialization.
+
 - Update the pinned Docker runtime base to Hermes Agent v0.23.3.
 
 - Update the runtime image to GitHub CLI 2.105.0 (Go 1.27.4 and x/net 0.62.0)
