@@ -25,7 +25,8 @@ yourself.
 `PREFLIGHT → load/validate graph → classify children → dispatch ready frontier → WAITING/DONE`
 
 It invokes `helmet-issue` for each ready child with bounded parallelism
-(`max_epic_parallelism`, default 2), continues independent branches when another
+(`max_epic_parallelism`, default 2; an explicit `--max-parallelism` persists
+for the epic until a later explicit value replaces it), continues independent branches when another
 child blocks, and never dispatch-labels the epic root.
 
 ## Graph model

@@ -1120,6 +1120,83 @@ class FrontierAndPassTests(unittest.TestCase):
             [],
         )
 
+    def test_active_children_consume_override_slots(self) -> None:
+        ready = [f"https://github.com/x/y/issues/{n}" for n in range(1, 6)]
+        buckets = {
+            "active": [f"https://github.com/x/y/issues/{n}" for n in range(10, 18)],
+            "ready": ready,
+            "failed": [],
+        }
+        self.assertEqual(
+            he.compute_ready_frontier(buckets, max_parallelism=10), ready[:2]
+        )
+
+    def _no_dispatch_pass(self, ck: Path, policy=None, **kwargs):
+        checkpoint, report, _ = he.run_epic_pass(
+            policy or self.policy,
+            EPIC_URL,
+            checkpoint_dir=ck,
+            runner=self.runner,
+            extra_child_urls=[CHILD_A, CHILD_B, CHILD_C, CHILD_H],
+            apply_dispatch=False,
+            accept_graph=True,
+            **kwargs,
+        )
+        return checkpoint, report
+
+    def test_parallelism_override_persists_across_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ck = Path(tmp)
+            first, _ = self._no_dispatch_pass(ck, max_parallelism=10)
+            self.assertEqual(
+                (first.max_parallelism, first.parallelism_source), (10, "override")
+            )
+            second, report = self._no_dispatch_pass(ck)
+            self.assertEqual(
+                (second.max_parallelism, second.parallelism_source),
+                (10, "override"),
+            )
+            self.assertEqual(report.max_parallelism, 10)
+            self.assertEqual(report.details.get("parallelism_source"), "override")
+            # A policy change does not silently undo the accepted override.
+            third, _ = self._no_dispatch_pass(
+                ck, policy=_policy(max_epic_parallelism=3)
+            )
+            self.assertEqual(third.max_parallelism, 10)
+            # A later explicit value replaces it.
+            fourth, _ = self._no_dispatch_pass(ck, max_parallelism=4)
+            fifth, _ = self._no_dispatch_pass(ck)
+            self.assertEqual(
+                (fourth.max_parallelism, fifth.max_parallelism), (4, 4)
+            )
+
+    def test_policy_parallelism_follows_policy_without_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ck = Path(tmp)
+            first, _ = self._no_dispatch_pass(ck)
+            self.assertEqual(
+                (first.max_parallelism, first.parallelism_source), (2, "policy")
+            )
+            second, _ = self._no_dispatch_pass(
+                ck, policy=_policy(max_epic_parallelism=5)
+            )
+            self.assertEqual(
+                (second.max_parallelism, second.parallelism_source), (5, "policy")
+            )
+
+    def test_legacy_checkpoint_parallelism_loads_as_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            ck = Path(tmp)
+            self._no_dispatch_pass(ck, max_parallelism=7)
+            path = he.epic_checkpoint_path(ck, EPIC_URL)
+            raw = json.loads(path.read_text())
+            raw.pop("parallelism_source")
+            path.write_text(json.dumps(raw))
+            loaded = he.load_epic_checkpoint(path, expected_epic_url=EPIC_URL)
+            self.assertEqual(loaded.parallelism_source, "policy")
+            again, _ = self._no_dispatch_pass(ck)
+            self.assertEqual(again.max_parallelism, 2)
+
     def test_linear_then_parallel_invocation_order(self) -> None:
         invoked: list[str] = []
 

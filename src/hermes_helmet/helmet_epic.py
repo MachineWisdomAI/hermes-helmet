@@ -235,6 +235,7 @@ class EpicCheckpoint:
     graph_fingerprint: str | None = None
     accepted_fingerprint: str | None = None
     max_parallelism: int = 2
+    parallelism_source: str = "policy"
     continue_independent_branches: bool = True
     active_children: list[str] = field(default_factory=list)
     completed_children: list[str] = field(default_factory=list)
@@ -395,6 +396,11 @@ def load_epic_checkpoint(
                 else str(raw.get("accepted_fingerprint"))
             ),
             max_parallelism=max(1, int(raw.get("max_parallelism") or 2)),
+            parallelism_source=(
+                "override"
+                if raw.get("parallelism_source") == "override"
+                else "policy"
+            ),
             continue_independent_branches=bool(
                 raw.get("continue_independent_branches", True)
             ),
@@ -1865,11 +1871,16 @@ def run_epic_pass(
     checkpoint.host_continuation = host_continuation
     checkpoint.one_pass_only = one_pass_only
     checkpoint.continue_independent_branches = continue_independent_branches
-    parallelism = (
-        max_parallelism
-        if max_parallelism is not None
-        else max(1, int(policy.max_epic_parallelism))
-    )
+    # An explicit override persists for this epic until a later explicit
+    # value replaces it, so continuations that omit the flag keep capacity.
+    if max_parallelism is not None:
+        parallelism = max(1, int(max_parallelism))
+        checkpoint.parallelism_source = "override"
+    elif checkpoint.parallelism_source == "override":
+        parallelism = max(1, int(checkpoint.max_parallelism))
+    else:
+        parallelism = max(1, int(policy.max_epic_parallelism))
+        checkpoint.parallelism_source = "policy"
     checkpoint.max_parallelism = parallelism
     if not checkpoint.started_at:
         checkpoint.started_at = _utc_now()
@@ -2431,6 +2442,7 @@ def build_epic_status(
         blocker=blocker,
         terminal=state in EPIC_TERMINAL,
         details={
+            "parallelism_source": checkpoint.parallelism_source,
             "graph_source": graph.source,
             "child_count": len(graph.children),
             "epic_merge_mode": checkpoint.epic_merge_mode,

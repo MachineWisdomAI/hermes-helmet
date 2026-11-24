@@ -1591,7 +1591,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-parallelism",
         type=int,
         default=None,
-        help="Override policy max_epic_parallelism for this pass",
+        help=(
+            "Override policy max_epic_parallelism; persisted for this epic "
+            "until a later explicit value replaces it"
+        ),
     )
     epic_p.add_argument(
         "--child",
