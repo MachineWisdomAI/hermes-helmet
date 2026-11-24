@@ -34,7 +34,7 @@ dependents implicitly.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import json
 import os
@@ -477,6 +477,54 @@ def effective_repositories(
         )
         known.add(receipt.slug.casefold())
     return tuple(repositories)
+
+
+def review_only_repositories(
+    policy: Policy,
+    store: EnrollmentStore | None,
+) -> tuple[Repository, ...]:
+    """Currently-authorized repositories enrolled for review and nothing else.
+
+    A repository qualifies only when a stored receipt is still authorized by
+    the **current** policy and its effective purpose is ``review`` (a ``work``
+    purpose already carries implementation authority through a different
+    path and is not review-only). Static allowlist entries never appear here.
+    """
+
+    if store is None:
+        return ()
+    known = {repository.slug.casefold() for repository in policy.repositories}
+    found: list[Repository] = []
+    for receipt in store.all():
+        if receipt.slug.casefold() in known:
+            continue
+        purposes = authorized_purposes(policy, receipt)
+        if not purposes or effective_purpose(purposes) != PURPOSE_REVIEW:
+            continue
+        found.append(Repository(slug=receipt.slug, worktree=Path(receipt.worktree)))
+    return tuple(found)
+
+
+def with_review_scope(policy: Policy, store: EnrollmentStore | None) -> Policy:
+    """Project accepted review-only enrollments onto *policy*.
+
+    Returns a policy whose ``review_repositories`` additionally lists the
+    review-only enrollments from *store*. ``repositories`` (the implementation
+    allowlist) is never modified, so the projection cannot grant issue
+    dispatch, repair, or crew authority. Entries already declared by the
+    policy win; a receipt that collides on slug or worktree is skipped.
+    """
+
+    declared = list(policy.review_repositories)
+    slugs = {r.slug.casefold() for r in (*policy.repositories, *declared)}
+    worktrees = {str(r.worktree) for r in (*policy.repositories, *declared)}
+    for repository in review_only_repositories(policy, store):
+        if repository.slug.casefold() in slugs or str(repository.worktree) in worktrees:
+            continue
+        slugs.add(repository.slug.casefold())
+        worktrees.add(str(repository.worktree))
+        declared.append(repository)
+    return replace(policy, review_repositories=tuple(declared))
 
 
 # ---------------------------------------------------------------------------
